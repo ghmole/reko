@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -219,6 +219,12 @@ namespace Reko.UnitTests.Arch.Sparc
         public void SparcDis_sss()
         {
             AssertInstruction(0xC12D0000, "stfsr\t%fsr,[%l4+%g0]");
+        }
+
+        [Test]
+        public void SparcDis_fcmpd()
+        {
+            AssertInstruction(0x81A90A47, "fcmpd\t%f4,%f38");
         }
     }
 }

@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Core;
 using Reko.Core.Code;
 using Reko.Core.Expressions;
 
@@ -25,7 +26,6 @@ namespace Reko.Analysis
 {
     public abstract class InstructionUseVisitorBase : InstructionVisitorBase
     {
-
         #region InstructionVisitor Members
 
         public override void VisitAssignment(Assignment a)
@@ -37,7 +37,7 @@ namespace Reko.Analysis
         {
             ci.Callee.Accept(this);
             foreach (var use in ci.Uses)
-                use.Accept(this);
+                use.Expression.Accept(this);
         }
 
         public override void VisitDeclaration(Declaration decl)
@@ -53,16 +53,14 @@ namespace Reko.Analysis
         public override void VisitStore(Store store)
         {
             store.Src.Accept(this);
-            // ecxOut should not be added to use list of statements like
-            // '*ecxOut = ecx'
-            if (store.Dst is Dereference)
+
+            // Do not count assignments to out identifiers as uses.
+            if (store.Dst is Identifier idOut && idOut.Storage is OutArgumentStorage)
                 return;
             // Do not add memory identifier to uses
-            var access = store.Dst as MemoryAccess;
-            if (access != null)
+            if (store.Dst is MemoryAccess access)
             {
-                var sa = access as SegmentedAccess;
-                if (sa != null)
+                if (access is SegmentedAccess sa)
                     sa.BasePointer.Accept(this);
                 access.EffectiveAddress.Accept(this);
                 return;

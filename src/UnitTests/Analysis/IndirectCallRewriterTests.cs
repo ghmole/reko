@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,16 +28,27 @@ using Reko.Core.Expressions;
 using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
+using System;
 using System.Linq;
 
 namespace Reko.UnitTests.Analysis
 {
     [TestFixture]
-    class IndirectCallRewriterTests : AnalysisTestBase
+    public class IndirectCallRewriterTests : AnalysisTestBase
     {
-        private string CSignature;
+        private FunctionType sig;
         private IDictionary<string, DataType> types;
         SsaProcedureBuilder m;
+        private Identifier eax;
+        private Identifier ecx;
+        private Identifier esp;
+
+        public IndirectCallRewriterTests()
+        {
+            this.eax = new Identifier("eax", PrimitiveType.Word32, new RegisterStorage("eax", 0, 0, PrimitiveType.Word32));
+            this.ecx = new Identifier("ecx", PrimitiveType.Word32, new RegisterStorage("ecx", 1, 0, PrimitiveType.Word32));
+            this.esp = new Identifier("esp", PrimitiveType.Word32, new RegisterStorage("esp", 5, 0, PrimitiveType.Word32));
+        }
 
         [SetUp]
         public void Setup()
@@ -47,13 +58,78 @@ namespace Reko.UnitTests.Analysis
 
         private void Given_CSignature(string CSignature)
         {
-            this.CSignature = CSignature;
+            types = new Dictionary<string, DataType>();
+        }
+
+        /// <summary>
+        /// Models a call to an indirect function pointed to by
+        /// ecx, with no arguments.
+        /// </summary>
+        private void indirect_call_no_arguments(ProcedureBuilder m)
+        {
+            var esp = m.Frame.EnsureIdentifier(m.Architecture.StackRegister);
+            var eax = m.Frame.EnsureIdentifier(this.eax.Storage);
+            var ecx = m.Frame.EnsureIdentifier(this.ecx.Storage);
+
+            m.Assign(esp, m.Frame.FramePointer);
+            m.Assign(eax, m.Mem32(m.IAdd(esp, 4)));
+            m.Assign(ecx, m.Mem32(eax));
+            m.Call(m.Mem32(ecx), 4);
+            m.Return();
+        }
+
+        /// <summary>
+        /// Models a call to an indirect function pointed to by
+        /// ecx, with one stack argument.
+        /// </summary>
+        private void indirect_call_one_argument(ProcedureBuilder m)
+        {
+            var esp = m.Frame.EnsureIdentifier(m.Architecture.StackRegister);
+            var eax = m.Frame.EnsureIdentifier(this.eax.Storage);
+            var ecx = m.Frame.EnsureIdentifier(this.ecx.Storage);
+
+            m.Assign(esp, m.Frame.FramePointer);
+            m.Assign(eax, m.Mem32(m.IAdd(esp, 4)));
+            m.Assign(ecx, m.Mem32(eax));
+            m.Assign(esp, m.ISub(esp, 4));
+            m.MStore(esp, m.Word32(0x000A));
+            var c = m.Call(m.Mem32(m.IAdd(ecx, 4)), 4);
+            c.CallSite.StackDepthOnEntry = 8;
+            m.Return();
+        }
+
+        private void indirect_call_two_arguments(ProcedureBuilder m)
+        {
+            var esp = m.Frame.EnsureIdentifier(m.Architecture.StackRegister);
+            var eax = m.Frame.EnsureIdentifier(this.eax.Storage);
+            var ecx = m.Frame.EnsureIdentifier(this.ecx.Storage);
+
+            m.Assign(esp, m.Frame.FramePointer);
+            m.Assign(eax, m.Mem32(m.IAdd(esp, 4))); // get argument to this fn.
+            m.Assign(ecx, m.Mem32(eax));
+            m.Assign(esp, m.ISub(esp, 4));          // push arg2
+            m.MStore(esp, m.Word32(0x000B));
+            m.Assign(esp, m.ISub(esp, 4));          // push arg1
+            m.MStore(esp, m.Word32(0x000A));
+            // We expect the following call to be resolved as
+            // (Mem0[ecx + 8:ptr32])(arg1, arg2)
+            var c = m.Call(m.Mem32(m.IAdd(ecx, 8)), 4);
+            c.CallSite.StackDepthOnEntry = 12;
+            m.Return();
+        }
+
+        private void Given_Signature(DataType argType)
+        {
+            this.sig = new FunctionType(
+                null,
+                new Identifier(
+                    "a", 
+                    new Pointer(argType, 32),
+                    new StackArgumentStorage(4, PrimitiveType.Word32)));
         }
 
         private void Given_Typedef(string name, DataType dt)
         {
-            if (types == null)
-                types = new Dictionary<string, DataType>();
             types[name] = dt;
         }
 
@@ -90,6 +166,18 @@ namespace Reko.UnitTests.Analysis
             return new TypeReference(name, FnPtr32(returnValue, parameters));
         }
 
+        private void SetFPUStackDelta(DataType fnPtr, int fpuStackDelta)
+        {
+            if (fnPtr is Pointer ptr && ptr.Pointee is FunctionType ft)
+            {
+                ft.FpuStackDelta = fpuStackDelta;
+            }
+            else
+            {
+                Assert.Fail("Fail to set fpu stack delta: should be pointer to function");
+            }
+        }
+
         private Identifier VoidId()
         {
             return null;
@@ -101,22 +189,6 @@ namespace Reko.UnitTests.Analysis
                 "",
                 dt,
                 new StackArgumentStorage(offset, dt));
-        }
-
-        private Identifier EaxId()
-        {
-            return new Identifier(
-                "",
-                PrimitiveType.Word32,
-                RegisterStorage.Reg32("eax", 0));
-        }
-
-        private Identifier EcxId()
-        {
-            return new Identifier(
-                "",
-                PrimitiveType.Word32,
-                RegisterStorage.Reg32("ecx", 1));
         }
 
         private DataType VtblStr(params DataType[] methods)
@@ -131,9 +203,9 @@ namespace Reko.UnitTests.Analysis
             return new StructureType()
             {
                 Fields =
-                    {
-                        { 0, Ptr32(vtbl_str), "vtbl" },
-                    }
+                {
+                    { 0, Ptr32(vtbl_str), "vtbl" },
+                }
             };
         }
 
@@ -154,16 +226,16 @@ namespace Reko.UnitTests.Analysis
         private DataType TestStrEcx()
         {
             var fn0000 = FnPtr32(
-                EaxId(),
-                EcxId(),
+                eax,
+                ecx,
                 StackId(4, Int32()));
             var fn0004 = FnPtr32(
-                EaxId(),
-                EcxId(),
+                eax,
+                ecx,
                 StackId(4, Int32()));
             var fn0008 = FnPtr32(
-                EaxId(),
-                EcxId(),
+                eax,
+                ecx,
                 StackId(4, Int32()),
                 StackId(8, Int32()));
             return VtblStr(fn0000, fn0004, fn0008);
@@ -174,64 +246,55 @@ namespace Reko.UnitTests.Analysis
             return VtblStr(Ptr32(Int32()), Ptr32(Int32()), Ptr32(Int32()));
         }
 
-        private void SetCSignatures(Program program)
+        private void SetSignatures(Program program)
         {
-            foreach (var addr in program.Procedures.Keys)
+            foreach (var proc in program.Procedures.Values)
             {
-                program.User.Procedures.Add(
-                    addr,
-                    new Procedure_v1
-                    {
-                        CSignature = this.CSignature
-                    });
-            }
-        }
-
-        private void SetTypedefs(Program program)
-        {
-            foreach (var de in types)
-            {
-                program.EnvironmentMetadata.Types.Add(de);
+                proc.Signature = sig;
             }
         }
 
         private void InitProgram(Program program)
         {
-            SetCSignatures(program);
-            SetTypedefs(program);
+            SetSignatures(program);
         }
 
         protected override void RunTest(Program program, TextWriter fut)
         {
+            program.Platform = new FakePlatform(null, program.Architecture)
+            {
+                Test_CreateTrashedRegisters = () => 
+                    new HashSet<RegisterStorage>()
+                {
+                    (RegisterStorage)this.eax.Storage,
+                    (RegisterStorage)this.ecx.Storage,
+                    program.Architecture.StackRegister,
+                }
+            };
             InitProgram(program);
             IImportResolver importResolver = null;
             var eventListener = new FakeDecompilerEventListener();
-            DataFlowAnalysis dfa = new DataFlowAnalysis(
-                program,
+
+            var programFlow = new ProgramDataFlow();
+            var addr = program.Procedures.Keys[0];
+            var proc = program.Procedures.Values[0];
+            var sst = new SsaTransform(
+                program, 
+                proc,
+                new HashSet<Procedure>(),
                 importResolver,
-                eventListener);
-            dfa.UntangleProcedures();
+                programFlow);
+            var ssa = sst.Transform();
+            var vp = new ValuePropagator(program.SegmentMap, ssa, program.CallGraph, importResolver, eventListener);
+            vp.Transform();
+            sst.RenameFrameAccesses = true;
+            sst.Transform();
+            var icrw = new IndirectCallRewriter(program, ssa, eventListener);
+            icrw.Rewrite();
 
-            foreach (Procedure proc in program.Procedures.Values)
-            {
-                SsaTransform sst = new SsaTransform(
-                    dfa.ProgramDataFlow,
-                    proc,
-                    importResolver,
-                    proc.CreateBlockDominatorGraph(),
-                    new HashSet<RegisterStorage>());
-                SsaState ssa = sst.SsaState;
-
-                var icrw = new IndirectCallRewriter(
-                    program,
-                    ssa,
-                    eventListener);
-                icrw.Rewrite();
-
-                ssa.Write(fut);
-                proc.Write(false, fut);
-                fut.WriteLine();
-            }
+            ssa.Write(fut);
+            ssa.Procedure.Write(false, fut);
+            fut.WriteLine();
         }
 
         public void RunIndirectCallRewriter()
@@ -249,6 +312,21 @@ namespace Reko.UnitTests.Analysis
             m.Ssa.Validate(s => Assert.Fail(s));
         }
 
+        private void Given_ApplicationBuilder(
+            Func<IStorageBinder, (Identifier, Expression)> returnBinder)
+        {
+            var architecture = (FakeArchitecture)m.Architecture;
+            architecture.Test_CreateFrameApplicationBuilder =
+                (arch, binder, site, callee) =>
+                {
+                    var ab = new FakeFrameApplicationBuilder(
+                        null, binder, site, callee);
+                    var (ret, value) = returnBinder(m.Ssa.Procedure.Frame);
+                    ab.Test_AddReturnValue(ret, value);
+                    return ab;
+                };
+        }
+
         private void AssertProcedureCode(string expected)
         {
             ProcedureCodeVerifier.AssertCode(m.Ssa.Procedure, expected);
@@ -257,71 +335,50 @@ namespace Reko.UnitTests.Analysis
         [Test]
         public void Icrw_NoArguments()
         {
-            Given_Typedef("str", TestStr());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_no_arguments.asm",
-                "Analysis/IcrwNoArguments.txt");
+            Given_Signature(TestStr());
+            RunFileTest("Analysis/IcrwNoArguments.txt", indirect_call_no_arguments);
         }
 
         [Test]
         public void Icrw_InvalidArguments()
         {
-            Given_Typedef("str", TestStrEcx());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_no_arguments.asm",
-                "Analysis/IcrwInvalidArguments.txt");
+            Given_Signature(TestStrEcx());
+            RunFileTest("Analysis/IcrwInvalidArguments.txt", indirect_call_no_arguments);
         }
 
         [Test]
         public void Icrw_OneArgument()
         {
-            Given_Typedef("str", TestStr());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_one_argument.asm",
-                "Analysis/IcrwOneArgument.txt");
+            Given_Signature(TestStr());
+            RunFileTest("Analysis/IcrwOneArgument.txt", indirect_call_one_argument);
         }
 
         [Test]
         public void Icrw_OneArgumentNoFuncs()
         {
-            Given_Typedef("str", TestStrNoFuncs());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_one_argument.asm",
-                "Analysis/IcrwOneArgumentNoFuncs.txt");
+            Given_Signature(TestStrNoFuncs());
+            RunFileTest("Analysis/IcrwOneArgumentNoFuncs.txt", indirect_call_one_argument);
         }
 
         [Test]
         public void Icrw_OneArgumentPassEcx()
         {
-            Given_Typedef("str", TestStrEcx());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_one_argument.asm",
-                "Analysis/IcrwOneArgumentPassEcx.txt");
+            Given_Signature(TestStrEcx());
+            RunFileTest("Analysis/IcrwOneArgumentPassEcx.txt", indirect_call_one_argument);
         }
 
         [Test]
         public void Icrw_TwoArguments()
         {
-            Given_Typedef("str", TestStr());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_two_arguments.asm",
-                "Analysis/IcrwTwoArguments.txt");
+            Given_Signature(TestStr());
+            RunFileTest("Analysis/IcrwTwoArguments.txt", indirect_call_two_arguments);
         }
 
-        [Test]
+        [Test(Description = "If there are no virtual functions, don't rewrite the call")]
         public void Icrw_TwoArgumentsNoFuncs()
         {
-            Given_Typedef("str", TestStrNoFuncs());
-            Given_CSignature("void test(str *a)");
-            RunFileTest(
-                "Fragments/icrw/indirect_call_two_arguments.asm",
-                "Analysis/IcrwTwoArgumentsNoFuncs.txt");
+            Given_Signature(TestStrNoFuncs());
+            RunFileTest("Analysis/IcrwTwoArgumentsNoFuncs.txt", indirect_call_two_arguments);
         }
 
         [Test]
@@ -359,6 +416,38 @@ trash = <invalid>
             RunIndirectCallRewriter();
 
             Assert.AreEqual("a = fn(b)", callStm.Instruction.ToString());
+        }
+
+        [Test]
+        public void Icrw_FPUStackReturn()
+        {
+            var top = m.Architecture.FpuStackRegister;
+            var top_1 = m.Reg("FakeTop_1", top);
+            var top_2 = m.Reg("FakeTop_2", top);
+            var st = m.RegisterStorage("FakeST", PrimitiveType.Word32);
+            var st_3 = m.Reg("FakeST_3", st);
+            var fn = m.Reg32("fn");
+            var ret = Identifier.CreateTemporary("ret", PrimitiveType.Word32);
+            fn.DataType = FnPtr32(ret);
+            SetFPUStackDelta(fn.DataType, 5);
+            Given_ApplicationBuilder((binder) =>
+            {
+                var index = binder.EnsureRegister(top);
+                var array = binder.EnsureRegister(st);
+                return (ret, new ArrayAccess(ret.DataType, array, index));
+            });
+            var uses = new Identifier[] { top_1, st_3 };
+            var defines = new Identifier[] { top_2 };
+            m.Call(fn, 4, uses, defines);
+
+            RunIndirectCallRewriter();
+
+            var expected =
+@"
+FakeST_3[FakeTop_1] = fn()
+FakeTop_2 = FakeTop_1 - 5
+";
+            AssertProcedureCode(expected);
         }
     }
 }

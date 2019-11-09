@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ using Reko.Core.Operators;
 using Reko.Core.Types;
 using System;
 using System.Diagnostics;
+using System.Linq;
 
 namespace Reko.Core
 {
@@ -37,7 +38,6 @@ namespace Reko.Core
 
         public abstract Statement Emit(Instruction instr);
         public abstract Frame Frame { get; }
-        public abstract Identifier Register(int i);
 
         public virtual AliasAssignment Alias(Identifier dst, Expression src)
         {
@@ -92,11 +92,6 @@ namespace Reko.Core
             Assign(reg, new MemoryAccess(MemoryIdentifier.GlobalMemory, ea, reg.DataType));
         }
 
-        public Statement Phi(Identifier idDst, params Expression[] exprs)
-        {
-            return Emit(new PhiAssignment(idDst, new PhiFunction(idDst.DataType, exprs)));
-        }
-
         public virtual void Return()
         {
             Emit(new ReturnInstruction());
@@ -121,9 +116,19 @@ namespace Reko.Core
         /// <returns></returns>
         public Statement Store(Expression dst, Expression src)
         {
-            if (dst is Constant || dst is ProcedureConstant)
-                throw new ArgumentException("Constants are not L-values.", nameof(dst));
-            return Emit(new Store(dst, src));
+            if (dst is Identifier)
+                throw new ArgumentException("Use the 'Assign' method for identifiers.", nameof(dst));
+            if (dst is MemoryAccess ||
+                dst is SegmentedAccess ||
+                dst is FieldAccess ||
+                dst is ArrayAccess ||
+                dst is MemberPointerSelector ||
+                dst is Dereference)
+            {
+                return Emit(new Store(dst, src));
+            }
+            throw new ArgumentException(
+                $"An expression of the type {dst.GetType().Name} is not an L-value.", nameof(dst));
         }
 
         /// <summary>
@@ -136,6 +141,12 @@ namespace Reko.Core
         public Statement MStore(Expression ea, Expression src)
         {
             Store s = new Store(new MemoryAccess(MemoryIdentifier.GlobalMemory, ea, src.DataType), src);
+            return Emit(s);
+        }
+
+        public Statement MStore(MemoryIdentifier mem, Expression ea, Expression src)
+        {
+            Store s = new Store(new MemoryAccess(mem, ea, src.DataType), src);
             return Emit(s);
         }
 
@@ -153,43 +164,77 @@ namespace Reko.Core
             return Emit(s);
         }
 
+        /// <summary>
+        /// Allocate a stack-based identifier.
+        /// </summary>
+        /// <param name="primitiveType">Data type of the identifier</param>
+        /// <param name="name">name of the identifier.</param>
         public Identifier Local(PrimitiveType primitiveType, string name)
         {
             localStackOffset -= primitiveType.Size;
             return Frame.EnsureStackLocal(localStackOffset, primitiveType, name);
         }
 
+        /// <summary>
+        /// Convenience method that allocates a stack-based boolean, aligned to 32 bits.
+        /// </summary>
         public Identifier LocalBool(string name)
         {
             localStackOffset -= PrimitiveType.Word32.Size;
             return Frame.EnsureStackLocal(localStackOffset, PrimitiveType.Bool, name);
         }
 
+        /// <summary>
+        /// Convenience method that allocates a stack-based byte, aligned to 32 bits.
+        /// </summary>
         public Identifier LocalByte(string name)
         {
             localStackOffset -= PrimitiveType.Word32.Size;
             return Frame.EnsureStackLocal(localStackOffset, PrimitiveType.Byte, name);
         }
 
+        /// <summary>
+        /// Convenience method that allocates a stack-based 16-bit word, aligned to 32 bits.
+        /// </summary>
         public Identifier Local16(string name)
         {
             localStackOffset -= PrimitiveType.Word32.Size;
-            return Frame.EnsureStackLocal(localStackOffset, PrimitiveType.Word16, name);
+            return Local16(name, localStackOffset);
         }
 
+        /// <summary>
+        /// Allocates a stack-based 16-bit variable  named <paramref name="name"/> at the 
+        /// given <paramref name="offset"/>.
+        /// </summary>
+        public virtual Identifier Local16(string name, int offset)
+        {
+            Debug.Assert(offset < 0);
+            return Frame.EnsureStackLocal(offset, PrimitiveType.Word16, name);
+        }
+
+        /// <summary>
+        /// Convenience method that allocates a stack-based 32-bit word.
+        /// </summary>
         public Identifier Local32(string name)
         {
             localStackOffset -= PrimitiveType.Word32.Size;
             return Frame.EnsureStackLocal(localStackOffset, PrimitiveType.Word32, name);
         }
 
+        /// <summary>
+        /// Allocates a stack-based 32-bit variable  named <paramref name="name"/> at the 
+        /// given <paramref name="offset"/>.
+        /// </summary>
         public virtual Identifier Local32(string name, int offset)
         {
             Debug.Assert(offset < 0);
             return Frame.EnsureStackLocal(offset, PrimitiveType.Word32, name);
         }
 
-        public Identifier Temp(DataType type, string name)
+        /// <summary>
+        /// Generate a temporary identifier named <paramref name="name"/> with the data type <paramref name="type"/>.
+        /// </summary>
+        public virtual Identifier Temp(DataType type, string name)
         {
             return Frame.CreateTemporary(name, type);
         }

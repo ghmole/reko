@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,10 +48,10 @@ namespace Reko.Core
 
 		public override string ToString()
 		{
-			StringWriter sw = new StringWriter();
-            TextFormatter fmt = new TextFormatter(sw);
-            CodeFormatter cf = new CodeFormatter(fmt);
-            TypeFormatter tf = new TypeFormatter(fmt);
+			var sw = new StringWriter();
+            var fmt = new TextFormatter(sw);
+            var cf = new CodeFormatter(fmt);
+            var tf = new TypeReferenceFormatter(fmt);
 			Signature.Emit(Name, FunctionType.EmitFlags.ArgumentKind, fmt, cf, tf);
 			return sw.ToString();
 		}

@@ -1,11 +1,11 @@
 // fn0C00_0000
 // Return size: 2
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // eax:eax
-// SCZO:Flags
-// C:Flags
+// SCZO:SCZO
+// C:C
 // ds:ds
 // v7:v7
 // v8:v8
@@ -13,12 +13,14 @@
 // bx:bx
 // v11:v11
 // cx:cx
+// Top:Top
 // return address size: 2
-void fn0C00_0000()
+define fn0C00_0000
 fn0C00_0000_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
 	eax = -eax
 	SCZO = cond(eax)
 	C = eax == 0x00000000

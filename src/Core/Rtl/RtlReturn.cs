@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@ namespace Reko.Core.Rtl
 {
     public class RtlReturn : RtlInstruction
     {
-        public RtlReturn(int returnAddressBytes, int extraBytesPopped, RtlClass rtlClass)
+        public RtlReturn(int returnAddressBytes, int extraBytesPopped, InstrClass rtlClass)
         {
             this.ReturnAddressBytes = returnAddressBytes;
             this.ExtraBytesPopped = extraBytesPopped;
@@ -42,8 +42,9 @@ namespace Reko.Core.Rtl
         /// Architectures where the return address is not passed on the stack should specify 0 as the
         /// size of this property.
         /// </remarks>
-        public int ReturnAddressBytes { get; private set; }
-        public int ExtraBytesPopped { get; private set; }
+        public int ReturnAddressBytes { get; }
+
+        public int ExtraBytesPopped { get; }
 
         public override T Accept<T>(RtlInstructionVisitor<T> visitor)
         {

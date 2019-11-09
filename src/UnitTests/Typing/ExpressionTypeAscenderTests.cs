@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -208,7 +208,7 @@ namespace Reko.UnitTests.Typing
         public void ExaAddrOf()
         {
             var p = Id("p", PrimitiveType.Real64);
-            RunTest(m.AddrOf(p),
+            RunTest(m.AddrOf(PrimitiveType.Ptr32, p),
                 "Typing/ExaAddrOf.txt");
         }
 
@@ -221,5 +221,25 @@ namespace Reko.UnitTests.Typing
             RunTest(m.Conditional(PrimitiveType.Word32, id, id1, id2),
                 "Typing/ExaConditional.txt");
         }
+
+        [Test(Description = "Pointers should be processed as globals")]
+        public void ExaUsrGlobals_Addr32()
+        {
+            Given_GlobalVariable(
+                Address.Ptr32(0x10001200), PrimitiveType.Real32);
+            RunTest(Address.Ptr32(0x10001200),
+                "Typing/ExaUsrGlobals_Addr32.txt");
+        }
+
+        [Test(Description = "Operand sizes of a widening multiplication shouldn't affect the size of the product.")]
+        public void ExaWideningFMul()
+        {
+            var idLeft = Id("idLeft", PrimitiveType.Word64);
+            var idRight = Id("idRight", PrimitiveType.Word64);
+            var fmul = m.FMul(idLeft, idRight);
+            fmul.DataType = PrimitiveType.Real96;
+            RunTest(fmul, "Typing/ExaWideningFMul.txt");
+        }
+
     }
 }

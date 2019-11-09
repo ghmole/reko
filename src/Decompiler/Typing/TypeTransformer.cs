@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ namespace Reko.Typing
 	/// legal C-like data types.</summary>
 	/// <remarks>
 	/// Much of the type inference code in this namespace was inspired by the master's thesis
-	/// "Entwicklung eines Typanalysesystem für einen Decompiler", 2004, by Raimar Falke.
+	/// "Entwicklung eines Typanalysesystem fÃ¼r einen Decompiler", 2004, by Raimar Falke.
 	/// </remarks>
 	public class TypeTransformer : IDataTypeVisitor<DataType>
 	{
@@ -42,7 +42,7 @@ namespace Reko.Typing
 		private Unifier unifier;
         private DecompilerEventListener eventListener;
 
-		private static TraceSwitch trace = new TraceSwitch("TypeTransformer", "Traces the transformation of types");
+		private static TraceSwitch trace = new TraceSwitch("TypeTransformer", "Traces the transformation of types") { Level = TraceLevel.Verbose };
         private HashSet<DataType> visitedTypes;
 
         public TypeTransformer(TypeFactory factory, TypeStore store, Program program)
@@ -56,7 +56,7 @@ namespace Reko.Typing
 			this.store = store;
             this.program = program;
 			this.eventListener = eventListener;
-			this.unifier = new Unifier(factory);
+			this.unifier = new Unifier(factory, trace);
             this.visitedTypes = new HashSet<DataType>();
         }
 
@@ -254,7 +254,13 @@ namespace Reko.Typing
 					EquivalenceClass eq = tv.Class;
                     if (eq.DataType != null)
                     {
+                        DateTime start = DateTime.Now;
                         eq.DataType = eq.DataType.Accept(this);
+                        DateTime end = DateTime.Now;
+                        if (eq.DataType is UnionType ut)
+                        {
+                            //DebugEx.Verbose(trace, "= TT: took {2,4} msec to simplify {0} ({1})", tv.DataType, eq.DataType, (end - start).Milliseconds);
+                        }
                     }
                     if (tv.DataType != null)
                     {
@@ -340,12 +346,6 @@ namespace Reko.Typing
         {
             ptr.Pointee = ptr.Pointee.Accept(this);
             return ptr;
-        }
-
-        public DataType VisitQualifiedType(QualifiedType qt)
-        {
-            qt.DataType = qt.DataType.Accept(this);
-            return qt;
         }
 
         public DataType VisitReference(ReferenceTo refTo)

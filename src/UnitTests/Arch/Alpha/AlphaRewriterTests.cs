@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ namespace Reko.UnitTests.Arch.Mips
 
         private void RunTest(params string[] bitStrings)
         {
-            var bytes = bitStrings.Select(bits => base.ParseBitPattern(bits))
+            var bytes = bitStrings.Select(bits => base.BitStringToUInt32(bits))
                 .SelectMany(u => new byte[] { (byte)(u >> 24), (byte)(u >> 16), (byte)(u >> 8), (byte)u })
                 .ToArray();
             dasm = new AlphaDisassembler(
@@ -75,13 +75,13 @@ namespace Reko.UnitTests.Arch.Mips
 
         protected override MemoryArea RewriteCode(string hexBytes)
         {
-            var bytes = OperatingEnvironmentElement.LoadHexBytes(hexBytes)
+            var bytes = PlatformDefinition.LoadHexBytes(hexBytes)
                 .ToArray();
             this.image = new MemoryArea(LoadAddress, bytes);
             return image;
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             return new AlphaRewriter(
                 arch, 
@@ -842,7 +842,7 @@ namespace Reko.UnitTests.Arch.Mips
                 "0|L--|00100000(4): 3 instructions",
                 "1|L--|r6 = r0 + r9",
                 "2|T--|if (!OV(r6)) branch 00100004",
-                "3|L--|__trap_overflow()");
+                "3|T--|__trap_overflow()");
         }
 
         [Test]
@@ -898,7 +898,7 @@ namespace Reko.UnitTests.Arch.Mips
                 "0|L--|00100000(4): 3 instructions",
                 "1|L--|r11 = r0 - 0x13",
                 "2|T--|if (!OV(r11)) branch 00100004",
-                "3|L--|__trap_overflow()");
+                "3|T--|__trap_overflow()");
         }
 
         [Test]
@@ -909,7 +909,7 @@ namespace Reko.UnitTests.Arch.Mips
                 "0|L--|00100000(4): 3 instructions",
                 "1|L--|r27 = (word64) SLICE(r0 - r5, int32, 0)",
                 "2|T--|if (!OV(r27)) branch 00100004",
-                "3|L--|__trap_overflow()");
+                "3|T--|__trap_overflow()");
         }
 
         [Test]
@@ -920,7 +920,7 @@ namespace Reko.UnitTests.Arch.Mips
                 "0|L--|00100000(4): 3 instructions",
                 "1|L--|r4 = (word64) SLICE(r3 + 0x4D, int32, 0)",
                 "2|T--|if (!OV(r4)) branch 00100004",
-                "3|L--|__trap_overflow()");
+                "3|T--|__trap_overflow()");
         }
 
         [Test]
@@ -928,8 +928,8 @@ namespace Reko.UnitTests.Arch.Mips
         {
             RewriteCode("0000FF63");    // trapb
             AssertCode(
-                "0|L--|00100000(4): 1 instructions",
-                "1|L--|__trap_barrier()");
+                "0|T--|00100000(4): 1 instructions",
+                "1|T--|__trap_barrier()");
         }
 
         [Test]

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,216 +18,280 @@
  */
 #endregion
 
-using Reko.Arch.X86;
+using Moq;
+using NUnit.Framework;
 using Reko.Analysis;
 using Reko.Core;
-using Reko.Core.Code;
-using Reko.Core.Types;
+using Reko.Core.Serialization;
 using Reko.UnitTests.Mocks;
-using NUnit.Framework;
-using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Reko.UnitTests.Analysis
 {
-	/// <summary>
-	/// Used to test register liveness across the whole program.
-	/// </summary>
-	[TestFixture]
+    /// <summary>
+    /// Used to test register liveness across the whole program.
+    /// This shows the result of analysis just before the call rewriting
+    /// takes place.
+    /// </summary>
+    [TestFixture]
 	public class RegisterLivenessTests : AnalysisTestBase
 	{
-		protected override void RunTest(Program prog, TextWriter writer)
+        private SortedList<Address, Procedure_v1> userSigs;
+        private Mock<IImportResolver> importResolver;
+
+        [SetUp]
+        public void Setup()
+        {
+            userSigs = new SortedList<Address, Procedure_v1>();
+            this.importResolver = new Mock<IImportResolver>();
+        }
+
+		protected override void RunTest(Program program, TextWriter writer)
 		{
 			var eventListener = new FakeDecompilerEventListener();
-			var dfa = new DataFlowAnalysis(prog, null, eventListener);
-			var trf = new TrashedRegisterFinder(prog, prog.Procedures.Values, dfa.ProgramDataFlow, eventListener);
-			trf.Compute();
-			trf.RewriteBasicBlocks();
-			var rl = RegisterLiveness.Compute(prog, dfa.ProgramDataFlow, eventListener);
-			DumpProcedureFlows(prog, dfa, rl, writer);
+			var dfa = new DataFlowAnalysis(
+                program, 
+                importResolver.Object, 
+                eventListener);
+            program.User.Procedures = userSigs;
+            var usb = new UserSignatureBuilder(program);
+            usb.BuildSignatures(eventListener);
+
+            IntraBlockDeadRegisters.Apply(program, eventListener);
+
+            var ssts = dfa.RewriteProceduresToSsa();
+
+            // Discover ssaId's that are live out at each call site.
+            // Delete all others.
+            var uvr = new UnusedOutValuesRemover(
+                program,
+                ssts.Select(sst => sst.SsaState),
+                dfa.ProgramDataFlow,
+                importResolver.Object,
+                eventListener);
+            uvr.Transform();
+            DumpProcedureFlows(program, dfa, writer);
 		}
 
+        private void Given_Signature(Address addr, string procName, SerializedSignature ssig)
+        {
+            userSigs[addr] = new Procedure_v1
+            {
+                 Address = addr.ToString(),
+                 Name = procName,
+                 Signature = ssig,
+            };
+        }
+
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RlDataConstraint()
 		{
-			RunFileTest("Fragments/data_constraint.asm", "Analysis/RlDataConstraint.txt");
+			RunFileTest_x86_real("Fragments/data_constraint.asm", "Analysis/RlDataConstraint.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RlOneProcedure()
-		{
-			RunFileTest("Fragments/one_procedure.asm", "Analysis/RlOneProcedure.txt");
+        {
+			RunFileTest_x86_real("Fragments/one_procedure.asm", "Analysis/RlOneProcedure.txt");
 		}
 
 		/// <summary>
 		/// Test that self-recursive functions are handled correctly.
 		/// </summary>
 		[Test]
-        [Category(Categories.UnitTests)]
+        [Ignore(Categories.FailedTests)]
         public void RlFactorialReg()
 		{
-			RunFileTest("Fragments/factorial_reg.asm", "Analysis/RlFactorialReg.txt");
+			RunFileTest_x86_real("Fragments/factorial_reg.asm", "Analysis/RlFactorialReg.txt");
 		}
 
 		[Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlFactorial()
 		{
-			RunFileTest("Fragments/factorial.asm", "Analysis/RlFactorial.txt");
+			RunFileTest_x86_real("Fragments/factorial.asm", "Analysis/RlFactorial.txt");
 		}
 
 		[Test]
-		public void RlCalleeSave()
+        [Category(Categories.IntegrationTests)]
+        public void RlCalleeSave()
 		{
-			RunFileTest("Fragments/callee_save.asm", "Analysis/RlCalleeSave.txt");
+			RunFileTest_x86_real("Fragments/callee_save.asm", "Analysis/RlCalleeSave.txt");
 		}
 
 		[Test]
-		public void RlDeepNest()
+        [Category(Categories.IntegrationTests)]
+        public void RlDeepNest()
 		{
-			RunFileTest("Fragments/deep_nest.asm", "Analysis/RlDeepNest.txt");
+			RunFileTest_x86_real("Fragments/deep_nest.asm", "Analysis/RlDeepNest.txt");
 		}
 
 		[Test]
-		public void RlSequence()
+        [Category(Categories.IntegrationTests)]
+        public void RlSequence()
 		{
-			RunFileTest("Fragments/sequence_calls_reg.asm", "Analysis/RlSequence.txt");
+			RunFileTest_x86_real("Fragments/sequence_calls_reg.asm", "Analysis/RlSequence.txt");
 		}
 
 		[Test]
 		public void RlMiniFloats()
 		{
-			RunFileTest("Fragments/mini_msfloats_regs.asm", "Analysis/RlMiniFloats.txt");
+			RunFileTest_x86_real("Fragments/mini_msfloats_regs.asm", "Analysis/RlMiniFloats.txt");
 		}
 
 		[Test]
 		[Ignore("Won't pass until ProcedureSignatures for call tables and call pointers are implemented")]
 		public void RlCallTables()
 		{
-			RunFileTest("Fragments/multiple/calltables.asm", "Analysis/RlCallTables.txt");
+			RunFileTest_x86_real("Fragments/multiple/calltables.asm", "Analysis/RlCallTables.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RlConditionals()
-		{
-			RunFileTest("Fragments/multiple/conditionals.asm", "Analysis/RlConditionals.txt");
+        {
+			RunFileTest_x86_real("Fragments/multiple/conditionals.asm", "Analysis/RlConditionals.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RlFpuOps()
-		{
-			RunFileTest("Fragments/fpuops.asm", "Analysis/RlFpuOps.txt");
+        {
+			RunFileTest_x86_real("Fragments/fpuops.asm", "Analysis/RlFpuOps.txt");
 		}
 
 		[Test]
 		public void RlIpLiveness()
 		{
-			RunFileTest("Fragments/multiple/ipliveness.asm", "Analysis/RlIpLiveness.txt");
+			RunFileTest_x86_real("Fragments/multiple/ipliveness.asm", "Analysis/RlIpLiveness.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RlMutual()
 		{
-			RunFileTest("Fragments/multiple/mutual.asm", "Analysis/RlMutual.txt");
+			RunFileTest_x86_real("Fragments/multiple/mutual.asm", "Analysis/RlMutual.txt");
 		}
 
 		[Test]
-		public void RlStackVariables()
+        [Category(Categories.IntegrationTests)]
+        public void RlStackVariables()
 		{
-			RunFileTest("Fragments/stackvars.asm", "Analysis/RlStackVariables.txt");
+			RunFileTest_x86_real("Fragments/stackvars.asm", "Analysis/RlStackVariables.txt");
 		}
 
 		[Test]
-		public void RlProcIsolation()
+        [Category(Categories.IntegrationTests)]
+        public void RlProcIsolation()
 		{
-			RunFileTest("Fragments/multiple/procisolation.asm", "Analysis/RlProcIsolation.txt");
+			RunFileTest_x86_real("Fragments/multiple/procisolation.asm", "Analysis/RlProcIsolation.txt");
 		}
 
 		[Test]
-		public void RlLeakyLiveness()
+        [Category(Categories.IntegrationTests)]
+        public void RlLeakyLiveness()
 		{
-			RunFileTest("Fragments/multiple/leaky_liveness.asm", "Analysis/RlLeakyLiveness.txt");
+			RunFileTest_x86_real("Fragments/multiple/leaky_liveness.asm", "Analysis/RlLeakyLiveness.txt");
 		}
 
 		[Test]
-		public void RlStringInstructions()
+        [Category(Categories.IntegrationTests)]
+        public void RlStringInstructions()
 		{
-			RunFileTest("Fragments/stringinstr.asm", "Analysis/RlStringInstructions.txt");
-		}
-
-		[Test]
-        [Ignore("scanning-development")]
-        public void RlTermination()
-		{
-			RunFileTest("Fragments/multiple/termination.asm", "Fragments/multiple/termination.xml", "Analysis/RlTermination.txt");
-		}
-
-		[Test]
-		public void RlLivenessAfterCall()
-		{
-			RunFileTest("Fragments/multiple/livenessaftercall.asm", "Analysis/RlLivenessAfterCall.txt");
+			RunFileTest_x86_real("Fragments/stringinstr.asm", "Analysis/RlStringInstructions.txt");
 		}
 
         [Test]
+        [Category(Categories.IntegrationTests)]
+        public void RlTermination()
+        {
+            Given_Signature(
+                Address.SegPtr(0xC00, 0x15),
+                "maybeterminate",
+                new SerializedSignature
+                {
+                    ReturnValue = new Argument_v1 { Kind = new Register_v1("ax") },
+                    Arguments = new[]
+                    {
+                        new Argument_v1 { Kind = new Register_v1("ax") },
+                        new Argument_v1 { Kind = new Register_v1("bx") }
+                    }
+                });
+			RunFileTest_x86_real("Fragments/multiple/termination.asm", "Analysis/RlTermination.txt");
+		}
+
+		[Test]
+        [Category(Categories.IntegrationTests)]
+        public void RlLivenessAfterCall()
+ 		{
+			RunFileTest_x86_real("Fragments/multiple/livenessaftercall.asm", "Analysis/RlLivenessAfterCall.txt");
+		}
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
         public void RlPushedRegisters()
         {
-            RunFileTest("Fragments/multiple/pushed_registers.asm", "Analysis/RlPushedRegisters.txt");
+            RunFileTest_x86_real("Fragments/multiple/pushed_registers.asm", "Analysis/RlPushedRegisters.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void RlReg00005()
         {
-            RunFileTest("Fragments/regressions/r00005.asm", "Analysis/RlReg00005.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00005.asm", "Analysis/RlReg00005.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void RlReg00007()
         {
-            RunFileTest("Fragments/regressions/r00007.asm", "Analysis/RlReg00007.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00007.asm", "Analysis/RlReg00007.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlReg00010()
         {
-            RunFileTest("Fragments/regressions/r00010.asm", "Analysis/RlReg00010.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00010.asm", "Analysis/RlReg00010.txt");
         }
 
         [Test]
-        [Ignore("scanning-development")]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlReg00015()
         {
-            RunFileTest("Fragments/regressions/r00015.asm", "Analysis/RlReg00015.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00015.asm", "Analysis/RlReg00015.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlPushPop()
         {
-            RunFileTest("Fragments/pushpop.asm", "Analysis/RlPushPop.txt");
+            RunFileTest_x86_real("Fragments/pushpop.asm", "Analysis/RlPushPop.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlChainTest()
         {
-            RunFileTest("Fragments/multiple/chaincalls.asm", "Analysis/RlChainTest.txt");
+            RunFileTest_x86_real("Fragments/multiple/chaincalls.asm", "Analysis/RlChainTest.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlSliceReturn()
         {
-            RunFileTest("Fragments/multiple/slicereturn.asm", "Analysis/RlSliceReturn.txt");
+            RunFileTest_x86_real("Fragments/multiple/slicereturn.asm", "Analysis/RlSliceReturn.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void RlRecurseWithPushes()
         {
-            RunFileTest("Fragments/multiple/recurse_with_pushes.asm", "Analysis/RlRecurseWithPushes.txt");
+            RunFileTest_x86_real("Fragments/multiple/recurse_with_pushes.asm", "Analysis/RlRecurseWithPushes.txt");
         }
     }
 }

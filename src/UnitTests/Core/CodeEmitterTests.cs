@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,13 +65,25 @@ namespace Reko.UnitTests.Core
         }
 
         [Test]
+        public void AddPointer()
+        {
+            var ptr = new Pointer(new StructureType("tmp", 16), 32);
+            var id = new Identifier("id", ptr, null);
+            var emitter = new CodeEmitterImpl();
+            var add = emitter.IAdd(id, 3);
+            Assert.AreEqual(PrimitiveType.Word32, add.DataType);
+            Assert.AreEqual(PrimitiveType.Word32, add.Right.DataType);
+            Assert.AreEqual("id + 0x00000003", add.ToString());
+        }
+
+
+        [Test]
         public void Cond()
         {
             var emitter = new CodeEmitterImpl();
             var cond = emitter.Cond(new Identifier("id", PrimitiveType.Word32, null));
             Assert.AreEqual("cond(id)", cond.ToString());
         }
-
 
         private class CodeEmitterImpl : CodeEmitter
         {
@@ -86,11 +98,6 @@ namespace Reko.UnitTests.Core
             public override Frame Frame
             {
                 get { return frame;  }
-            }
-
-            public override Identifier Register(int i)
-            {
-                throw new NotImplementedException();
             }
         }
 	}

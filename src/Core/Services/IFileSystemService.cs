@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,17 +33,22 @@ namespace Reko.Core.Services
     {
         Stream CreateFileStream(string filename, FileMode mode, FileAccess access);
         Stream CreateFileStream(string filename, FileMode mode, FileAccess access, FileShare share);
+        TextWriter CreateStreamWriter(string filename, bool append, Encoding enc);
+        TextReader CreateStreamReader(string fileLocation, Encoding enc);
+
         XmlWriter CreateXmlWriter(string filename);
+        void CreateDirectory(string dirPath);
         string GetCurrentDirectory();
         bool FileExists(string filePath);
         bool IsPathRooted(string path);
         string MakeRelativePath(string fromPath, string toPath);
         byte[] ReadAllBytes(string filePath);
+        void WriteAllBytes(string path, byte[] bytes);
     }
 
     public class FileSystemServiceImpl : IFileSystemService
     {
-        private char sepChar;
+        private readonly char sepChar;
 
         public FileSystemServiceImpl()
         {
@@ -70,12 +75,27 @@ namespace Reko.Core.Services
             return new FileStream(filename, mode, access, share);
         }
 
+        public TextWriter CreateStreamWriter(string filename, bool append, Encoding enc)
+        {
+            return new StreamWriter(filename, append, enc);
+        }
+
+        public TextReader CreateStreamReader(string filename, Encoding enc)
+        {
+            return new StreamReader(filename, enc);
+        }
+
         public XmlWriter CreateXmlWriter(string filename)
         {
             return new XmlTextWriter(filename, new UTF8Encoding(false))
             {
                 Formatting = Formatting.Indented
             };
+        }
+
+        public void CreateDirectory(string dirPath)
+        {
+            Directory.CreateDirectory(dirPath);
         }
 
         public string GetCurrentDirectory()
@@ -122,6 +142,11 @@ namespace Reko.Core.Services
         public byte[] ReadAllBytes(string filePath)
         {
             return File.ReadAllBytes(filePath);
+        }
+
+        public void WriteAllBytes(string filePath, byte[] bytes)
+        {
+            File.WriteAllBytes(filePath, bytes);
         }
     }
 }

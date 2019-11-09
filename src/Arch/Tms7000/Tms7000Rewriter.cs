@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,13 +34,13 @@ namespace Reko.Arch.Tms7000
 {
     public class Tms7000Rewriter : IEnumerable<RtlInstructionCluster>
     {
-        private Tms7000Architecture arch;
-        private EndianImageReader rdr;
-        private IRewriterHost host;
-        private IStorageBinder binder;
-        private IEnumerator<Tms7000Instruction> dasm;
+        private readonly Tms7000Architecture arch;
+        private readonly EndianImageReader rdr;
+        private readonly IRewriterHost host;
+        private readonly IStorageBinder binder;
+        private readonly IEnumerator<Tms7000Instruction> dasm;
         private Tms7000Instruction instr;
-        private RtlClass rtlc;
+        private InstrClass rtlc;
         private RtlEmitter m;
 
         public Tms7000Rewriter(Tms7000Architecture arch, EndianImageReader rdr, Tms7000State state, IStorageBinder binder, IRewriterHost host)
@@ -57,94 +57,94 @@ namespace Reko.Arch.Tms7000
             while (dasm.MoveNext())
             {
                 this.instr = dasm.Current;
-                this.rtlc = RtlClass.Linear;
+                this.rtlc = InstrClass.Linear;
                 var rtls = new List<RtlInstruction>();
                 this.m = new RtlEmitter(rtls);
-                switch (instr.Opcode)
+                switch (instr.Mnemonic)
                 {
                 default:
                     host.Error(instr.Address, "Rewriting x86 opcode '{0}' is not supported yet.", instr);
-                    rtlc = RtlClass.Invalid;
+                    rtlc = InstrClass.Invalid;
                     break;
-                case Opcode.adc: RewriteAdcSbb(m.IAdd); break;
-                case Opcode.add: RewriteArithmetic(m.IAdd); break;
-                case Opcode.and: RewriteLogical(m.And); break;
-                case Opcode.andp: RewriteLogical(m.And); break;
-                case Opcode.btjo: RewriteBtj(a => a); break;
-                case Opcode.btjop: RewriteBtj(a => a); break;
-                case Opcode.btjz: RewriteBtj(m.Comp); break;
-                case Opcode.btjzp: RewriteBtj(m.Comp); break;
-                case Opcode.br: RewriteBr(); break;
-                case Opcode.call: RewriteCall(); break;
-                case Opcode.clr: RewriteClr(); break;
-                case Opcode.tsta: RewriteTst(arch.a); break;
-                case Opcode.dac: RewriteDacDsb("__dac"); break;
-                case Opcode.dec: RewriteIncDec(m.ISub); break;
-                case Opcode.decd: RewriteIncdDecd(m.ISub); break;
-                case Opcode.dint: RewriteDint(); break;
-                case Opcode.djnz: RewriteDjnz(); break;
-                case Opcode.dsb: RewriteDacDsb("__dsb"); break;
-                case Opcode.eint: RewriteEint(); break;
-                case Opcode.idle: RewriteIdle(); break;
-                case Opcode.inc: RewriteIncDec(m.IAdd); break;
-                case Opcode.inv: RewriteInv(); break;
-                case Opcode.jmp: RewriteJmp(); break;
-                case Opcode.jeq: RewriteJcc(ConditionCode.EQ, FlagM.ZF); break;
-                case Opcode.jge: RewriteJcc(ConditionCode.GE, FlagM.NZ); break;
-                case Opcode.jgt: RewriteJcc(ConditionCode.GT, FlagM.NZ); break;
-                case Opcode.jhs: RewriteJcc(ConditionCode.UGE, FlagM.CF); break;
-                case Opcode.jl: RewriteJcc(ConditionCode.ULT, FlagM.CF); break;
-                case Opcode.jne: RewriteJcc(ConditionCode.EQ, FlagM.ZF); break;
-                case Opcode.lda: RewriteLda(); break;
-                case Opcode.ldsp: RewriteLdsp(); break;
-                case Opcode.mov: RewriteMov(); break;
-                case Opcode.movd: RewriteMovd(); break;
-                case Opcode.movp: RewriteMov(); break;
-                case Opcode.mpy: RewriteMpy(); break; 
-                case Opcode.nop: m.Nop(); break;
-                case Opcode.or: RewriteLogical(m.Or); break;
-                case Opcode.orp: RewriteLogical(m.Or); break;
-                case Opcode.pop: RewritePop(); break;
-                case Opcode.push: RewritePush(); break;
-                case Opcode.reti: RewriteReti(); break;
-                case Opcode.rets: RewriteRets(); break;
-                case Opcode.rl: RewriteRotate(PseudoProcedure.Rol); break;
-                case Opcode.rlc: RewriteRotateC(PseudoProcedure.RolC); break;
-                case Opcode.rr: RewriteRotate(PseudoProcedure.Ror); break;
-                case Opcode.rrc: RewriteRotateC(PseudoProcedure.RorC); break;
-                case Opcode.sbb: RewriteAdcSbb(m.ISub); break;
-                case Opcode.setc: RewriteSetc(); break;
-                case Opcode.sta: RewriteSta(); break;
-                case Opcode.stsp: RewriteStsp(); break;
-                case Opcode.sub: RewriteArithmetic(m.ISub); break;
-                case Opcode.trap_0: RewriteTrap(0); break;
-                case Opcode.trap_1: RewriteTrap(1); break;
-                case Opcode.trap_2: RewriteTrap(2); break;
-                case Opcode.trap_3: RewriteTrap(3); break;
-                case Opcode.trap_4: RewriteTrap(4); break;
-                case Opcode.trap_5: RewriteTrap(5); break;
-                case Opcode.trap_6: RewriteTrap(6); break;
-                case Opcode.trap_7: RewriteTrap(7); break;
-                case Opcode.trap_8: RewriteTrap(8); break;
-                case Opcode.trap_9: RewriteTrap(9); break;
-                case Opcode.trap_10: RewriteTrap(10); break;
-                case Opcode.trap_11: RewriteTrap(11); break;
-                case Opcode.trap_12: RewriteTrap(12); break;
-                case Opcode.trap_13: RewriteTrap(13); break;
-                case Opcode.trap_14: RewriteTrap(14); break;
-                case Opcode.trap_15: RewriteTrap(15); break;
-                case Opcode.trap_16: RewriteTrap(16); break;
-                case Opcode.trap_17: RewriteTrap(17); break;
-                case Opcode.trap_18: RewriteTrap(18); break;
-                case Opcode.trap_19: RewriteTrap(19); break;
-                case Opcode.trap_20: RewriteTrap(20); break;
-                case Opcode.trap_21: RewriteTrap(21); break;
-                case Opcode.trap_22: RewriteTrap(22); break;
-                case Opcode.trap_23: RewriteTrap(23); break;
-                case Opcode.tstb: RewriteTst(arch.b); break;
-                case Opcode.xchb: RewriteXchb(); break;
-                case Opcode.xor: RewriteLogical(m.Xor); break;
-                case Opcode.xorp: RewriteLogical(m.Xor); break;
+                case Mnemonic.adc: RewriteAdcSbb(m.IAdd); break;
+                case Mnemonic.add: RewriteArithmetic(m.IAdd); break;
+                case Mnemonic.and: RewriteLogical(m.And); break;
+                case Mnemonic.andp: RewriteLogical(m.And); break;
+                case Mnemonic.btjo: RewriteBtj(a => a); break;
+                case Mnemonic.btjop: RewriteBtj(a => a); break;
+                case Mnemonic.btjz: RewriteBtj(m.Comp); break;
+                case Mnemonic.btjzp: RewriteBtj(m.Comp); break;
+                case Mnemonic.br: RewriteBr(); break;
+                case Mnemonic.call: RewriteCall(); break;
+                case Mnemonic.clr: RewriteClr(); break;
+                case Mnemonic.tsta: RewriteTst(arch.a); break;
+                case Mnemonic.dac: RewriteDacDsb("__dac"); break;
+                case Mnemonic.dec: RewriteIncDec(m.ISub); break;
+                case Mnemonic.decd: RewriteIncdDecd(m.ISub); break;
+                case Mnemonic.dint: RewriteDint(); break;
+                case Mnemonic.djnz: RewriteDjnz(); break;
+                case Mnemonic.dsb: RewriteDacDsb("__dsb"); break;
+                case Mnemonic.eint: RewriteEint(); break;
+                case Mnemonic.idle: RewriteIdle(); break;
+                case Mnemonic.inc: RewriteIncDec(m.IAdd); break;
+                case Mnemonic.inv: RewriteInv(); break;
+                case Mnemonic.jmp: RewriteJmp(); break;
+                case Mnemonic.jeq: RewriteJcc(ConditionCode.EQ, FlagM.ZF); break;
+                case Mnemonic.jge: RewriteJcc(ConditionCode.GE, FlagM.NZ); break;
+                case Mnemonic.jgt: RewriteJcc(ConditionCode.GT, FlagM.NZ); break;
+                case Mnemonic.jhs: RewriteJcc(ConditionCode.UGE, FlagM.CF); break;
+                case Mnemonic.jl: RewriteJcc(ConditionCode.ULT, FlagM.CF); break;
+                case Mnemonic.jne: RewriteJcc(ConditionCode.EQ, FlagM.ZF); break;
+                case Mnemonic.lda: RewriteLda(); break;
+                case Mnemonic.ldsp: RewriteLdsp(); break;
+                case Mnemonic.mov: RewriteMov(); break;
+                case Mnemonic.movd: RewriteMovd(); break;
+                case Mnemonic.movp: RewriteMov(); break;
+                case Mnemonic.mpy: RewriteMpy(); break; 
+                case Mnemonic.nop: m.Nop(); break;
+                case Mnemonic.or: RewriteLogical(m.Or); break;
+                case Mnemonic.orp: RewriteLogical(m.Or); break;
+                case Mnemonic.pop: RewritePop(); break;
+                case Mnemonic.push: RewritePush(); break;
+                case Mnemonic.reti: RewriteReti(); break;
+                case Mnemonic.rets: RewriteRets(); break;
+                case Mnemonic.rl: RewriteRotate(PseudoProcedure.Rol); break;
+                case Mnemonic.rlc: RewriteRotateC(PseudoProcedure.RolC); break;
+                case Mnemonic.rr: RewriteRotate(PseudoProcedure.Ror); break;
+                case Mnemonic.rrc: RewriteRotateC(PseudoProcedure.RorC); break;
+                case Mnemonic.sbb: RewriteAdcSbb(m.ISub); break;
+                case Mnemonic.setc: RewriteSetc(); break;
+                case Mnemonic.sta: RewriteSta(); break;
+                case Mnemonic.stsp: RewriteStsp(); break;
+                case Mnemonic.sub: RewriteArithmetic(m.ISub); break;
+                case Mnemonic.trap_0: RewriteTrap(0); break;
+                case Mnemonic.trap_1: RewriteTrap(1); break;
+                case Mnemonic.trap_2: RewriteTrap(2); break;
+                case Mnemonic.trap_3: RewriteTrap(3); break;
+                case Mnemonic.trap_4: RewriteTrap(4); break;
+                case Mnemonic.trap_5: RewriteTrap(5); break;
+                case Mnemonic.trap_6: RewriteTrap(6); break;
+                case Mnemonic.trap_7: RewriteTrap(7); break;
+                case Mnemonic.trap_8: RewriteTrap(8); break;
+                case Mnemonic.trap_9: RewriteTrap(9); break;
+                case Mnemonic.trap_10: RewriteTrap(10); break;
+                case Mnemonic.trap_11: RewriteTrap(11); break;
+                case Mnemonic.trap_12: RewriteTrap(12); break;
+                case Mnemonic.trap_13: RewriteTrap(13); break;
+                case Mnemonic.trap_14: RewriteTrap(14); break;
+                case Mnemonic.trap_15: RewriteTrap(15); break;
+                case Mnemonic.trap_16: RewriteTrap(16); break;
+                case Mnemonic.trap_17: RewriteTrap(17); break;
+                case Mnemonic.trap_18: RewriteTrap(18); break;
+                case Mnemonic.trap_19: RewriteTrap(19); break;
+                case Mnemonic.trap_20: RewriteTrap(20); break;
+                case Mnemonic.trap_21: RewriteTrap(21); break;
+                case Mnemonic.trap_22: RewriteTrap(22); break;
+                case Mnemonic.trap_23: RewriteTrap(23); break;
+                case Mnemonic.tstb: RewriteTst(arch.b); break;
+                case Mnemonic.xchb: RewriteXchb(); break;
+                case Mnemonic.xor: RewriteLogical(m.Xor); break;
+                case Mnemonic.xorp: RewriteLogical(m.Xor); break;
                 }
                 yield return new RtlInstructionCluster(instr.Address, instr.Length, rtls.ToArray())
                 {
@@ -196,32 +196,32 @@ namespace Reko.Arch.Tms7000
         private Identifier RegisterPair(RegisterStorage reg)
         {
             return binder.EnsureSequence(
-                        reg,
-                        arch.GpRegs[reg.Number - 1],
-                        PrimitiveType.Word16);
+                        PrimitiveType.Word16,
+                reg,
+                arch.GpRegs[reg.Number - 1]);
         }
 
         private void CNZ(Expression e)
         {
-            var cnz = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CNZ));
+            var cnz = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CNZ));
             m.Assign(cnz, m.Cond(e));
         }
 
         private void NZ0(Expression e)
         {
-            var nz = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.NZ));
+            var nz = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NZ));
             m.Assign(nz, m.Cond(e));
-            var c = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF));
+            var c = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(c, Constant.False());
         }
 
         public void RewriteAdcSbb(Func<Expression, Expression, Expression> opr)
         {
-            var dst = Operand(instr.op1);
-            var src = Operand(instr.op2);
+            var dst = Operand(instr.Operands[0]);
+            var src = Operand(instr.Operands[1]);
             // We do not take the trouble of widening the CF to the word size
             // to simplify code analysis in later stages. 
-            var c = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF));
+            var c = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(
                 dst,
                 opr(
@@ -232,47 +232,47 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteArithmetic(Func<Expression, Expression, Expression> fn)
         {
-            var src = Operand(instr.op1);
-            var dst = Operand(instr.op2);
+            var src = Operand(instr.Operands[0]);
+            var dst = Operand(instr.Operands[1]);
             m.Assign(dst, fn(dst, src));
             CNZ(dst);
         }
 
         private void RewriteBtj(Func<Expression, Expression> fn)
         {
-            this.rtlc = RtlClass.ConditionalTransfer;
-            var opLeft = Operand(instr.op2);
-            var opRight = Operand(instr.op1);
+            this.rtlc = InstrClass.ConditionalTransfer;
+            var opLeft = Operand(instr.Operands[1]);
+            var opRight = Operand(instr.Operands[0]);
             NZ0(m.And(opLeft, fn(opRight)));
-            var z = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.ZF));
+            var z = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF));
             m.Branch(
                 m.Test(ConditionCode.NE, z),
-                ((AddressOperand)instr.op3).Address,
-                RtlClass.ConditionalTransfer);
+                ((AddressOperand)instr.Operands[2]).Address,
+                InstrClass.ConditionalTransfer);
         }
 
         private void RewriteBr()
         {
-            rtlc = RtlClass.Transfer;
-            var dst = Operand(instr.op1);
+            rtlc = InstrClass.Transfer;
+            var dst = Operand(instr.Operands[0]);
             var ea = ((MemoryAccess)dst).EffectiveAddress;
             m.Goto(ea);
         }
 
         private void RewriteCall()
         {
-            rtlc = RtlClass.Transfer | RtlClass.Call;
-            var dst = Operand(instr.op1);
+            rtlc = InstrClass.Transfer | InstrClass.Call;
+            var dst = Operand(instr.Operands[0]);
             var ea = ((MemoryAccess)dst).EffectiveAddress;
             m.Call(ea, 2);
         }
 
         private void RewriteDacDsb(string intrinsicName)
         {
-            var opLeft = Operand(instr.op1);
-            var opRight = Operand(instr.op1);
+            var opLeft = Operand(instr.Operands[0]);
+            var opRight = Operand(instr.Operands[0]);
 
-            var c = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF));
+            var c = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(c, host.PseudoProcedure(
                 intrinsicName,
                 PrimitiveType.Bool,
@@ -285,34 +285,34 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteClr()
         {
-            var op = Operand(instr.op1);
+            var op = Operand(instr.Operands[0]);
             m.Assign(op, Constant.Zero(op.DataType));
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF)), Constant.False());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.NF)), Constant.False());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.ZF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.True());
         }
 
         private void RewriteDint()
         {
             m.SideEffect(host.PseudoProcedure("__dint", VoidType.Instance));
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF)), Constant.False());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.NF)), Constant.False());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.ZF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.False());
         }
 
 
         private void RewriteEint()
         {
             m.SideEffect(host.PseudoProcedure("__eint", VoidType.Instance));
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF)), Constant.True());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.NF)), Constant.True());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.ZF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.True());
         }
 
 
         private void RewriteIncDec(Func<Expression, Expression, Expression> fn)
         {
-            var reg = Operand(instr.op1);
+            var reg = Operand(instr.Operands[0]);
             m.Assign(reg, fn(reg, Constant.Word(reg.DataType.BitSize, 1)));
             CNZ(reg);
         }
@@ -320,19 +320,19 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteIncdDecd(Func<Expression, Expression, Expression> fn)
         {
-            var hireg = ((RegisterOperand)instr.op1).Register;
+            var hireg = ((RegisterOperand)instr.Operands[0]).Register;
             var loreg = arch.GpRegs[(hireg.Number - 1 & 0xFF)];
-            var reg = binder.EnsureSequence(hireg, loreg, PrimitiveType.Word16);
+            var reg = binder.EnsureSequence(PrimitiveType.Word16, hireg, loreg);
             m.Assign(reg, fn(reg, Constant.Word(reg.DataType.BitSize, 1)));
             CNZ(reg);
         }
 
         private void RewriteDjnz()
         {
-            rtlc = RtlClass.ConditionalTransfer;
-            var reg = Operand(instr.op1);
+            rtlc = InstrClass.ConditionalTransfer;
+            var reg = Operand(instr.Operands[0]);
             m.Assign(reg, m.ISub(reg, 1));
-            m.Branch(m.Ne0(reg), ((AddressOperand)instr.op2).Address, rtlc);
+            m.Branch(m.Ne0(reg), ((AddressOperand)instr.Operands[1]).Address, rtlc);
         }
 
         private void RewriteIdle()
@@ -342,29 +342,29 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteInv()
         {
-            var op = Operand(instr.op1);
+            var op = Operand(instr.Operands[0]);
             m.Assign(op, m.Comp(op));
             NZ0(op);
         }
 
         private void RewriteJcc(ConditionCode cc, FlagM grf)
         {
-            rtlc = RtlClass.ConditionalTransfer;
-            var dst = ((AddressOperand)instr.op1).Address;
-            var flags = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)grf));
+            rtlc = InstrClass.ConditionalTransfer;
+            var dst = ((AddressOperand)instr.Operands[0]).Address;
+            var flags = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)grf));
             m.Branch(m.Test(cc, flags), dst, rtlc);
         }
 
         private void RewriteJmp()
         {
-            rtlc = RtlClass.Transfer;
-            m.Goto(Operand(instr.op1));
+            rtlc = InstrClass.Transfer;
+            m.Goto(Operand(instr.Operands[0]));
         }
 
         private void RewriteLda()
         {
             var a = binder.EnsureRegister(arch.a);
-            var src = Operand(instr.op1);
+            var src = Operand(instr.Operands[0]);
             m.Assign(a, src);
             NZ0(a);
         }
@@ -378,24 +378,24 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteLogical(Func<Expression, Expression, Expression> fn)
         {
-            var src = Operand(instr.op1);
-            var dst = Operand(instr.op2);
+            var src = Operand(instr.Operands[0]);
+            var dst = Operand(instr.Operands[1]);
             m.Assign(dst, fn(dst, src));
             NZ0(dst);
         }
 
         private void RewriteMov()
         {
-            var src = Operand(instr.op1);
-            var dst = Operand(instr.op2);
+            var src = Operand(instr.Operands[0]);
+            var dst = Operand(instr.Operands[1]);
             m.Assign(dst, src);
             NZ0(dst);
         }
 
         private void RewriteMovd()
         {
-            var dst = RegisterPair(((RegisterOperand)instr.op2).Register);
-            var src = Operand(instr.op1);
+            var dst = RegisterPair(((RegisterOperand)instr.Operands[1]).Register);
+            var src = Operand(instr.Operands[0]);
             if (src is MemoryAccess mem)
             {
                 src = mem.EffectiveAddress;
@@ -406,9 +406,9 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteMpy()
         {
-            var dst = binder.EnsureSequence(arch.a, arch.b, PrimitiveType.Word16);
-            var left = Operand(instr.op2);
-            var right = Operand(instr.op1);
+            var dst = binder.EnsureSequence(PrimitiveType.Word16, arch.a, arch.b);
+            var left = Operand(instr.Operands[1]);
+            var right = Operand(instr.Operands[0]);
             m.Assign(dst, m.IMul(left, right));
             NZ0(dst);
         }
@@ -416,10 +416,10 @@ namespace Reko.Arch.Tms7000
         private void RewritePop()
         {
             var sp = binder.EnsureRegister(arch.sp);
-            var dst = Operand(instr.op1);
+            var dst = Operand(instr.Operands[0]);
             m.Assign(dst, m.Mem8(m.Cast(PrimitiveType.Ptr16, sp)));
             m.Assign(sp, m.ISub(sp, 1));
-            if (!(instr.op1 is RegisterOperand reg &&
+            if (!(instr.Operands[0] is RegisterOperand reg &&
                 reg.Register == arch.st))
             {
                 NZ0(dst);
@@ -429,27 +429,27 @@ namespace Reko.Arch.Tms7000
         private void RewritePush()
         {
             var sp = binder.EnsureRegister(arch.sp);
-            var src = Operand(instr.op1);
+            var src = Operand(instr.Operands[0]);
             m.Assign(sp, m.IAdd(sp, 1));
             m.Assign(m.Mem8(m.Cast(PrimitiveType.Ptr16, sp)), src);
         }
 
         private void RewriteReti()
         {
-            rtlc = RtlClass.Transfer;
+            rtlc = InstrClass.Transfer;
             m.Return(2, 1);
         }
 
         private void RewriteRets()
         {
-            rtlc = RtlClass.Transfer;
+            rtlc = InstrClass.Transfer;
             m.Return(2, 0);
         }
 
         private void RewriteRotate(string rot)
         {
-            var op = Operand(instr.op1);
-            var C = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF));
+            var op = Operand(instr.Operands[0]);
+            var C = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(
                 op,
                 host.PseudoProcedure(rot, op.DataType, op));
@@ -458,8 +458,8 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteRotateC(string rot)
         {
-            var op = Operand(instr.op1);
-            var C = binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF));
+            var op = Operand(instr.Operands[0]);
+            var C = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(
                 op,
                 host.PseudoProcedure(rot, op.DataType, op, C));
@@ -468,15 +468,15 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteSetc()
         {
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.CF)), Constant.True());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.NF)), Constant.False());
-            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup((uint)FlagM.ZF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.True());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.False());
+            m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.True());
         }
 
         private void RewriteSta()
         {
             var a = binder.EnsureRegister(arch.a);
-            var dst = Operand(instr.op1);
+            var dst = Operand(instr.Operands[0]);
             m.Assign(dst, a);
         }
 
@@ -494,7 +494,7 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteSwap()
         {
-            var op = Operand(instr.op1);
+            var op = Operand(instr.Operands[0]);
             m.Assign(op, host.PseudoProcedure("__swap_nybbles", op.DataType, op));
             CNZ(op);
         }
@@ -509,7 +509,7 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteXchb()
         {
-            var dst = Operand(instr.op1);
+            var dst = Operand(instr.Operands[0]);
             var src = binder.EnsureRegister(arch.b);
             var tmp = binder.CreateTemporary(dst.DataType);
             m.Assign(tmp, dst);

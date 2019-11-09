@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,9 +21,7 @@
 using Reko.Core;
 using Reko.Core.Code;
 using Reko.Core.Expressions;
-using Reko.Core.Lib;
 using Reko.Core.Output;
-using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -44,19 +42,19 @@ namespace Reko.Analysis
             public List<SsaIdentifier> LiveOut { get; private set; }
         }
 
-		private Procedure proc;
-		private SsaIdentifierCollection ssaIds;
+		private readonly SsaState ssa;
+		private readonly SsaIdentifierCollection ssaIds;
         private HashSet<Block> visited;
 		private Dictionary<Statement, List<Identifier>> defined;		// maps statement to -> List of identifiers
 		private InterferenceGraph interference;
         private Dictionary<Block, Record> records;
 
-		public SsaLivenessAnalysis(Procedure proc, SsaIdentifierCollection ssaIds)
+		public SsaLivenessAnalysis(SsaState ssa)
 		{
-			this.proc = proc;
-			this.ssaIds = ssaIds;
+			this.ssa = ssa;
+			this.ssaIds = ssa.Identifiers;
             this.visited = new HashSet<Block>();
-            BuildRecords(proc.ControlGraph.Blocks);
+            BuildRecords(ssa.Procedure.ControlGraph.Blocks);
 			BuildDefinedMap(ssaIds);
 			BuildInterferenceGraph(ssaIds);
 		}
@@ -77,8 +75,7 @@ namespace Reko.Analysis
 			{
 				if (ssa.Uses.Count > 0 && ssa.DefStatement != null)
 				{
-					List<Identifier> al;
-                    if (!defined.TryGetValue(ssa.DefStatement, out al))
+                    if (!defined.TryGetValue(ssa.DefStatement, out List<Identifier> al))
 					{
 						al = new List<Identifier>();
 						defined.Add(ssa.DefStatement, al);
@@ -99,8 +96,7 @@ namespace Reko.Analysis
 					PhiFunction phi = GetPhiFunction(s);
 					if (phi != null)
 					{
-						int i = Array.IndexOf(phi.Arguments, v.Identifier);
-						Block p = s.Block.Pred[i];
+                        var p = phi.Arguments.First(e => e.Value == v.Identifier).Block;
 						LiveOutAtBlock(p, v);
 					}
 					else
@@ -213,7 +209,7 @@ namespace Reko.Analysis
 
         private class SsaBlockDecorator : BlockDecorator
         {
-            private Dictionary<Block, Record> records;
+            private readonly Dictionary<Block, Record> records;
 
             public SsaBlockDecorator(Dictionary<Block, Record> records)
             {
@@ -251,10 +247,9 @@ namespace Reko.Analysis
 
 		public PhiFunction GetPhiFunction(Statement stm)
 		{
-			PhiAssignment ass = stm.Instruction as PhiAssignment;
-			if (ass == null)
-				return null;
-			return ass.Src;
+            return (stm.Instruction is PhiAssignment ass)
+                ? ass.Src
+                : null;
 		}
 
 		private void Set(List<SsaIdentifier> s, SsaIdentifier v)
@@ -266,13 +261,13 @@ namespace Reko.Analysis
 
 	public class SsaLivenessAnalysis2 : InstructionVisitorBase
 	{
-		private SsaIdentifierCollection ssa;
-		private Dictionary<Block,Block> visitedBlocks;
-		private InterferenceGraph interference;
+		private readonly SsaIdentifierCollection ssa;
+		private readonly Dictionary<Block,Block> visitedBlocks;
+		private readonly InterferenceGraph interference;
 
-		public SsaLivenessAnalysis2(Procedure proc, SsaIdentifierCollection ssa)
+		public SsaLivenessAnalysis2(SsaState ssa)
 		{
-			this.ssa = ssa;
+			this.ssa = ssa.Identifiers;
             visitedBlocks = new Dictionary<Block, Block>();
 			interference = new InterferenceGraph();
 		}
@@ -290,7 +285,6 @@ namespace Reko.Analysis
 					}
 					else
 					{
-
 						LiveInAtStatement(use.Block, use.Block.Statements.IndexOf(use), sid);
 					}
 				}
@@ -336,7 +330,6 @@ namespace Reko.Analysis
 			{
 				if (w != sid)
 					interference.Add(w.Identifier, sid.Identifier);
-
 			}
 			if (!W.ContainsKey(sid))
 				LiveInAtStatement(block, iStm, sid);
@@ -355,16 +348,14 @@ namespace Reko.Analysis
 
 		private Block PrecedingPhiBlock(Identifier u, Statement stm)
 		{
-			PhiAssignment phi = stm.Instruction as PhiAssignment;
-			if (phi == null)
-				return null;
-			for (int i = 0; i < phi.Src.Arguments.Length; ++i)
+            if (!(stm.Instruction is PhiAssignment phi))
+                return null;
+            foreach (var arg in phi.Src.Arguments)
 			{
-				if (u == phi.Src.Arguments[i])
-					return stm.Block.Pred[i];
+                if (u == arg.Value)
+                    return arg.Block;
 			}
 			return null;
 		}
-
 	}
 }

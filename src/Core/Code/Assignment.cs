@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,13 +28,11 @@ namespace Reko.Core.Code
 	/// </summary>
 	public class Assignment : Instruction
 	{
-		public Assignment(Identifier dst, Expression src)
-		{
-			if (dst == null)
-				throw new ArgumentNullException("dst", "Argument must have a non-null value.");
-			this.Dst = dst;
-			this.Src = src;
-		}
+        public Assignment(Identifier dst, Expression src)
+        {
+            this.Dst = dst ?? throw new ArgumentNullException(nameof(dst));
+            this.Src = src ?? throw new ArgumentNullException(nameof(src));
+        }
 
         public Identifier Dst { get; set; }
         public Expression Src { get; set; }
@@ -55,7 +53,6 @@ namespace Reko.Core.Code
 		{
 			v.VisitAssignment(this);
 		}
-
 	}
 
 	/// <summary>
@@ -65,9 +62,9 @@ namespace Reko.Core.Code
 	{
 		public Store(Expression dst, Expression src)
 		{
-			Dst = dst;
-			Src = src;
-		}
+            Dst = dst ?? throw new ArgumentNullException(nameof(dst));
+			Src = src ?? throw new ArgumentNullException(nameof(src));
+        }
 
         public Expression Dst { get; set; }
 
@@ -92,8 +89,9 @@ namespace Reko.Core.Code
 	}
 
     /// <summary>
-    /// Represents an assignment due to alias expansion. 
-    /// //$REFACTOR: this class is used so rarely, it may be deleted.
+    /// Represents an assignment due to alias expansion. It exists to denote
+    /// assignments that don't correspond to actual code present in the original
+    /// binary.
     /// </summary>
     public class AliasAssignment : Assignment
     {

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,12 +39,13 @@ namespace Reko.Core
 
         public static Address Create(DataType size, ulong bitPattern)
         {
-            switch (size.Size)
+            switch (size.BitSize)
             {
             default: throw new ArgumentException("size");
-            case 2: return Ptr16((ushort)bitPattern);
-            case 4: return Ptr32((uint)bitPattern);
-            case 8: return Ptr64(bitPattern);
+            case 16: return Ptr16((ushort)bitPattern);
+            case 32: return Ptr32((uint)bitPattern);
+            case 64: return Ptr64(bitPattern);
+            case 20: return Ptr32((uint) bitPattern);
             }
         }
 
@@ -280,7 +281,7 @@ namespace Reko.Core
 
     internal class Address16 : Address
     {
-        private ushort uValue;
+        private readonly ushort uValue;
 
         public Address16(ushort addr)
             : base(PrimitiveType.Ptr16)
@@ -345,7 +346,7 @@ namespace Reko.Core
 
     public class Address32 : Address
     {
-        private uint uValue;
+        private readonly uint uValue;
 		public static readonly Address NULL = Address32.Ptr32(0);
 
         public Address32(uint addr)
@@ -412,8 +413,8 @@ namespace Reko.Core
 
     public class RealSegmentedAddress : Address
     {
-        private ushort uSegment;
-        private ushort uOffset;
+        private readonly ushort uSegment;
+        private readonly ushort uOffset;
 
         public RealSegmentedAddress(ushort segment, ushort offset)
             : base(PrimitiveType.SegPtr32)
@@ -494,8 +495,8 @@ namespace Reko.Core
     /// </remarks>
     public class ProtectedSegmentedAddress : Address
     {
-        private ushort uSelector;
-        private ushort uOffset;
+        private readonly ushort uSelector;
+        private readonly ushort uOffset;
 
         public ProtectedSegmentedAddress(ushort segment, ushort offset)
             : base(PrimitiveType.SegPtr32)

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ namespace Reko.Core.Code
         /// <param name="target">The destination, either as a linear address or as an expression.</param>
         public GotoInstruction(Expression target)
         {
-            this.target = target;
+            this.Target = target;
             this.condition = Constant.Invalid;
         }
 
@@ -70,10 +70,6 @@ namespace Reko.Core.Code
         /// The target of the goto instruction. Either a Constant, in which case it should 
         /// be an address, or 
         /// </summary>
-        public Expression Target
-        {
-            get { return target; }
-            set { target = value; }
-        }
+        public Expression Target { get; set; }
     }
 }

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -114,10 +114,7 @@ namespace Reko.ImageLoaders.OdbgScript
             var syms = new SortedList<Address, ImageSymbol>();
             if (OriginalEntryPoint != null)
             {
-                var sym = new ImageSymbol(OriginalEntryPoint)
-                {
-                    ProcessorState = Architecture.CreateProcessorState()
-                };
+                var sym = ImageSymbol.Procedure(program.Architecture, OriginalEntryPoint, state:Architecture.CreateProcessorState());
                 syms.Add(sym.Address, sym);
                 eps.Add(sym);
             }
@@ -127,7 +124,10 @@ namespace Reko.ImageLoaders.OdbgScript
         public virtual PeImageLoader CreatePeImageLoader()
         {
             ExeImageLoader mz = new ExeImageLoader(Services, Filename, RawImage);
-            PeImageLoader pe = new PeImageLoader(Services, Filename, RawImage, mz.e_lfanew);
+            var e_lfanew = mz.LoadLfaToNewHeader();
+            if (!e_lfanew.HasValue)
+                throw new BadImageFormatException();
+            PeImageLoader pe = new PeImageLoader(Services, Filename, RawImage, e_lfanew.Value);
             return pe;
         }
 

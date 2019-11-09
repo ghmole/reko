@@ -1,36 +1,38 @@
 fp:fp
-sp_1: orig: sp
+sp_2: orig: sp
+Top_3: orig: Top
 ds:ds
     def:  def ds
-    uses: ax_5 = Mem0[ds:bx + 0x0004:word16]
-          Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
-          Mem10[ds:si + 0x04D4:word16] = si + 0x0002
+    uses: ax_7 = Mem0[ds:bx + 0x0004:word16]
+          Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
+          Mem12[ds:si + 0x04D4:word16] = si + 0x0002
 bx:bx
     def:  def bx
-    uses: ax_5 = Mem0[ds:bx + 0x0004:word16]
-          Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
-Mem0:Global memory
+    uses: ax_7 = Mem0[ds:bx + 0x0004:word16]
+          Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
+Mem0:Mem
     def:  def Mem0
-    uses: ax_5 = Mem0[ds:bx + 0x0004:word16]
-ax_5: orig: ax
-    def:  ax_5 = Mem0[ds:bx + 0x0004:word16]
-    uses: Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
-          Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
-ax_6: orig: ax
-Mem7: orig: Mem0
-    def:  Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
+    uses: ax_7 = Mem0[ds:bx + 0x0004:word16]
+ax_7: orig: ax
+    def:  ax_7 = Mem0[ds:bx + 0x0004:word16]
+    uses: Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
+          Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
+ax_8: orig: ax
+Mem9: orig: Mem0
+    def:  Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
 si:si
     def:  def si
-    uses: Mem10[ds:si + 0x04D4:word16] = si + 0x0002
-          Mem10[ds:si + 0x04D4:word16] = si + 0x0002
-bx_9: orig: bx
-Mem10: orig: Mem0
-    def:  Mem10[ds:si + 0x04D4:word16] = si + 0x0002
-ax_11: orig: ax
-SZO_12: orig: SZO
-C_13: orig: C
-SCZO:Flags
-SCZO_15: orig: SCZO
+    uses: Mem12[ds:si + 0x04D4:word16] = si + 0x0002
+          Mem12[ds:si + 0x04D4:word16] = si + 0x0002
+bx_11: orig: bx
+Mem12: orig: Mem0
+    def:  Mem12[ds:si + 0x04D4:word16] = si + 0x0002
+ax_13: orig: ax
+SZO_14: orig: SZO
+C_15: orig: C
+O_16: orig: O
+S_17: orig: S
+Z_18: orig: Z
 // fn0C00_0000
 // Return size: 0
 void fn0C00_0000(word16 bx, word16 si, selector ds)
@@ -41,9 +43,9 @@ fn0C00_0000_entry:
 	def si
 	// succ:  l0C00_0000
 l0C00_0000:
-	ax_5 = Mem0[ds:bx + 0x0004:word16]
-	Mem7[ds:bx + 0x0006:word16] = ax_5 *s ax_5
-	Mem10[ds:si + 0x04D4:word16] = si + 0x0002
+	ax_7 = Mem0[ds:bx + 0x0004:word16]
+	Mem9[ds:bx + 0x0006:word16] = ax_7 *s ax_7
+	Mem12[ds:si + 0x04D4:word16] = si + 0x0002
 	return
 	// succ:  fn0C00_0000_exit
 fn0C00_0000_exit:

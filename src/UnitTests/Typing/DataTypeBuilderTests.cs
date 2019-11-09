@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -107,6 +107,7 @@ namespace Reko.UnitTests.Typing
             {
                 Identifier i = Local32("i");
                 Identifier r = Local32("r");
+                Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
                 MStore(IAdd(IAdd(r, 20), SMul(i, 10)), Int32(0));
                 Return(Mem(PrimitiveType.Word16,
                     IAdd(IAdd(r, 16), SMul(i, 10))));
@@ -334,6 +335,7 @@ namespace Reko.UnitTests.Typing
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void DtbReals()
         {
             RunTest(RewriteFile16("Fragments/fpuops.asm"), "Typing/DtbReals.txt");
@@ -407,13 +409,14 @@ namespace Reko.UnitTests.Typing
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void DtbReg00011()
         {
             RunTest16("Fragments/regressions/r00011.asm", "Typing/DtbReg00011.txt");
         }
 
         [Test]
-        [Ignore("Re-enable when new SSA is in place")]
+        [Ignore(Categories.FailedTests)]
         public void DtbReg00012()
         {
             RunTest16("Fragments/regressions/r00012.asm", "Typing/DtbReg00012.txt");
@@ -449,8 +452,8 @@ namespace Reko.UnitTests.Typing
             pp.Add("Fn2", m =>
             {
                 Identifier arg1 = m.Local32("arg1");
-                Identifier ret = m.Register(1);
-                m.Procedure.Signature = new FunctionType(ret, new Identifier[] { arg1 });
+                Identifier ret = m.Register("r1");
+                m.Procedure.Signature = FunctionType.Func(ret, arg1);
                 m.Procedure.Signature.Parameters[0] = arg1;
                 m.Assign(ret, m.IAdd(arg1, 1));
                 m.Return(ret);
@@ -473,7 +476,7 @@ namespace Reko.UnitTests.Typing
             pp.Add("Fn2", m =>
             {
                 Identifier arg1 = m.Local32("arg1");
-                m.Procedure.Signature = FunctionType.Action(new Identifier[] { arg1 });
+                m.Procedure.Signature = FunctionType.Action(arg1);
                 m.MStore(m.IAdd(arg1, 8), m.Word32(0x23));
                 m.Return();
             });
@@ -508,9 +511,9 @@ namespace Reko.UnitTests.Typing
             ds.DataType = PrimitiveType.SegmentSelector;
             m.SStore(ds, m.Word16(0x0100), m.Seq(ds, m.Word16(0x1234)));
 
-            ProgramBuilder program = new ProgramBuilder();
-            program.Add(m);
-            RunTest(program.BuildProgram(), "Typing/DtbSequenceWithSegment.txt");
+            ProgramBuilder pb = new ProgramBuilder();
+            pb.Add(m);
+            RunTest(pb.BuildProgram(), "Typing/DtbSequenceWithSegment.txt");
         }
 
 

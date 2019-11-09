@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
@@ -200,7 +201,7 @@ namespace Reko.Arch.Xtensa
             m.BranchInMiddleOfInstruction(
                 fn(cond, Constant.Zero(cond.DataType)).Invert(),
                 instr.Address + instr.Length,
-                RtlClass.ConditionalTransfer);
+                InstrClass.ConditionalTransfer);
             m.Assign(dst, src);
         }
 
@@ -264,9 +265,9 @@ namespace Reko.Arch.Xtensa
             var dst = RewriteOp(instr.Operands[0]);
             var sa = binder.EnsureRegister(Registers.SAR);
             var cat = binder.EnsureSequence(
-                src1.Storage, 
-                src2.Storage, 
-                PrimitiveType.CreateWord(src1.DataType.BitSize + src2.DataType.BitSize));
+                PrimitiveType.CreateWord(src1.DataType.BitSize + src2.DataType.BitSize),
+                src1.Storage,
+                src2.Storage);
             m.Assign(
                 dst,
                 m.Cast(dst.DataType, m.Shr(cat, sa)));

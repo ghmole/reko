@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Core;
 using Reko.Core.Code;
 using Reko.Core.Expressions;
 using Reko.Core.Operators;
+using Reko.Core.Serialization;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
@@ -32,34 +33,41 @@ using System.Linq;
 namespace Reko.Analysis
 {
     /// <summary>
-    /// Performs propagation by replacing occurences of expressions with simpler expressions if these are beneficial. 
-    /// Constants are folded, and so on.
+    /// Performs propagation by replacing occurences of expressions with 
+    /// simpler expressions if these are beneficial. Constants are folded,
+    /// and so on.
     /// </summary>
     /// <remarks>
-    /// This is a useful transform that doesn't cause too many problems for later transforms. Calling it will flush out
-    /// lots of dead expressions that can be removed with DeadCode.Eliminate()
+    /// This is a useful transform that doesn't cause too many problems for
+    /// later transforms. Calling it will flush out lots of dead expressions
+    /// that can be removed with DeadCode.Eliminate()
     /// </remarks>
     public class ValuePropagator : InstructionVisitor<Instruction>
     {
         private static TraceSwitch trace = new TraceSwitch("ValuePropagation", "Traces value propagation");
 
-        private IProcessorArchitecture arch;
-        private SsaState ssa;
-        private ExpressionSimplifier eval;
-        private SsaEvaluationContext evalCtx;
-        private SsaIdentifierTransformer ssaIdTransformer;
-        private DecompilerEventListener eventListener;
+        private readonly IProcessorArchitecture arch;
+        private readonly SsaState ssa;
+        private readonly CallGraph callGraph;
+        private readonly ExpressionSimplifier eval;
+        private readonly SsaEvaluationContext evalCtx;
+        private readonly SsaMutator ssam;
+        private readonly DecompilerEventListener eventListener;
+        private Statement stmCur;
 
         public ValuePropagator(
             SegmentMap segmentMap,
             SsaState ssa,
+            CallGraph callGraph,
+            IImportResolver importResolver,
             DecompilerEventListener eventListener)
         {
             this.ssa = ssa;
+            this.callGraph = callGraph;
             this.arch = ssa.Procedure.Architecture;
             this.eventListener = eventListener;
-            this.ssaIdTransformer = new SsaIdentifierTransformer(ssa);
-            this.evalCtx = new SsaEvaluationContext(arch, ssa.Identifiers);
+            this.ssam = new SsaMutator(ssa);
+            this.evalCtx = new SsaEvaluationContext(arch, ssa.Identifiers, importResolver);
             this.eval = new ExpressionSimplifier(segmentMap, evalCtx, eventListener);
         }
 
@@ -69,9 +77,14 @@ namespace Reko.Analysis
         {
             do
             {
+                //$PERFORMANCE: consider changing this to a work list, where 
+                // every time we process the 
                 Changed = false;
-                foreach (Statement stm in ssa.Procedure.Statements)
+                foreach (Statement stm in ssa.Procedure.Statements.ToArray())
                 {
+                    if (eventListener.IsCanceled())
+                        return;
+                    this.stmCur = stm;
                     Transform(stm);
                 }
             } while (Changed);
@@ -102,16 +115,33 @@ namespace Reko.Analysis
 
         public Instruction VisitCallInstruction(CallInstruction ci)
         {
+            var oldCallee = ci.Callee;
             ci.Callee = ci.Callee.Accept(eval);
-            if (ci.Callee is ProcedureConstant pc &&
-                pc.Procedure.Signature.ParametersValid)
+            if (ci.Callee is ProcedureConstant pc)
             {
-                var ab = new ApplicationBuilder(
-                      arch, ssa.Procedure.Frame, ci.CallSite,
-                      ci.Callee, pc.Procedure.Signature, false);
-                evalCtx.Statement.Instruction = ab.CreateInstruction();
-                ssaIdTransformer.Transform(evalCtx.Statement, ci);
-                return evalCtx.Statement.Instruction;
+                if (pc.Procedure.Signature.ParametersValid)
+                {
+                    var sig = pc.Procedure.Signature;
+                    var chr = pc.Procedure.Characteristics;
+                    RewriteCall(stmCur, ci, sig, chr);
+                    return stmCur.Instruction;
+                }
+                if (oldCallee != pc && pc.Procedure is Procedure procCallee)
+                {
+                    // This was an indirect call, but is now a direct call.
+                    // Make sure the call graph knows about the link between
+                    // this statement and the callee.
+                    callGraph.AddEdge(stmCur, procCallee);
+                }
+            }
+            foreach (var use in ci.Uses)
+            {
+                use.Expression = use.Expression.Accept(eval);
+            }
+            foreach (var def in ci.Definitions
+                .Where(d => !( d.Expression is Identifier)))
+            {
+                def.Expression = def.Expression.Accept(eval);
             }
             return ci;
         }
@@ -163,7 +193,11 @@ namespace Reko.Analysis
         public Instruction VisitStore(Store store)
         {
             store.Src = store.Src.Accept(eval);
-            store.Dst = store.Dst.Accept(eval);
+            var idDst = store.Dst as Identifier;
+            if (idDst == null || (!(idDst.Storage is OutArgumentStorage)))
+            {
+                store.Dst = store.Dst.Accept(eval);
+            }
             return store;
         }
 
@@ -179,5 +213,26 @@ namespace Reko.Analysis
         }
 
         #endregion
+
+        private void RewriteCall(
+            Statement stm,
+            CallInstruction ci,
+            FunctionType sig,
+            ProcedureCharacteristics chr)
+        {
+            ssam.AdjustRegisterAfterCall(
+                stm,
+                ci,
+                this.arch.StackRegister,
+                sig.StackDelta - ci.CallSite.SizeOfReturnAddressOnStack);
+            ssam.AdjustRegisterAfterCall(
+                stm,
+                ci,
+                this.arch.FpuStackRegister,
+                -sig.FpuStackDelta);
+            var ab = new CallApplicationBuilder(this.ssa, stm, ci, ci.Callee);
+            stm.Instruction = ab.CreateInstruction(sig, chr);
+            ssam.AdjustSsa(stm, ci);
+        }
     }
 }

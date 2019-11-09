@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -95,16 +95,26 @@ namespace Reko.Evaluation
 
         public bool VisitDefInstruction(DefInstruction def)
         {
+            var defPat = pattern as DefInstruction;
+            if (defPat == null)
+                return false;
             throw new NotImplementedException();
         }
 
         public bool VisitGotoInstruction(GotoInstruction gotoInstruction)
         {
-            throw new NotImplementedException();
+            var gotoPat = pattern as GotoInstruction;
+            if (gotoPat == null)
+                return false;
+            matcher.Pattern = gotoPat.Target;
+            return matcher.Match(gotoInstruction.Target);
         }
 
         public bool VisitPhiAssignment(PhiAssignment phi)
         {
+            var defPat = pattern as PhiAssignment;
+            if (defPat == null)
+                return false;
             throw new NotImplementedException();
         }
 

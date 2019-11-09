@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -94,6 +94,7 @@ namespace Reko.Environments.Windows
                  Registers.esp,
                  Registers.fs,
                  Registers.gs,
+                 Registers.Top,
             };
             return bitset;
         }
@@ -107,6 +108,7 @@ namespace Reko.Environments.Windows
                 Registers.ecx,
                 Registers.edx,
                 Registers.esp,
+                Registers.Top,
             };
         }
 
@@ -252,12 +254,20 @@ namespace Reko.Environments.Windows
                 {
                     return null;
                 }
-                addrTarget = MakeAddressFromConstant(wAddr);
+                addrTarget = MakeAddressFromConstant(wAddr, true);
             }
-            ProcedureBase proc = host.GetImportedProcedure(addrTarget, rtlc.Address);
+            ProcedureBase proc = host.GetImportedProcedure(this.Architecture, addrTarget, rtlc.Address);
             if (proc != null)
                 return proc;
-            return host.GetInterceptedCall(addrTarget);
+            return host.GetInterceptedCall(this.Architecture, addrTarget);
+        }
+
+        public override void InjectProcedureEntryStatements(
+            Procedure proc,
+            Address addr,
+            CodeEmitter m)
+        {
+            m.Assign(proc.Frame.EnsureRegister(Registers.Top), 0);
         }
 
         public override ExternalProcedure LookupProcedureByName(string moduleName, string procName)

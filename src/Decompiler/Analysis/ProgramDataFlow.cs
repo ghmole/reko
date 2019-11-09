@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,32 +32,24 @@ namespace Reko.Analysis
 	public class ProgramDataFlow
 	{
 		private Dictionary<Procedure,ProcedureFlow> procFlow;
-        private Dictionary<Block, BlockFlow> blockFlow;
-        private Dictionary<Procedure, ProcedureFlow2> procFlow2;
 
 		public ProgramDataFlow()
 		{
 			procFlow = new Dictionary<Procedure,ProcedureFlow>();
-            blockFlow = new Dictionary<Block,BlockFlow>();
-            procFlow2 = new Dictionary<Procedure, ProcedureFlow2>();
 		}
 
 		public ProgramDataFlow(Program program) : this()
 		{
-			foreach (Procedure proc in program.Procedures.Values)
-			{
-				procFlow[proc] = new ProcedureFlow(proc, proc.Architecture);
-				foreach (Block block in proc.ControlGraph.Blocks)
-				{
-					blockFlow[block] = new BlockFlow(
-                        block, 
-                        new HashSet<RegisterStorage>(),
-                        new SymbolicEvaluationContext(
-                            proc.Architecture,
-                            proc.Frame));
-				}
-			}
+            CreateFlowsFor(program.Procedures.Values);
 		}
+
+        public void CreateFlowsFor(IEnumerable<Procedure> procs)
+        {
+            foreach (Procedure proc in procs)
+            {
+                procFlow[proc] = new ProcedureFlow(proc);
+            }
+        }
 
 		public ProcedureFlow this[Procedure proc]
 		{
@@ -65,22 +57,9 @@ namespace Reko.Analysis
 			set { procFlow[proc] = value; }
 		}
 
-		public BlockFlow this[Block block]
-		{
-			get { return (BlockFlow) blockFlow[block]; }
-            set { blockFlow[block] = value; }
-		}
-
-		public ICollection<BlockFlow> BlockFlows
-		{
-			get { return blockFlow.Values; }
-		}
-
-        public ICollection<ProcedureFlow> ProcedureFlows
+        public IDictionary<Procedure, ProcedureFlow> ProcedureFlows
         {
-            get { return procFlow.Values; }
+            get { return procFlow; }
         }
-
-        public Dictionary<Procedure, ProcedureFlow2> ProcedureFlows2 { get { return procFlow2; } }
 	}
 }

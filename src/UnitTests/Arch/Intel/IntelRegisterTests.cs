@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ namespace Reko.UnitTests.Arch.Intel
 		[Test]
 		public void X86r_GetSubregisterOfAh()
 		{
-			Assert.AreSame(Registers.ah, arch.GetSubregister(Registers.ah, 0, 8));
+			Assert.AreSame(Registers.ah, arch.GetSubregister(Registers.ah, 8, 16));
 		}
 
 		[Test]
@@ -168,7 +168,7 @@ namespace Reko.UnitTests.Arch.Intel
 			bits.Add(Registers.bh);
 			Assert.AreSame(Registers.bh, arch.GetWidestSubregister(Registers.bh, bits));
 			bits.Add(Registers.bx);
-			Assert.AreSame(Registers.bh, arch.GetWidestSubregister(Registers.bh, bits));
+ 			Assert.AreSame(Registers.bh, arch.GetWidestSubregister(Registers.bh, bits));
 			bits.Add(Registers.ebx);
 			Assert.AreSame(Registers.bh, arch.GetWidestSubregister(Registers.bh, bits));
 		}

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,9 +28,10 @@ using System.Text;
 namespace Reko.Core.Code
 {
     /// <summary>
-    /// Base class for intermediate-level instructions. These are generated from the low-level,
-    /// register transfer instructions, and will in turn be converted to Abstract syntax statements by 
-    /// the latter stages of the decompilation.
+    /// Base class for intermediate-level instructions. These are generated 
+    /// from the low-level, register transfer instructions, and will in turn
+    /// be converted to Abstract syntax statements by the latter stages of the
+    /// decompilation.
     /// </summary>
 	public abstract class Instruction
 	{
@@ -141,14 +142,14 @@ namespace Reko.Core.Code
 	/// </summary>
 	public class UseInstruction : Instruction
 	{
-		public UseInstruction(Identifier id)
+		public UseInstruction(Expression e)
 		{
-			this.Expression = id;
+			this.Expression = e;
 		}
 
-		public UseInstruction(Identifier id, Identifier argument)
+		public UseInstruction(Expression e, Identifier argument)
 		{
-			this.Expression = id;
+			this.Expression = e;
 			this.OutArgument = argument;
 		}
 

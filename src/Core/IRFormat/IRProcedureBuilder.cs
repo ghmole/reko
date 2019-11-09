@@ -27,10 +27,5 @@ namespace Reko.Core.IRFormat
         {
             throw new NotImplementedException();
         }
-
-        public override Identifier Register(int i)
-        {
-            throw new NotImplementedException();
-        }
     }
 }

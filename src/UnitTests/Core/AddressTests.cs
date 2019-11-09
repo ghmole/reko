@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@ namespace Reko.UnitTests.Core
 
         [Test(Description="Found this in a regression.")]
         [Category(Categories.Regressions)]
+        [Category(Categories.UnitTests)]
         public void Addr_Ge()
         {
             Assert.IsTrue(Address.Ptr32(4001) >= Address.Ptr32(4000));

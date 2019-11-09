@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -132,13 +132,37 @@ namespace Reko.Core
                 fmt.Write(string.Format("0x{0:X16}", rdr.ReadUInt32()));
                 fmt.WriteLine();
                 return;
+            default:
+                DumpBytes(pt.Size);
+                break;
             }
-            throw new NotImplementedException();
         }
 
-        public void VisitQualifiedType(QualifiedType qt)
+        private void DumpBytes(int size)
         {
-            qt.DataType.Accept(this);
+            bool newLine = false;
+            fmt.WriteKeyword("db");
+            fmt.Write("\t");
+            fmt.Write(string.Format("0x{0:X2}", rdr.ReadByte()));
+            for (int i = 1; i < size; ++i)
+            {
+                if (newLine)
+                {
+                    newLine = false;
+                    fmt.WriteLine();
+                    fmt.Write("\t");
+                    fmt.WriteKeyword("db");
+                    fmt.Write("\t");
+                    fmt.Write(string.Format("0x{0:X2}", rdr.ReadByte()));
+                }
+                else
+                {
+                    fmt.Write(", ");
+                    fmt.Write(string.Format("0x{0:X2}", rdr.ReadByte()));
+                }
+                newLine = (rdr.Address.ToLinear() & 0xF) == 0;
+            }
+            fmt.WriteLine();
         }
 
         public void VisitReference(ReferenceTo refTo)
@@ -148,6 +172,45 @@ namespace Reko.Core
 
         public void VisitString(StringType str)
         {
+            if (str.LengthPrefixType == null)
+            {
+                if (str.ElementType.Size == 1)
+                {
+                    fmt.WriteKeyword("db");
+                    fmt.Write("\t");
+                    bool inStringLiteral = false;
+                    string sep = "";
+                    while (rdr.TryReadByte(out byte b))
+                    {
+                        //$REVIEW: assumes ASCII.
+                        if (0x20 <= b && b < 0x7F)
+                        {
+                            if (!inStringLiteral)
+                            {
+                                fmt.Write(sep);
+                                sep = ",";
+                                fmt.Write('\'');
+                                inStringLiteral = true;
+                            }
+                            fmt.Write((char) b);
+                        }
+                        else
+                        {
+                            if (inStringLiteral)
+                            {
+                                fmt.Write('\'');
+                            }
+                            fmt.Write(sep);
+                            sep = ",";
+                            fmt.Write(string.Format("0x{0:X2}", b));
+                            if (b == 0)
+                                break;
+                        }
+                    }
+                    fmt.WriteLine();
+                    return;
+                }
+            }
             throw new NotImplementedException();
         }
 
@@ -202,7 +265,10 @@ namespace Reko.Core
 
         public void VisitUnknownType(UnknownType ut)
         {
-            throw new NotImplementedException();
+            if (ut.Size > 0)
+            {
+                DumpBytes(ut.Size);
+            }
         }
 
         public void VisitVoidType(VoidType voidType)

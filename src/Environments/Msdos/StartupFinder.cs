@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ namespace Reko.Environments.Msdos
         const byte WILD = 0xF4;
 
         private IServiceProvider services;
+        private IProcessorArchitecture arch;
         private Program program;
         private Address start;
         private ProcessorState state;
@@ -53,6 +54,7 @@ namespace Reko.Environments.Msdos
         {
             this.services = services;
             this.program = program;
+            this.arch = program.Architecture;
             this.start = addrStart;
             this.state = program.Architecture.CreateProcessorState();
         }
@@ -69,19 +71,18 @@ namespace Reko.Environments.Msdos
             /* This function checks the startup code for various compilers' way of
             loading DS. If found, it sets DS. This may not be needed in the future if
             pushing and popping of registers is implemented.
-            Also sets prog.offMain and prog.segMain if possible */
+            Also sets program.offMain and program.segMain if possible */
 
-            uint startoff;
             uint init;
             uint i;
-            ushort rel, para;
+            //uint startoff;
+            //ushort rel, para;
             char chModel = 'x';
             char chVendor = 'x';
             char chVersion = 'x';
             char[] temp = new char[4];
 
-            ImageSegment segment;
-            program.SegmentMap.TryFindSegment(start, out segment);
+            program.SegmentMap.TryFindSegment(start, out ImageSegment segment);
             var image = segment.MemoryArea;
             var startOff = (uint)(start - image.BaseAddress);   // Offset into the Image of the initial CS:IP
 
@@ -182,7 +183,7 @@ namespace Reko.Environments.Msdos
             }
 
             Debug.Print("Model: {0}", chModel);
-            //prog.addressingMode = chModel;
+            //program.addressingMode = chModel;
 
             /* Now decide the compiler vendor and version number */
             if (MemoryArea.CompareArrays(image.Bytes, (int)startOff, pattMsC5Start, pattMsC5Start.Length))
@@ -259,12 +260,7 @@ namespace Reko.Environments.Msdos
             //        chVersion, /* Add version */
             //        chModel); /* Add model */
             //Debug.Print("Signature file: {0}", sSigName);
-            return new ImageSymbol(addrEntry)
-            { 
-                Name ="main",
-                ProcessorState = this.state,
-                Type = SymbolType.Procedure,
-            };
+            return ImageSymbol.Procedure(arch, addrEntry, "main", state: this.state);
         }
 
         private Address ReadSegPtr(MemoryArea mem, uint offset)

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +18,14 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Output;
 using Reko.Core.Types;
-using NUnit.Framework;
 using System;
 using System.IO;
 using Reko.Core.Expressions;
-using Rhino.Mocks;
 using System.Collections.Generic;
 
 namespace Reko.UnitTests.Core
@@ -33,11 +33,12 @@ namespace Reko.UnitTests.Core
 	[TestFixture]
 	public class TypeFormatterTests
 	{
-		private StringWriter sw;
+        private readonly string nl = Environment.NewLine;
+
+        private StringWriter sw;
         private TypeFormatter tyfo;
         private TypeReferenceFormatter tyreffo;
-        private IProcessorArchitecture arch;
-        private string nl = Environment.NewLine;
+        private Mock<IProcessorArchitecture> arch;
 
         [SetUp]
         public void SetUp()
@@ -47,8 +48,7 @@ namespace Reko.UnitTests.Core
             tyfo = new TypeFormatter(tf);
             tf = new TextFormatter(sw) { Indentation = 0 };
             tyreffo = new TypeReferenceFormatter(tf);
-            arch = MockRepository.GenerateStub<IProcessorArchitecture>();
-            arch.Replay();
+            arch = new Mock<IProcessorArchitecture>();
         }
         
         [Test]
@@ -147,7 +147,7 @@ struct a {
 		[Test]
 		public void TyfoFn()
 		{
-			FunctionType fn = new FunctionType(
+			FunctionType fn = FunctionType.Func(
                 new Identifier("", PrimitiveType.Int32, null), 
 				new Identifier[] { new Identifier("", PrimitiveType.Word32, null) });
 			tyreffo.WriteDeclaration(fn, "fn");
@@ -179,9 +179,8 @@ struct a {
 		public void TyfoManyArgs()
 		{
             FunctionType fn = FunctionType.Action(
-                new Identifier[] {
                     new Identifier("", PrimitiveType.Ptr32,  null),
-                    new Identifier("", PrimitiveType.Int64 , null)});
+                new Identifier("", PrimitiveType.Int64 , null));
 			tyreffo.WriteDeclaration(fn, "fn");
 			Assert.AreEqual("void fn(ptr32, int64)", sw.ToString());
 		}
@@ -324,7 +323,7 @@ struct a {
             {
                 Protection = ClassProtection.Public,
                 Attribute = ClassMemberAttribute.Virtual,
-                Procedure = new Procedure(arch, "do_something", null),
+                Procedure = new Procedure(arch.Object, "do_something", Address.Ptr32(0x00123400), null),
                 Name = "do_something",
             });
             tyfo.Write(ct, null);

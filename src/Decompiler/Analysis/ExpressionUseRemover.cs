@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,14 +26,13 @@ namespace Reko.Analysis
 {
     public class ExpressionUseRemover : ExpressionVisitorBase
     {
-        private Statement user;
-        private SsaIdentifierCollection ssaIds;
+        private readonly Statement user;
+        private readonly SsaIdentifierCollection ssaIds;
 
         public ExpressionUseRemover(Statement user, SsaIdentifierCollection ssaIds)
         {
-            if (user == null)
-                throw new ArgumentNullException("user");
-            this.user = user; this.ssaIds = ssaIds;
+            this.user = user ?? throw new ArgumentNullException(nameof(user));
+            this.ssaIds = ssaIds;
         }
 
         public override void VisitIdentifier(Identifier id)

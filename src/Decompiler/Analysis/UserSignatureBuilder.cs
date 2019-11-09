@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace Reko.Analysis
     /// </summary>
     public class UserSignatureBuilder
     {
-        private Program program;
+        private readonly Program program;
 
         public UserSignatureBuilder(Program program)
         {
@@ -61,10 +61,9 @@ namespace Reko.Analysis
             }
         }
 
-        public bool BuildSignature(Address addr, Procedure proc)
+        public void BuildSignature(Address addr, Procedure proc)
         {
-            Procedure_v1 userProc;
-            if (program.User.Procedures.TryGetValue(addr, out userProc))
+            if (program.User.Procedures.TryGetValue(addr, out Procedure_v1 userProc))
             {
                 var sProc = DeserializeSignature(userProc, proc);
                 if (sProc != null)
@@ -74,25 +73,11 @@ namespace Reko.Analysis
                     if (sig != null)
                     {
                         proc.Name = sProc.Name;
-                        if (userProc.Decompile)
-                        {
-                            ApplySignatureToProcedure(addr, sig, proc);
-                        }
-                        else
-                        {
-                            proc.Signature = sig;
-                        }
-                        return true;
+                        proc.Signature = sig;
+                        return;
                     }
                 }
             }
-
-            if (proc.Signature.ParametersValid)
-            {
-                ApplySignatureToProcedure(addr, proc.Signature, proc);
-                return true;
-            }
-            return false;
         }
 
         public ProcedureBase_v1 DeserializeSignature(Procedure_v1 userProc, Procedure proc)
@@ -111,17 +96,20 @@ namespace Reko.Analysis
         /// <param name="addr"></param>
         /// <param name="sig"></param>
         /// <param name="proc"></param>
+        [Obsolete("This now happens inside of SSA Transformation.")]
         public void ApplySignatureToProcedure(Address addr, FunctionType sig, Procedure proc)
         {
             proc.Signature = sig;
-            int i = 0;
-            var stmts = proc.EntryBlock.Succ[0].Statements;
+            // The copy instructions have to happen before any of the 
+            // "real" code, so they have to live in the entry block.
+            var stmts = proc.EntryBlock.Statements;
+            int i = stmts.Count;
+
             var linAddr = addr.ToLinear();
             var m = new ExpressionEmitter();
             foreach (var param in sig.Parameters)
             {
-                var starg = param.Storage as StackArgumentStorage;
-                if (starg != null)
+                if (param.Storage is StackArgumentStorage starg)
                 {
                     proc.Frame.EnsureStackArgument(
                         starg.StackOffset,
@@ -144,15 +132,10 @@ namespace Reko.Analysis
                     // the formal parameter, and inject an copy statement in the
                     // entry block that moves the parameter value into the 
                     // register.
-                    stmts.Insert(i, linAddr, NewMethod(param, paramId));
+                    stmts.Insert(i, linAddr, new Assignment(param, paramId));
                 }
                 ++i;
             }
-        }
-
-        private static Assignment NewMethod(Identifier param, Identifier dst)
-        {
-            return new Assignment(dst, param);
         }
 
         public ProcedureBase_v1 ParseFunctionDeclaration(string fnDecl)
@@ -161,7 +144,7 @@ namespace Reko.Analysis
                 var lexer = new CLexer(new StringReader(fnDecl + ";"));
                 var symbols = program.CreateSymbolTable();
                 var oldProcs = symbols.Procedures.Count;
-                var cstate = new ParserState(symbols.NamedTypes.Keys);
+                var cstate = new ParserState(symbols);
                 var cParser = new CParser(cstate, lexer);
                 var decl = cParser.Parse_ExternalDecl();
                 if (decl == null)
@@ -191,7 +174,7 @@ namespace Reko.Analysis
                 var lexer = new CLexer(new StringReader(txtGlobal + ";"));
                 var symbols = program.CreateSymbolTable();
                 var oldVars = symbols.Variables.Count;
-                var cstate = new ParserState(symbols.NamedTypes.Keys);
+                var cstate = new ParserState(symbols);
                 var cParser = new CParser(cstate, lexer);
                 var decl = cParser.Parse_ExternalDecl();
                 if (decl == null)

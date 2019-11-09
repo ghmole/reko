@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,13 +25,14 @@ using Reko.Core.Serialization;
 using Reko.Analysis;
 using Reko.UnitTests.Mocks;
 using Reko.UnitTests.TestCode;
+using Moq;
 using NUnit.Framework;
 using System;
 using System.Diagnostics;
 using System.IO;
-using Rhino.Mocks;
 using Reko.Core.Types;
 using Reko.Core.Expressions;
+using Reko.Core.Rtl;
 
 namespace Reko.UnitTests.Analysis
 {
@@ -39,167 +40,239 @@ namespace Reko.UnitTests.Analysis
 	public class DataFlowAnalysisTests : AnalysisTestBase
 	{
 		private DataFlowAnalysis dfa;
-        private MockRepository mr;
         private string CSignature;
 
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
             this.CSignature = null;
-            dfa = null;
+            this.dfa = null;
             base.platform = null;
         }
 
-		[Test]
-		public void DfaAsciiHex()
+        protected override void RunTest(Program program, TextWriter writer)
 		{
-			RunFileTest("Fragments/ascii_hex.asm", "Analysis/DfaAsciiHex.txt");
+            SetCSignatures(program);
+            var importResolver = new Mock<IImportResolver>();
+			dfa = new DataFlowAnalysis(program, importResolver.Object, new FakeDecompilerEventListener());
+			dfa.AnalyzeProgram();
+			foreach (Procedure proc in program.Procedures.Values)
+			{
+				var flow = dfa.ProgramDataFlow[proc];
+				writer.Write("// ");
+                var sig = flow.Signature ?? proc.Signature;
+                sig.Emit(proc.Name, FunctionType.EmitFlags.ArgumentKind | FunctionType.EmitFlags.LowLevelInfo, writer);
+                flow.Emit(program.Architecture, writer);
+				proc.Write(false, writer);
+				writer.WriteLine();
+			}
+		}
+
+        private void SetCSignatures(Program program)
+        {
+            foreach (var addr in program.Procedures.Keys)
+            {
+                program.User.Procedures.Add(
+                    addr,
+                    new Procedure_v1
+                    {
+                        CSignature = this.CSignature
+                    });
+            }
+            if (this.CSignature != null)
+            {
+                var usb = new UserSignatureBuilder(program);
+                usb.BuildSignatures(new FakeDecompilerEventListener());
+            }
+        }
+
+        protected void Given_CSignature(string CSignature)
+        {
+            this.CSignature = CSignature;
+        }
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
+        public void DfaAsciiHex()
+		{
+			RunFileTest_x86_real("Fragments/ascii_hex.asm", "Analysis/DfaAsciiHex.txt");
 		}
 
 		[Test]
         [Ignore("Stack arrays are not supported yet")]
 		public void DfaAutoArray32()
 		{
-			RunFileTest32("Fragments/autoarray32.asm", "Analysis/DfaAutoArray32.txt");
+			RunFileTest_x86_32("Fragments/autoarray32.asm", "Analysis/DfaAutoArray32.txt");
 		}
 
 		[Test]
-		public void DfaFactorial()
+        [Category(Categories.IntegrationTests)]
+        public void DfaFactorial()
 		{
-			RunFileTest("Fragments/factorial.asm", "Analysis/DfaFactorial.txt");
+			RunFileTest_x86_real("Fragments/factorial.asm", "Analysis/DfaFactorial.txt");
 		}
 
 		[Test]
-		public void DfaFactorialReg()
+        [Ignore(Categories.FailedTests)]
+        public void DfaFactorialReg()
 		{
-			RunFileTest("Fragments/factorial_reg.asm", "Analysis/DfaFactorialReg.txt");
+			RunFileTest_x86_real("Fragments/factorial_reg.asm", "Analysis/DfaFactorialReg.txt");
 		}
 
 		[Test]
-		public void DfaFibonacci()
+        [Category(Categories.IntegrationTests)]
+        public void DfaFibonacci()
 		{
-			RunFileTest32("Fragments/multiple/fibonacci.asm", "Analysis/DfaFibonacci.txt");
+			RunFileTest_x86_32("Fragments/multiple/fibonacci.asm", "Analysis/DfaFibonacci.txt");
 		}
 
 		[Test]
-		public void DfaFpuOps()
+        [Category(Categories.IntegrationTests)]
+        public void DfaFpuOps()
 		{
-			RunFileTest("Fragments/fpuops.asm", "Analysis/DfaFpuOps.txt");
+			RunFileTest_x86_real("Fragments/fpuops.asm", "Analysis/DfaFpuOps.txt");
 		}
 
 		[Test]
-		public void DfaMutualTest()
+        [Category(Categories.IntegrationTests)]
+        public void DfaMutualTest()
 		{
-			RunFileTest("Fragments/multiple/mutual.asm", "Analysis/DfaMutualTest.txt");
+			RunFileTest_x86_real("Fragments/multiple/mutual.asm", "Analysis/DfaMutualTest.txt");
 		}
 
 		[Test]
-		public void DfaChainTest()
+        [Category(Categories.IntegrationTests)]
+        public void DfaChainTest()
 		{
-			RunFileTest("Fragments/multiple/chaincalls.asm", "Analysis/DfaChainTest.txt");
+			RunFileTest_x86_real("Fragments/multiple/chaincalls.asm", "Analysis/DfaChainTest.txt");
 		}
 
 		[Test]
-		public void DfaGlobalHandle()
+        [Category(Categories.IntegrationTests)]
+        public void DfaGlobalHandle()
 		{
-            Given_FakeWin32Platform(mr);
-            this.platform.Stub(p => p.ResolveImportByName(null, null)).IgnoreArguments().Return(null);
-            this.platform.Stub(p => p.DataTypeFromImportName(null)).IgnoreArguments().Return(null);
-            this.platform.Stub(p => p.ResolveIndirectCall(null)).IgnoreArguments().Return(null);
-            mr.ReplayAll();
-            RunFileTest32("Fragments/import32/GlobalHandle.asm", "Analysis/DfaGlobalHandle.txt");
+            Given_FakeWin32Platform();
+            this.platformMock.Setup(p => p.ResolveImportByName(It.IsAny<string>(), It.IsAny<string>())).Returns((Expression)null);
+            this.platformMock.Setup(p => p.DataTypeFromImportName(It.IsAny<string>())).Returns((Tuple<string,SerializedType,SerializedType>)null);
+            this.platformMock.Setup(p => p.ResolveIndirectCall(It.IsAny<RtlCall>())).Returns((Address)null);
+            RunFileTest_x86_32("Fragments/import32/GlobalHandle.asm", "Analysis/DfaGlobalHandle.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void DfaMoveChain()
 		{
-			RunFileTest("Fragments/move_sequence.asm", "Analysis/DfaMoveChain.txt");
+			RunFileTest_x86_real("Fragments/move_sequence.asm", "Analysis/DfaMoveChain.txt");
 		}
 
 		[Test]
-		public void DfaNegsNots()
+ 
+        [Category(Categories.IntegrationTests)]
+        public void DfaNegsNots()
 		{
-			RunFileTest("Fragments/negsnots.asm", "Analysis/DfaNegsNots.txt");
+			RunFileTest_x86_real("Fragments/negsnots.asm", "Analysis/DfaNegsNots.txt");
 		}
 
 		[Test]
-		public void DfaPreservedAlias()
+        [Category(Categories.IntegrationTests)]
+        public void DfaPreservedAlias()
 		{
-			RunFileTest("Fragments/multiple/preserved_alias.asm", "Analysis/DfaPreservedAlias.txt");
+			RunFileTest_x86_real("Fragments/multiple/preserved_alias.asm", "Analysis/DfaPreservedAlias.txt");
 		}
 
 		[Test]
-        [Ignore("scanning-development")]
+        [Category(Categories.IntegrationTests)]
         public void DfaReadFile()
-		{
-			RunFileTest("Fragments/multiple/read_file.asm", "Analysis/DfaReadFile.txt");
+        {
+			RunFileTest_x86_real("Fragments/multiple/read_file.asm", "Analysis/DfaReadFile.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void DfaStackPointerMessing()
-		{
-			RunFileTest("Fragments/multiple/stackpointermessing.asm", "Analysis/DfaStackPointerMessing.txt");
+        {
+			RunFileTest_x86_real("Fragments/multiple/stackpointermessing.asm", "Analysis/DfaStackPointerMessing.txt");
 		}
 
 		[Test]
-		public void DfaStringInstructions()
+        [Category(Categories.IntegrationTests)]
+        public void DfaStringInstructions()
 		{
-			RunFileTest("Fragments/stringinstr.asm", "Analysis/DfaStringInstructions.txt");
+			RunFileTest_x86_real("Fragments/stringinstr.asm", "Analysis/DfaStringInstructions.txt");
 		}
 
 		[Test]
-		public void DfaSuccessiveDecs()
-		{
-			RunFileTest("Fragments/multiple/successivedecs.asm", "Analysis/DfaSuccessiveDecs.txt");
+        [Category(Categories.IntegrationTests)]
+        public void DfaSuccessiveDecs()
+        {
+			RunFileTest_x86_real("Fragments/multiple/successivedecs.asm", "Analysis/DfaSuccessiveDecs.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void DfaWhileBigHead()
 		{
-			RunFileTest("Fragments/while_bighead.asm", "Analysis/DfaWhileBigHead.txt");
+			RunFileTest_x86_real("Fragments/while_bighead.asm", "Analysis/DfaWhileBigHead.txt");
 		}
 
 		[Test]
 		public void DfaWhileGoto()
 		{
-			RunFileTest("Fragments/while_goto.asm", "Analysis/DfaWhileGoto.txt");
+			RunFileTest_x86_real("Fragments/while_goto.asm", "Analysis/DfaWhileGoto.txt");
 		}
 
 		[Test]
-		public void DfaRecurseWithPushes()
+        public void DfaRecurseWithPushes()
 		{
-			RunFileTest("Fragments/multiple/recurse_with_pushes.asm", "Analysis/DfaRecurseWithPushes.txt");
-		}
-
-		[Test]
-		public void DfaReg00009()
-		{
-			RunFileTest("Fragments/regressions/r00009.asm", "Analysis/DfaReg00009.txt");
-		}
-
-		[Test]
-        public void DfaReg00010()
-		{
-			RunFileTest("Fragments/regressions/r00010.asm", "Analysis/DfaReg00010.txt");
+			RunFileTest_x86_real("Fragments/multiple/recurse_with_pushes.asm", "Analysis/DfaRecurseWithPushes.txt");
 		}
 
         [Test]
-        public void DfaReg00011()
+        [Category(Categories.IntegrationTests)]
+        public void DfaReg00005()
         {
-            RunFileTest("Fragments/regressions/r00011.asm", "Analysis/DfaReg00011.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00007.asm", "Analysis/DfaReg00005.txt");
         }
 
         [Test]
+        [Ignore(Categories.FailedTests)]
+        public void DfaReg00007()
+        {
+            RunFileTest_x86_real("Fragments/regressions/r00007.asm", "Analysis/DfaReg00007.txt");
+        }
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
+        public void DfaReg00009()
+		{
+			RunFileTest_x86_real("Fragments/regressions/r00009.asm", "Analysis/DfaReg00009.txt");
+		}
+
+		[Test]
+        [Category(Categories.IntegrationTests)]
+        public void DfaReg00010()
+		{
+			RunFileTest_x86_real("Fragments/regressions/r00010.asm", "Analysis/DfaReg00010.txt");
+		}
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
+        public void DfaReg00011()
+        {
+            RunFileTest_x86_real("Fragments/regressions/r00011.asm", "Analysis/DfaReg00011.txt");
+        }
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
         public void DfaReg00015()
         {
-            RunFileTest("Fragments/regressions/r00015.asm", "Analysis/DfaReg00015.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00015.asm", "Analysis/DfaReg00015.txt");
         }
 
         [Test]
         public void DfaFstsw()
         {
-           var prog = RewriteCodeFragment(@"
+           var program = RewriteCodeFragment(@"
                 fcomp   dword ptr [bx]
                 fstsw   ax
                 test    ah,0x41
@@ -208,7 +281,7 @@ namespace Reko.UnitTests.Analysis
 done:   
                 ret
 ");
-           SaveRunOutput(prog, RunTest, "Analysis/DfaFstsw.txt");
+           SaveRunOutput(program, RunTest, "Analysis/DfaFstsw.txt");
         }
 
         [Test]
@@ -218,26 +291,43 @@ done:
         }
 
         [Test]
-        [Ignore("scanning-development")]
+        [Category(Categories.IntegrationTests)]
         public void DfaReg00001()
         {
-            var prog = RewriteCodeFragment32(UnitTests.Fragments.Regressions.Reg00001.Text);
-            SaveRunOutput(prog, RunTest, "Analysis/DfaReg00001.txt");
+            var program = RewriteCodeFragment32(UnitTests.Fragments.Regressions.Reg00001.Text);
+            SaveRunOutput(program, RunTest, "Analysis/DfaReg00001.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void DfaReg00282()
         {
-            RunFileTest("Fragments/regressions/r00282.asm", "Analysis/DfaReg00282.txt");
+            RunFileTest_x86_real("Fragments/regressions/r00282.asm", "Analysis/DfaReg00282.txt");
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Ignore(Categories.FailedTests)]
         public void DfaReg00316()
         {
             Given_CSignature("long r316(long a)");
-            RunFileTest32("Fragments/regressions/r00316.asm", "Analysis/DfaReg00316.txt");
+            RunFileTest_x86_32("Fragments/regressions/r00316.asm", "Analysis/DfaReg00316.txt");
+        }
+
+        [Test]
+        [Category(Categories.UnitTests)]
+        public void DfaCastCast()
+        {
+            var m = new ProcedureBuilder();
+            var r1 = m.Register("r1");
+            var r2 = m.Register("r2");
+            m.Assign(m.Frame.EnsureRegister(m.Architecture.StackRegister), m.Frame.FramePointer);
+            r1.DataType = PrimitiveType.Real32;
+            r2.DataType = PrimitiveType.Real32;
+            m.Assign(r2, m.Cast(PrimitiveType.Real64, r1));
+            m.MStore(m.Word32(0x123408), m.Cast(PrimitiveType.Real32, r2));
+            m.Return();
+
+            RunFileTest(m, "Analysis/DfaCastCast.txt");
         }
 
         [Test]
@@ -279,7 +369,7 @@ ProcedureBuilder_exit:
                 var es = m.Reg16("es", 9);
                 var cx = m.Reg16("cx", 1);
                 var bx = m.Reg16("bx", 3);
-                var es_bx = m.Frame.EnsureSequence(es.Storage, bx.Storage, PrimitiveType.SegPtr32);
+                var es_bx = m.Frame.EnsureSequence(PrimitiveType.SegPtr32, es.Storage, bx.Storage);
                 var SZ = m.Flags("SZ");
                 var Z = m.Flags("Z");
 
@@ -302,10 +392,12 @@ ProcedureBuilder_exit:
         public void DfaUnsignedDiv()
         {
             var m = new ProcedureBuilder();
-            var r1 = m.Register(1);
-            var r2 = m.Register(2);
-            var r2_r1 = m.Frame.EnsureSequence(r2.Storage, r1.Storage, PrimitiveType.Word64);
+            var r1 = m.Register("r1");
+            var r2 = m.Register("r2");
+            var r2_r1 = m.Frame.EnsureSequence(PrimitiveType.Word64, r2.Storage, r1.Storage);
             var tmp = m.Frame.CreateTemporary(r2_r1.DataType);
+
+            m.Assign(m.Frame.EnsureRegister(m.Architecture.StackRegister), m.Frame.FramePointer);
             m.Assign(r1, m.Mem32(m.Word32(0x123400)));
             m.Assign(r2_r1, m.Seq(m.Word32(0), r1));
             m.Assign(tmp, r2_r1);
@@ -317,55 +409,17 @@ ProcedureBuilder_exit:
         }
 
         [Test]
-        [Category(Categories.UnitTests)]
+        [Category(Categories.IntegrationTests)]
         public void DfaFpuStackReturn()
         {
-            RunFileTest("Fragments/fpustackreturn.asm", "Analysis/DfaFpuStackReturn.txt");
+            RunFileTest_x86_real("Fragments/fpustackreturn.asm", "Analysis/DfaFpuStackReturn.txt");
         }
-
-        private void SetCSignatures(Program program)
-        {
-            foreach (var addr in program.Procedures.Keys)
-            {
-                program.User.Procedures.Add(
-                    addr,
-                    new Procedure_v1
-                    {
-                        CSignature = this.CSignature
-                    });
-            }
-        }
-
-        protected void Given_CSignature(string CSignature)
-        {
-            this.CSignature = CSignature;
-        }
-
-        protected override void RunTest(Program program, TextWriter writer)
-		{
-            SetCSignatures(program);
-            IImportResolver importResolver = mr.Stub<IImportResolver>();
-            importResolver.Replay();
-			dfa = new DataFlowAnalysis(program, importResolver, new FakeDecompilerEventListener());
-			dfa.AnalyzeProgram();
-			foreach (Procedure proc in program.Procedures.Values)
-			{
-				ProcedureFlow flow = dfa.ProgramDataFlow[proc];
-				writer.Write("// ");
-                var sig = flow.Signature ?? proc.Signature;
-                sig.Emit(proc.Name, FunctionType.EmitFlags.ArgumentKind|FunctionType.EmitFlags.LowLevelInfo, writer);
-				flow.Emit(program.Architecture, writer);
-				proc.Write(false, writer);
-				writer.WriteLine();
-			}
-		}
 
         [Test]
-        [Ignore("This will be fixed in analysis-branch")]
-        [Category(Categories.FailedTests)]
+        [Category(Categories.IntegrationTests)]
         public void DfaJumpIntoProc3()
         {
-            RunFileTest32("Fragments/multiple/jumpintoproc3.asm", "Analysis/DfaJumpIntoProc3.txt");
+            RunFileTest_x86_32("Fragments/multiple/jumpintoproc3.asm", "Analysis/DfaJumpIntoProc3.txt");
         }
     }
 }

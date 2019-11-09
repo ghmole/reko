@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             get { return arch; }
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             var state = (Tlcs900ProcessorState)arch.CreateProcessorState();
             return new Tlcs900Rewriter(arch, new LeImageReader(image, 0), state, binder, host);
@@ -56,7 +56,7 @@ namespace Reko.UnitTests.Arch.Tlcs
 
         protected override MemoryArea RewriteCode(string hexBytes)
         {
-            var bytes = OperatingEnvironmentElement.LoadHexBytes(hexBytes)
+            var bytes = PlatformDefinition.LoadHexBytes(hexBytes)
                 .ToArray();
             this.image = new MemoryArea(LoadAddress, bytes);
             return image;
@@ -169,7 +169,7 @@ namespace Reko.UnitTests.Arch.Tlcs
         [Test]
         public void Tlcs900_rw_cp()
         {
-            RewriteCode("C1916F3F00"); // cp(00006F91),00
+            RewriteCode("C1916F3F00"); // cp (00006F91),00
             AssertCode(
                 "0|L--|00010000(5): 3 instructions",
                 "1|L--|v2 = Mem0[0x00006F91:byte]",
@@ -192,8 +192,8 @@ namespace Reko.UnitTests.Arch.Tlcs
             RewriteCode("F1866FBE");	// set	06,(00006F86)
             AssertCode(
                 "0|L--|00010000(4): 2 instructions",
-                "1|L--|v2 = Mem0[0x00006F86:word32] | 1 << 0x06",
-                "2|L--|Mem0[0x00006F86:word32] = v2");
+                "1|L--|v2 = Mem0[0x00006F86:byte] | 1 << 0x06",
+                "2|L--|Mem0[0x00006F86:byte] = v2");
         }
 
         [Test]
@@ -202,8 +202,8 @@ namespace Reko.UnitTests.Arch.Tlcs
             RewriteCode("F1836FB3");	// res	03,(00006F83)
             AssertCode(
                 "0|L--|00010000(4): 2 instructions",
-                "1|L--|v2 = Mem0[0x00006F83:word32] & ~(1 << 0x03)",
-                "2|L--|Mem0[0x00006F83:word32] = v2");
+                "1|L--|v2 = Mem0[0x00006F83:byte] & ~(1 << 0x03)",
+                "2|L--|Mem0[0x00006F83:byte] = v2");
         }
 
         [Test]
@@ -347,10 +347,10 @@ namespace Reko.UnitTests.Arch.Tlcs
         [Test]
         public void Tlcs900_rw_bit()
         {
-            RewriteCode("C93302");	// bit	02,c
+            RewriteCode("C93302");	// bit	02,a
             AssertCode(
                 "0|L--|00010000(3): 3 instructions",
-                "1|L--|Z = (c & 1 << 0x02) == 0x00",
+                "1|L--|Z = (a & 1 << 0x02) == 0x00",
                 "2|L--|H = true",
                 "3|L--|N = false");
         }
@@ -420,10 +420,10 @@ namespace Reko.UnitTests.Arch.Tlcs
         [Test]
         public void Tlcs900_rw_halt()
         {
-            RewriteCode("D7E6A8");
+            RewriteCode("05");
             AssertCode(
-                "0|L--|00010000(3): 1 instructions",
-                "1|L--|bc = 0x0000");
+                "0|L--|00010000(1): 1 instructions",
+                "1|L--|__halt()");
         }
 
         [Test]
@@ -469,12 +469,12 @@ namespace Reko.UnitTests.Arch.Tlcs
         [Test]
         public void Tlcs900_rw_ex()
         {
-            RewriteCode("E8B9"); // ex
+            RewriteCode("D8B9"); // ex
             AssertCode(
                 "0|L--|00010000(2): 3 instructions",
-                "1|L--|v4 = xbc",
-                "2|L--|xbc = xwa",
-                "3|L--|xwa = v4");
+                "1|L--|v4 = bc",
+                "2|L--|bc = wa",
+                "3|L--|wa = v4");
         }
 
         [Test]
@@ -551,7 +551,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             RewriteCode("DE32C6"); // chg
             AssertCode(
                 "0|L--|00010000(3): 1 instructions",
-                "1|L--|de = de ^ 0x0040");
+                "1|L--|iz = iz ^ 0x0040");
         }
 
         [Test]

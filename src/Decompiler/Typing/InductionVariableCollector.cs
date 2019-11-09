@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,7 +56,10 @@ namespace Reko.Typing
             var ivRight = binExp.Right.Accept(this);
             if (ivLeft != null)
             {
-                if (binExp.Operator == Operator.SMul || binExp.Operator == Operator.UMul || binExp.Operator == Operator.IMul || binExp.Operator == Operator.Shl)
+                if (binExp.Operator == Operator.SMul ||
+                    binExp.Operator == Operator.UMul ||
+                    binExp.Operator == Operator.IMul || 
+                    binExp.Operator == Operator.Shl)
                     return MergeInductionVariableConstant(ivLeft, binExp.Operator, binExp.Right as Constant);
             }
             return null;

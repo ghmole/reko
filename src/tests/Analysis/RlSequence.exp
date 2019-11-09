@@ -1,139 +1,80 @@
 // fn0C00_0000 /////////////////////
 	LiveOut:  
-	MayUseIn:  ds es
-	BypassIn: 
-	Trashed:   SCZO ah al ax di dil eax edi esi rax rdi rsi si sil
+	BitsUsed:  ds:[0..15] es:[0..15]
+	Trashed:   SCZO ax di si Top
 	Preserved: sp
 // fn0C00_0000
-void fn0C00_0000()
-// SymbolicIn: sp:fp
+define fn0C00_0000
 fn0C00_0000_entry:
-// DataOut: ds es
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp
+	def ds
+	def es
 l0C00_0000:
-	sp = fp
-	si = 0x1234
-	call fn0C00_000B (retsize: 2; depth: 2)
-	Mem0[ds:0x4321:word16] = ax
+	ds_si_6 = SEQ(ds, 0x1234) (alias)
+	call fn0C00_000B (retsize: 2;)
+		uses: es:es,Sequence ds:si:ds_si_6
+		defs: ax:ax_8
+	Mem14[ds:0x4321:word16] = ax_8
 	return
-// DataOut:
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp si:0x1234 di:<invalid> ax:<invalid>
 fn0C00_0000_exit:
-// DataOut:
-// DataOut (flags): 
-
 // fn0C00_000B /////////////////////
-	LiveOut:   ax ds
-	MayUseIn:  ds es si
-	BypassIn: 
-	Trashed:   SCZO ah al ax di dil eax edi rax rdi
+	LiveOut:   ax:[0..15]
+	BitsUsed:  es:[0..15] Sequence ds:si:[0..31]
+	Trashed:   SCZO ax di Top
 	Preserved: si sp
 // fn0C00_000B
-void fn0C00_000B()
-// SymbolicIn: sp:fp
+define fn0C00_000B
 fn0C00_000B_entry:
-// DataOut: ds es si
-// DataOut (flags): 
-// LocalsOut: fp(16)
-
-// SymbolicIn: sp:fp
+	def ds_si
+	si = SLICE(ds_si, word16, 0)
+	ds = SLICE(ds_si, selector, 16)
+	def es
 l0C00_000B:
-	sp = fp
-	sp = fp - 0x0002
-	wLoc02 = si
-	call fn0C00_0026 (retsize: 2; depth: 4)
-	di = ax
-	Mem0[ds:di:word16] = 0x0000
-	Mem0[ds:di + 0x0002:word16] = 0x0000
-	Mem0[ds:di + 0x0004:word16] = 0x0000
-	call fn0C00_0035 (retsize: 2; depth: 4)
-	ax = si
-	si = wLoc02
-	sp = fp
+	call fn0C00_0026 (retsize: 2;)
+		uses: Sequence ds:si:ds_si
+		defs: ax:ax_10
+	Mem12[ds:ax_10:word16] = 0x0000
+	Mem13[ds:ax_10 + 0x0002:word16] = 0x0000
+	Mem14[ds:ax_10 + 0x0004:word16] = 0x0000
+	call fn0C00_0035 (retsize: 2;)
+		uses: di:ax_10,es:es,Sequence ds:si:ds_si
+	ax_23 = si
 	return
-// DataOut: ax ds
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp di:<invalid> ax:si si:si -2(fp):si
 fn0C00_000B_exit:
-// DataOut: ax ds
-// DataOut (flags): 
-
+	use ax_23
 // fn0C00_0026 /////////////////////
-	LiveOut:   ax ds es
-	MayUseIn:  ds si
-	BypassIn: 
-	Trashed:   ah al ax eax rax
+	LiveOut:   ax:[0..15]
+	BitsUsed:  Sequence ds:si:[0..31]
+	Trashed:   ax Top
 	Preserved: si sp
 // fn0C00_0026
-void fn0C00_0026()
-// SymbolicIn: sp:fp
+define fn0C00_0026
 fn0C00_0026_entry:
-// DataOut: ds es si
-// DataOut (flags): 
-// LocalsOut: fp(16)
-
-// SymbolicIn: sp:fp
+	def ds_si
+	si = SLICE(ds_si, word16, 0)
 l0C00_0026:
-	sp = fp
-	sp = fp - 0x0002
-	wLoc02 = si
-	Mem0[ds:si:word16] = 0x0001
-	Mem0[ds:si + 0x0002:word16] = 0x0000
-	ax = si + 0x0004
-	si = wLoc02
-	sp = fp
+	Mem9[ds_si:word16] = 0x0001
+	Mem10[ds_si + 0x0002:word16] = 0x0000
+	ax_11 = si + 0x0004
 	return
-// DataOut: ax ds es
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp ax:si + 0x0004 si:si -2(fp):si
 fn0C00_0026_exit:
-// DataOut: ax ds es
-// DataOut (flags): 
-
+	use ax_11
 // fn0C00_0035 /////////////////////
-	LiveOut:   ds si
-	MayUseIn:  di ds es si
-	BypassIn: 
-	Trashed:   SCZO ah al ax di dil eax edi rax rdi
+	LiveOut:  
+	BitsUsed:  di:[0..15] es:[0..15] Sequence ds:si:[0..31]
+	Trashed:   SCZO ax di Top
 	Preserved: sp
 // fn0C00_0035
-void fn0C00_0035()
-// SymbolicIn: sp:fp
+define fn0C00_0035
 fn0C00_0035_entry:
-// DataOut: di ds es si
-// DataOut (flags): 
-// LocalsOut: fp(16)
-
-// SymbolicIn: sp:fp
+	def ds_si
+	def di
+	si = SLICE(ds_si, word16, 0)
+	def es
 l0C00_0035:
-	sp = fp
-	sp = fp - 0x0002
-	wLoc02 = di
-	v7 = Mem0[ds:si + 0x0002:word16] + 0x0001
-	Mem0[ds:si + 0x0002:word16] = v7
-	SZO = cond(v7)
-	ax = Mem0[ds:si + 0x0002:word16]
-	ax = ax << 0x0002
-	SCZO = cond(ax)
-	di = si + 0x0004
-	di = di + ax
-	SCZO = cond(di)
-	ax = wLoc02
-	sp = fp
-	Mem0[es:di:word16] = ax
-	di = di + 0x0002
+	v7_10 = Mem7[ds_si + 0x0002:word16] + 0x0001
+	Mem11[ds_si + 0x0002:word16] = v7_10
+	ax_12 = Mem11[ds_si + 0x0002:word16]
+	di_15 = si + 0x0004 + (ax_12 << 0x0002)
+	Mem20[es:di_15:word16] = di
 	return
-// DataOut: ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp ax:di di:<invalid> -2(fp):di
 fn0C00_0035_exit:
-// DataOut: ds si
-// DataOut (flags): 
-

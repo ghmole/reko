@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,16 +41,14 @@ namespace Reko.Analysis
     /// </remarks>
 	public class Coalescer : InstructionTransformer
 	{
-		private Procedure proc;
 		private SsaState ssa;
 		private SideEffectFinder sef;
         private Dictionary<Statement, List<SsaIdentifier>> defsByStatement;
 
 		private static TraceSwitch trace = new TraceSwitch("Coalescer", "Traces the progress of identifier coalescing");
 
-		public Coalescer(Procedure proc, SsaState ssa)
+		public Coalescer(SsaState ssa)
 		{
-			this.proc = proc;
 			this.ssa = ssa;
 			this.sef = new SideEffectFinder();
             this.defsByStatement = new Dictionary<Statement, List<SsaIdentifier>>();
@@ -101,11 +99,6 @@ namespace Reko.Analysis
 				return false;
 			if (use.Instruction is UseInstruction)
 				return false;
-            // Do not replace call uses
-            //$TODO: remove this in analysis branch
-            if (use.Instruction is CallInstruction ci &&
-                ci.Uses.Select(u => u.Expression).Contains(sid.Identifier))
-                return false;
             // A correctly decompiled program shouldn't contain any 
             // `Constant.Invalid`, but Reko uses `Constant.Invalid` to mark
             // places where it has noticed something is wrong. In such cases
@@ -140,8 +133,7 @@ namespace Reko.Analysis
 		public bool CoalesceStatements(SsaIdentifier sid, Expression defExpr, Statement def, Statement use)
 		{
             PreCoalesceDump(sid, def, use);
-			def.Instruction.Accept(new UsedIdentifierAdjuster(def, ssa.Identifiers, use));
-            use.Instruction.Accept(new IdentifierReplacer(ssa, use, sid.Identifier, defExpr));
+            use.Instruction.Accept(new IdentifierReplacer(ssa.Identifiers, use, sid.Identifier, defExpr, false));
 
 			if (defsByStatement.TryGetValue(def, out var sids))
 			{
@@ -218,7 +210,7 @@ namespace Reko.Analysis
 
 		public void Transform()
 		{
-			foreach (Block b in proc.ControlGraph.Blocks)
+			foreach (Block b in ssa.Procedure.ControlGraph.Blocks)
 			{
 				Process(b);
 			}
@@ -262,79 +254,5 @@ namespace Reko.Analysis
 			}
 			return MoveAssignment(initialPosition, block.Statements.Count, block);
 		}
-    }
-
-	/// <summary>
-	/// Replaces all occurences of an identifier with an expression.
-	/// </summary>
-    public class IdentifierReplacer : InstructionTransformer
-    {
-        private SsaState ssaIds;
-        private Statement use;
-        private Identifier idOld;
-        private Expression exprNew;
-
-        public IdentifierReplacer(SsaState ssaIds, Statement use, Identifier idOld, Expression exprNew)
-        {
-            this.ssaIds = ssaIds;
-            this.use = use;
-            this.idOld = idOld;
-            this.exprNew = exprNew;
-        }
-
-        public override Expression VisitIdentifier(Identifier id)
-        {
-            if (idOld == id)
-            {
-                ssaIds.Identifiers[id].Uses.Remove(use);
-                return exprNew;
-            }
-            else
-                return id;
-        }
-    }
-
-    /// <summary>
-    /// Replace uses of identifiers in the defined statement to reflect that it
-    /// has been moved into the using statement.
-    /// </summary>
-    public class UsedIdentifierAdjuster : InstructionVisitorBase
-    {
-        private Statement def;
-        private Statement use;
-        private SsaIdentifierCollection ssaIds;
-
-        public UsedIdentifierAdjuster(Statement def, SsaIdentifierCollection ssaIds, Statement use)
-        {
-            this.def = def;
-            this.use = use;
-            this.ssaIds = ssaIds;
-        }
-
-        public void Transform()
-        {
-            def.Instruction.Accept(this);
-        }
-
-        public override void VisitAssignment(Assignment a)
-        {
-            a.Src.Accept(this);
-        }
-
-        public override void VisitIdentifier(Identifier id)
-        {
-            SsaIdentifier sid = ssaIds[id];
-            for (int i = 0; i < sid.Uses.Count; ++i)
-            {
-                if (sid.Uses[i] == def)
-                    sid.Uses[i] = use;
-            }
-        }
-
-        public override void VisitStore(Store store)
-        {
-            store.Dst.Accept(this);
-            store.Src.Accept(this);
-        }
     }
 }

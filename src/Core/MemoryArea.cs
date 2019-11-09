@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@ namespace Reko.Core
 		}
 
         public Address BaseAddress { get; private set; }        // Address of start of image.
+        [Obsolete("EndAddress is not safe to use when a memory area reaches the maximum allowable address. Use the Length property instead.")]
         public Address EndAddress { get { return BaseAddress + Length; } }  // Address of the first byte beyond image.
         public byte[] Bytes { get { return abImage; } }
         public long Length { get { return abImage.Length; } }
@@ -139,6 +140,11 @@ namespace Reko.Core
 			return offset < (ulong) abImage.Length;
         }
 
+        public Constant ReadRelocation(long imageOffset)
+        {
+            return Relocations[BaseAddress.ToLinear() + (ulong) imageOffset];
+        }
+
 		/// <summary>
 		/// Reads a little-endian word from image offset.
 		/// </summary>
@@ -151,7 +157,7 @@ namespace Reko.Core
 		/// <returns>Typed constant from the image.</returns>
 		public Constant ReadLe(long imageOffset, PrimitiveType type)
 		{
-			Constant c = Relocations[(uint)imageOffset];
+			var c = ReadRelocation(imageOffset);
 			if (c != null && c.DataType.Size == type.Size)
 				return c;
             return ReadLe(abImage, imageOffset, type);
@@ -159,7 +165,7 @@ namespace Reko.Core
 
         public Constant ReadBe(long imageOffset, PrimitiveType type)
         {
-            Constant c = Relocations[(uint)imageOffset];
+            var c = ReadRelocation(imageOffset);
             if (c != null && c.DataType.Size == type.Size)
                 return c;
             return ReadBe(abImage, imageOffset, type);
@@ -172,7 +178,7 @@ namespace Reko.Core
 
         public bool TryReadLe(long imageOffset, PrimitiveType type, out Constant c)
         {
-            c = Relocations[(uint)imageOffset];
+            c = ReadRelocation(imageOffset);
             if (c != null && c.DataType.Size == type.Size)
                 return true;
             if (type.Size + imageOffset > abImage.Length)
@@ -188,7 +194,7 @@ namespace Reko.Core
 
         public bool TryReadBe(long imageOffset, PrimitiveType type, out Constant c)
         {
-            c = Relocations[(uint)imageOffset];
+            c = ReadRelocation(imageOffset);
             if (c != null && c.DataType.Size == type.Size)
                 return true;
             if (type.Size + imageOffset > abImage.Length)
@@ -220,6 +226,7 @@ namespace Reko.Core
             case 1: return Constant.Create(type, abImage[imageOffset]);
             case 2: return Constant.Create(type, ReadLeUInt16(abImage, imageOffset));
             case 4: return Constant.Create(type, ReadLeUInt32(abImage, imageOffset));
+            case 5:
             case 8: return Constant.Create(type, ReadLeUInt64(abImage, imageOffset));
             }
             throw new NotImplementedException(string.Format("Primitive type {0} not supported.", type));

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
         /// <remarks>
         /// According to the ELF PPC32 documentation, the .rela.plt and .plt tables 
         /// should contain the same number of entries, even if the individual entry 
-        /// sizes are distinct. The entries in .real.plt refer to symbols while the
+        /// sizes are distinct. The entries in .rela.plt refer to symbols while the
         /// entries in .plt are (writeable) pointers.  Any caller that jumps to one
         /// of pointers in the .plt table is a "trampoline", and should be replaced
         /// in the decompiled code with just a call to the symbol obtained from the
@@ -60,48 +60,49 @@ namespace Reko.ImageLoaders.Elf.Relocators
             for (int i = 0; i < rela_plt.EntryCount(); ++i)
             {
                 // Read the .rela.plt entry
-                uint offset;
-                if (!relaRdr.TryReadUInt32(out offset))
+                if (!relaRdr.TryReadUInt32(out uint offset))
                     return;
-                uint info;
-                if (!relaRdr.TryReadUInt32(out info))
+                if (!relaRdr.TryReadUInt32(out uint info))
                     return;
-                int addend;
-                if (!relaRdr.TryReadInt32(out addend))
+                if (!relaRdr.TryReadInt32(out int addend))
                     return;
 
                 // Read the .plt entry. We don't care about its contents,
                 // only its address. Anyone accessing that address is
                 // trying to access the symbol.
 
-                uint thunkAddress;
-                if (!pltRdr.TryReadUInt32(out thunkAddress))
+                if (!pltRdr.TryReadUInt32(out uint thunkAddress))
                     break;
 
                 uint sym = info >> 8;
                 string symStr = loader.GetSymbolName(rela_plt.LinkedSection, sym);
 
                 var addr = plt.Address + (uint)i * 4;
+                //$TODO: why is this relocator not like the others? This code needs 
+                // to be changed to us RelocateEntry like all other subclasses.
                 program.ImportReferences.Add(
                     addr,
-                    new NamedImportReference(addr, null, symStr));
+                    //$BUG: ExternalProcedure below should be using the symbol type. When
+                    // changing to use RelocateEntry this will go away.
+                    new NamedImportReference(addr, null, symStr, SymbolType.ExternalProcedure));
             }
         }
 
-        public override void RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
+        public override ElfSymbol RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
         {
             if (loader.Sections.Count <= sym.SectionIndex)
-                return;
+                return sym;
             if (sym.SectionIndex == 0)
-                return;
+                return sym;
             var symSection = loader.Sections[(int)sym.SectionIndex];
             uint S = (uint)sym.Value;
             uint A = (uint)rela.Addend;
             uint P = (uint)rela.Offset;
             var addr = Address.Ptr32(P);
             uint PP = P;
-            var relR = program.CreateImageReader(addr);
-            var relW = program.CreateImageWriter(addr);
+            var arch = program.Architecture;
+            var relR = program.CreateImageReader(arch, addr);
+            var relW = program.CreateImageWriter(arch, addr);
 
             var rt = (PpcRt)(rela.Info & 0xFF);
             switch (rt)
@@ -129,7 +130,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 break;
             case PpcRt.R_PPC_ADDR16_LO:
                 if (prevPpcHi16 == null)
-                    return;
+                    return sym;
                 uint valueHi = prevRelR.ReadUInt16();
                 uint valueLo = relR.ReadUInt16();
 
@@ -152,6 +153,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 missedRelocations[rt] = count + 1;
                 break;
             }
+            return sym;
         }
 
         public override string RelocationTypeToString(uint type)
@@ -167,9 +169,10 @@ namespace Reko.ImageLoaders.Elf.Relocators
             this.loader = loader;
         }
 
-        public override void RelocateEntry(Program program, ElfSymbol symbol, ElfSection referringSection, ElfRelocation rela)
+        public override ElfSymbol RelocateEntry(Program program, ElfSymbol symbol, ElfSection referringSection, ElfRelocation rela)
         {
             //$TODO: implement me :)
+            throw new NotImplementedException();
         }
 
         public override string RelocationTypeToString(uint type)

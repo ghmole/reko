@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,8 +32,6 @@ namespace Reko.Arch.X86
 {
     public partial class X86Rewriter
     {
-        private int maxFpuStackWrite;
-
         public void EmitCommonFpuInstruction(
             Func<Expression,Expression,Expression> op,
             bool fReversed,
@@ -48,15 +46,15 @@ namespace Reko.Arch.X86
             bool fPopStack,
             DataType cast)
         {
-            switch (instrCur.Operands)
+            switch (instrCur.Operands.Length)
             {
             default:
                 throw new ArgumentOutOfRangeException("di.Instruction", "Instruction must have 1 or 2 operands");
             case 1:
                 {
                     // implicit st(0) operand.
-                    Identifier opLeft = FpuRegister(0);
-                    Expression opRight = MaybeCast(cast, SrcOp(instrCur.op1));
+                    var opLeft = FpuRegister(0);
+                    var opRight = MaybeCast(cast, SrcOp(instrCur.Operands[0]));
                     m.Assign(
                         opLeft,
                         op(
@@ -66,10 +64,10 @@ namespace Reko.Arch.X86
                 }
             case 2:
                 {
-                    Expression op1 = SrcOp(instrCur.op1);
-                    Expression op2 = SrcOp(instrCur.op2);
+                    Expression op1 = SrcOp(instrCur.Operands[0]);
+                    Expression op2 = SrcOp(instrCur.Operands[1]);
                     m.Assign(
-                        SrcOp(instrCur.op1),
+                        SrcOp(instrCur.Operands[0]),
                         op(
                             fReversed ? op2 : op1,
                             fReversed ? op1 : op2));
@@ -79,7 +77,7 @@ namespace Reko.Arch.X86
 
             if (fPopStack)
             {
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
             }
         }
 
@@ -103,17 +101,16 @@ namespace Reko.Arch.X86
 
         private void RewriteFbld()
         {
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Assign(FpuRegister(0),
-                host.PseudoProcedure("__fbld", PrimitiveType.Real64, SrcOp(instrCur.op1)));
-            WriteFpuStack(0);
+                host.PseudoProcedure("__fbld", PrimitiveType.Real64, SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFbstp()
         {
-            instrCur.op1.Width = PrimitiveType.Bcd80;
-            m.Assign(SrcOp(instrCur.op1), m.Cast(instrCur.op1.Width, orw.FpuRegister(0, state)));
-            state.ShrinkFpuStack(1);
+            instrCur.Operands[0].Width = PrimitiveType.Bcd80;
+            m.Assign(SrcOp(instrCur.Operands[0]), m.Cast(instrCur.Operands[0].Width, orw.FpuRegister(0, state)));
+            ShrinkFpuStack(1);
         }
 
         private void EmitFchs()
@@ -121,7 +118,6 @@ namespace Reko.Arch.X86
             m.Assign(
                 orw.FpuRegister(0, state),
                 m.Neg(orw.FpuRegister(0, state)));		//$BUGBUG: should be Real, since we don't know the actual size.
-            WriteFpuStack(0);
         }
 
         private void RewriteFclex()
@@ -134,36 +130,36 @@ namespace Reko.Arch.X86
             m.BranchInMiddleOfInstruction(
                 m.Test(cc, orw.FlagGroup(flag)),
                 instrCur.Address + instrCur.Length,
-                RtlClass.ConditionalTransfer);
+                InstrClass.ConditionalTransfer);
 
-            var dst = SrcOp(instrCur.op1);
-            var src = SrcOp(instrCur.op2);
+            var dst = SrcOp(instrCur.Operands[0]);
+            var src = SrcOp(instrCur.Operands[1]);
             m.Assign(dst, src);
         }
 
         private void RewriteFcom(int pops)
         {
-            Identifier op1 = FpuRegister(0);
-            Expression op2 = (instrCur.code == Opcode.fcompp || instrCur.code == Opcode.fucompp)
+            var op1 = FpuRegister(0);
+            var op2 = (instrCur.code == Mnemonic.fcompp || instrCur.code == Mnemonic.fucompp)
                 ? FpuRegister(1)
-                : SrcOp(instrCur.op1);
+                : SrcOp(instrCur.Operands[0]);
             m.Assign(
-                orw.FlagGroup(FlagM.FPUF),
+                binder.EnsureRegister(Registers.FPUF),
                 m.Cond(
                     m.FSub(op1, op2)));
-            state.ShrinkFpuStack(pops);
+            ShrinkFpuStack(pops);
         }
 
         private void RewriteFdecstp()
         {
-            state.ShrinkFpuStack(1);
+            ShrinkFpuStack(1);
             m.Nop();
         }
 
         private void RewriteFfree()
         {
             m.SideEffect(
-                host.PseudoProcedure("__ffree", VoidType.Instance, SrcOp(instrCur.op1)));
+                host.PseudoProcedure("__ffree", VoidType.Instance, SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFUnary(string name)
@@ -171,61 +167,59 @@ namespace Reko.Arch.X86
             m.Assign(
                 orw.FpuRegister(0, state),
                 host.PseudoProcedure(name, PrimitiveType.Real64, orw.FpuRegister(0, state)));
-            WriteFpuStack(0);
         }
 
         private void RewriteFicom(bool pop)
         {
             m.Assign(
-                orw.FlagGroup(FlagM.FPUF),
+                orw.AluRegister(Registers.FPUF),
                 m.Cond(
                     m.FSub(
                         orw.FpuRegister(0, state),
                         m.Cast(PrimitiveType.Real64,
-                            SrcOp(instrCur.op1)))));
+                            SrcOp(instrCur.Operands[0])))));
             if (pop)
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
         }
 
         private void RewriteFild()
         {
-            state.GrowFpuStack(instrCur.Address);
-            var iType = PrimitiveType.Create(Domain.SignedInt, instrCur.op1.Width.BitSize);
+            GrowFpuStack(1);
+            var iType = PrimitiveType.Create(Domain.SignedInt, instrCur.Operands[0].Width.BitSize);
             m.Assign(
                 orw.FpuRegister(0, state),
-                m.Cast(PrimitiveType.Real64, SrcOp(instrCur.op1, iType)));
-            WriteFpuStack(0);
+                m.Cast(PrimitiveType.Real64, SrcOp(instrCur.Operands[0], iType)));
         }
 
         private void RewriteFincstp()
         {
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Nop();
         }
 
         private void RewriteFist(bool pop)
         {
-            instrCur.op1.Width = PrimitiveType.Create(Domain.SignedInt, instrCur.op1.Width.BitSize);
-            m.Assign(SrcOp(instrCur.op1), m.Cast(instrCur.op1.Width, orw.FpuRegister(0, state)));
+            instrCur.Operands[0].Width = PrimitiveType.Create(Domain.SignedInt, instrCur.Operands[0].Width.BitSize);
+            m.Assign(SrcOp(instrCur.Operands[0]), m.Cast(instrCur.Operands[0].Width, orw.FpuRegister(0, state)));
             if (pop)
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
         }
 
         private void RewriteFistt(bool pop)
         {
-            instrCur.op1.Width = PrimitiveType.Create(Domain.SignedInt, instrCur.op1.Width.BitSize);
+            instrCur.Operands[0].Width = PrimitiveType.Create(Domain.SignedInt, instrCur.Operands[0].Width.BitSize);
             var fpuReg = orw.FpuRegister(0, state);
             var trunc = host.PseudoProcedure("trunc", fpuReg.DataType, fpuReg);
-            m.Assign(SrcOp(instrCur.op1), m.Cast(instrCur.op1.Width, trunc));
+            m.Assign(SrcOp(instrCur.Operands[0]), m.Cast(instrCur.Operands[0].Width, trunc));
             if (pop)
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
         }
 
         public void RewriteFld()
         {
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             var dst = FpuRegister(0);
-            var src = SrcOp(instrCur.op1);
+            var src = SrcOp(instrCur.Operands[0]);
             if (src.DataType.Size != dst.DataType.Size)
             {
                 src = m.Cast(
@@ -233,7 +227,6 @@ namespace Reko.Arch.X86
                     src);
             }
             m.Assign(dst, src);
-            WriteFpuStack(0);
         }
 
         private void RewriteFldConst(double constant)
@@ -243,9 +236,8 @@ namespace Reko.Arch.X86
 
         private void RewriteFldConst(Constant c)
         {
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Assign(FpuRegister(0), c);
-            WriteFpuStack(0);
         }
 
         private void RewriteFldcw()
@@ -253,7 +245,7 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure(
                 "__fldcw",
                 VoidType.Instance,
-                SrcOp(instrCur.op1)));
+                SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFldenv()
@@ -261,7 +253,7 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure(
                 "__fldenv",
                 VoidType.Instance,
-                SrcOp(instrCur.op1)));
+                SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFstenv()
@@ -269,41 +261,38 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure(
                 "__fstenv",
                 VoidType.Instance,
-                SrcOp(instrCur.op1)));
+                SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFpatan()
         {
             Expression op1 = FpuRegister(1);
             Expression op2 = FpuRegister(0);
-            state.ShrinkFpuStack(1);
+            ShrinkFpuStack(1);
             m.Assign(FpuRegister(0), host.PseudoProcedure("atan", PrimitiveType.Real64, op1, op2));
-            WriteFpuStack(0);
         }
 
         private void RewriteFprem()
         {
             Expression op1 = FpuRegister(1);
             Expression op2 = FpuRegister(0);
-            state.ShrinkFpuStack(1);
+            ShrinkFpuStack(1);
             m.Assign(FpuRegister(0),
                 m.Mod(op2, op1));
-            WriteFpuStack(0);
         }
 
         private void RewriteFprem1()
         {
-            Expression op1 = SrcOp(instrCur.op1);
-            Expression op2 = SrcOp(instrCur.op2);
+            Expression op1 = SrcOp(instrCur.Operands[0]);
+            Expression op2 = SrcOp(instrCur.Operands[1]);
             m.Assign(op1, host.PseudoProcedure("__fprem1", op1.DataType, op1, op2));
-            WriteFpuStack(0);
         }
 
         private void RewriteFptan()
         {
             Expression op1 = FpuRegister(0);
             m.Assign(FpuRegister(0), host.PseudoProcedure("tan", PrimitiveType.Real64, op1));
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Assign(FpuRegister(0), Constant.Real64(1.0));
         }
 
@@ -312,17 +301,15 @@ namespace Reko.Arch.X86
             Identifier itmp = binder.CreateTemporary(PrimitiveType.Real64);
             m.Assign(itmp, FpuRegister(0));
 
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Assign(FpuRegister(1), host.PseudoProcedure("cos", PrimitiveType.Real64, itmp));
             m.Assign(FpuRegister(0), host.PseudoProcedure("sin", PrimitiveType.Real64, itmp));
-            WriteFpuStack(0);
-            WriteFpuStack(1);
         }
 
         private void RewriteFst(bool pop)
         {
             Expression src = FpuRegister(0);
-            Expression dst = SrcOp(instrCur.op1);
+            Expression dst = SrcOp(instrCur.Operands[0]);
             if (src.DataType.Size != dst.DataType.Size)
             {
                 src = m.Cast(
@@ -331,13 +318,13 @@ namespace Reko.Arch.X86
             }
             m.Assign(dst, src);
             if (pop)
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
         }
 
         private void RewriterFstcw()
         {
 			m.Assign(
-                SrcOp(instrCur.op1),
+                SrcOp(instrCur.Operands[0]),
                 host.PseudoProcedure("__fstcw", PrimitiveType.UInt16));
         }
 
@@ -347,7 +334,7 @@ namespace Reko.Arch.X86
                 host.PseudoProcedure(
                     "__frstor",
                     VoidType.Instance,
-                    SrcOp(instrCur.op1)));
+                    SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFsave()
@@ -356,7 +343,7 @@ namespace Reko.Arch.X86
                 host.PseudoProcedure(
                     "__fsave", 
                     VoidType.Instance, 
-                    SrcOp(instrCur.op1)));
+                    SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteFscale()
@@ -366,33 +353,44 @@ namespace Reko.Arch.X86
                 host.PseudoProcedure("scalbn", PrimitiveType.Real64, FpuRegister(0), FpuRegister(1)));
         }
 
+        // 8087 status register bits:
+        // bit 8: C0
+        // bit 9: C1
+        // bit 10: C2
+        // bit 14: C3
+        // 8086 flag register bits:
+        // bit 0: CF
+        // bit 1: RESERVED
+        // bit 2: PF
+        // bit 6: ZF
+
         private void RewriteFstsw()
         {
             if (MatchesFstswSequence())
                 return;
             m.Assign(
-                SrcOp(instrCur.op1),
+                SrcOp(instrCur.Operands[0]),
                 new BinaryExpression(Operator.Shl, PrimitiveType.Word16,
-                        new Cast(PrimitiveType.Word16, orw.FlagGroup(FlagM.FPUF)),
+                        new Cast(PrimitiveType.Word16, orw.AluRegister(Registers.FPUF)),
                         Constant.Int16(8)));
         }
 
         public bool MatchesFstswSequence()
         {
             var nextInstr = dasm.Peek(1);
-            if (nextInstr.code == Opcode.sahf)
+            if (nextInstr.code == Mnemonic.sahf)
             {
                 this.len += nextInstr.Length;
                 dasm.Skip(1);
                 m.Assign(
                     orw.FlagGroup(FlagM.ZF | FlagM.CF | FlagM.SF | FlagM.OF),
-                    orw.FlagGroup(FlagM.FPUF));
+                    orw.AluRegister(Registers.FPUF));
                 return true;
             }
-            if (nextInstr.code == Opcode.test)
+            if (nextInstr.code == Mnemonic.test)
             {
-                RegisterOperand acc = nextInstr.op1 as RegisterOperand;
-                ImmediateOperand imm = nextInstr.op2 as ImmediateOperand;
+                RegisterOperand acc = nextInstr.Operands[0] as RegisterOperand;
+                ImmediateOperand imm = nextInstr.Operands[1] as ImmediateOperand;
                 if (imm == null || acc == null)
                     return false;
                 int mask = imm.Value.ToInt32();
@@ -403,7 +401,7 @@ namespace Reko.Arch.X86
                 this.len += nextInstr.Length;
                 m.Assign(
                     orw.FlagGroup(FlagM.ZF | FlagM.CF | FlagM.SF | FlagM.OF),
-                    orw.FlagGroup(FlagM.FPUF));
+                    orw.AluRegister(Registers.FPUF));
 
                 // Advance past the 'test' instruction.
                 dasm.Skip(1);
@@ -450,30 +448,30 @@ namespace Reko.Arch.X86
                     // basis, since they don't affect the x86 flags register.
                     // The long term fix is to implement an architecture-specific
                     // condition code elimination pass as described elsewhere.
-                    case Opcode.mov: RewriteMov(); break;
-                    case Opcode.fstp: RewriteFst(true); break;
-                    case Opcode.push: RewritePush(); break;
-                    case Opcode.lea: RewriteLea(); break;
+                    case Mnemonic.mov: RewriteMov(); break;
+                    case Mnemonic.fstp: RewriteFst(true); break;
+                    case Mnemonic.push: RewritePush(); break;
+                    case Mnemonic.lea: RewriteLea(); break;
 
-                    case Opcode.jpe:
-                        if (mask == 0x05) { Branch(ConditionCode.GE, instrCur.op1); return true; }
-                        if (mask == 0x41) { Branch(ConditionCode.GT, instrCur.op1); return true; }
-                        if (mask == 0x44) { Branch(ConditionCode.NE, instrCur.op1); return true; }
+                    case Mnemonic.jpe:
+                        if (mask == 0x05) { Branch(ConditionCode.GE, instrCur.Operands[0]); return true; }
+                        if (mask == 0x41) { Branch(ConditionCode.GT, instrCur.Operands[0]); return true; }
+                        if (mask == 0x44) { Branch(ConditionCode.NE, instrCur.Operands[0]); return true; }
                         throw new AddressCorrelatedException(instrCur.Address, "Unexpected {0} fstsw mask for {1} opcode .", mask, instrCur.code);
-                    case Opcode.jpo:
-                        if (mask == 0x44) { Branch(ConditionCode.EQ, instrCur.op1); return true; }
-                        if (mask == 0x41) { Branch(ConditionCode.LE, instrCur.op1); return true; }
-                        if (mask == 0x05) { Branch(ConditionCode.LT, instrCur.op1); return true; }
+                    case Mnemonic.jpo:
+                        if (mask == 0x44) { Branch(ConditionCode.EQ, instrCur.Operands[0]); return true; }
+                        if (mask == 0x41) { Branch(ConditionCode.LE, instrCur.Operands[0]); return true; }
+                        if (mask == 0x05) { Branch(ConditionCode.LT, instrCur.Operands[0]); return true; }
                         throw new AddressCorrelatedException(instrCur.Address, "Unexpected {0} fstsw mask for {1} opcode .", mask, instrCur.code);
-                    case Opcode.jz:
-                        if (mask == 0x40) { Branch(ConditionCode.NE, instrCur.op1); return true; }
-                        if (mask == 0x41) { Branch(ConditionCode.GT, instrCur.op1); return true; }
-                        if (mask == 0x01) { Branch(ConditionCode.GE, instrCur.op1); return true; }
+                    case Mnemonic.jz:
+                        if (mask == 0x40) { Branch(ConditionCode.NE, instrCur.Operands[0]); return true; }
+                        if (mask == 0x41) { Branch(ConditionCode.GT, instrCur.Operands[0]); return true; }
+                        if (mask == 0x01) { Branch(ConditionCode.GE, instrCur.Operands[0]); return true; }
                         throw new AddressCorrelatedException(instrCur.Address, "Unexpected {0} fstsw mask for {1} opcode .", mask, instrCur.code);
-                    case Opcode.jnz:
-                        if (mask == 0x40) { Branch(ConditionCode.EQ, instrCur.op1); return true; }
-                        if (mask == 0x41) { Branch(ConditionCode.LE, instrCur.op1); return true; }
-                        if (mask == 0x01) { Branch(ConditionCode.LT, instrCur.op1); return true; }
+                    case Mnemonic.jnz:
+                        if (mask == 0x40) { Branch(ConditionCode.EQ, instrCur.Operands[0]); return true; }
+                        if (mask == 0x41) { Branch(ConditionCode.LE, instrCur.Operands[0]); return true; }
+                        if (mask == 0x01) { Branch(ConditionCode.LT, instrCur.Operands[0]); return true; }
                         throw new AddressCorrelatedException(instrCur.Address, "Unexpected {0} fstsw mask for {1} opcode .", mask, instrCur.code);
                     default:
                         throw new AddressCorrelatedException(instrCur.Address, "Unexpected instruction {0} after fstsw", instrCur);
@@ -486,7 +484,8 @@ namespace Reko.Arch.X86
 
         private void Branch(ConditionCode code, MachineOperand op)
         {
-            m.Branch(m.Test(code, orw.FlagGroup(FlagM.FPUF)), OperandAsCodeAddress( op), RtlClass.ConditionalTransfer);
+            this.rtlc = InstrClass.ConditionalTransfer;
+            m.Branch(m.Test(code, orw.AluRegister(Registers.FPUF)), OperandAsCodeAddress( op), InstrClass.ConditionalTransfer);
         }
 
         private void RewriteFtst()
@@ -495,10 +494,10 @@ namespace Reko.Arch.X86
                 m.ISub(FpuRegister(0), Constant.Real64(0.0)));
         }
 
-        private void RewrteFcomi(bool pop)
+        private void RewriteFcomi(bool pop)
         {
-            var op1 = SrcOp(instrCur.op1);
-            var op2 = SrcOp(instrCur.op2);
+            var op1 = SrcOp(instrCur.Operands[0]);
+            var op2 = SrcOp(instrCur.Operands[1]);
             m.Assign(
                 orw.FlagGroup(FlagM.ZF|FlagM.PF|FlagM.CF),
                 m.Cond(
@@ -507,13 +506,13 @@ namespace Reko.Arch.X86
             m.Assign(orw.FlagGroup(FlagM.SF), Constant.False());
             if (pop)
             {
-                state.ShrinkFpuStack(1);
+                ShrinkFpuStack(1);
             }
         }
 
         private void RewriteFxam()
         {
-            m.Assign(orw.FlagGroup(FlagM.FPUF), m.Cond(FpuRegister(0)));
+            m.Assign(orw.AluRegister(Registers.FPUF), m.Cond(FpuRegister(0)));
         }
 
         private void RewriteFxtract()
@@ -521,7 +520,7 @@ namespace Reko.Arch.X86
             var fp = this.FpuRegister(0);
             var tmp = binder.CreateTemporary(fp.DataType);
             m.Assign(tmp, fp);
-            state.GrowFpuStack(instrCur.Address);
+            GrowFpuStack(1);
             m.Assign(this.FpuRegister(1), host.PseudoProcedure("__exponent", fp.DataType, tmp));
             m.Assign(this.FpuRegister(0), host.PseudoProcedure("__significand", fp.DataType, tmp));
         }
@@ -529,20 +528,20 @@ namespace Reko.Arch.X86
         private void RewriteFyl2x()
         {
             //$REVIEW: Candidate for idiom search.
-            Identifier op1 = FpuRegister(0);
-            Identifier op2 = FpuRegister(1);
+            var op1 = FpuRegister(0);
+            var op2 = FpuRegister(1);
             m.Assign(op2, 
                 m.FMul(op2, 
                       host.PseudoProcedure("lg2", PrimitiveType.Real64, op2)));
-            state.ShrinkFpuStack(1);
-            WriteFpuStack(0);
+
+            ShrinkFpuStack(1);
         }
 
         private void RewriteFyl2xp1()
         {
             //$REVIEW: Candidate for idiom search.
-            Identifier op1 = FpuRegister(0);
-            Identifier op2 = FpuRegister(1);
+            var op1 = FpuRegister(0);
+            var op2 = FpuRegister(1);
             m.Assign(op2,
                 m.FMul(
                     op2,
@@ -551,10 +550,9 @@ namespace Reko.Arch.X86
                         PrimitiveType.Real64,
                         m.FAdd(op1, Constant.Real64(1.0)))));
             m.Assign(
-                orw.FlagGroup(FlagM.FPUF),
+                orw.AluRegister(Registers.FPUF),
                 m.Cond(op2));
-            state.ShrinkFpuStack(1);
-            WriteFpuStack(0);
+            ShrinkFpuStack(1);
         }
 
         private void RewriteWait()
@@ -562,11 +560,10 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure("__wait", VoidType.Instance));
         }
 
-        private Identifier FpuRegister(int reg)
+        private Expression FpuRegister(int reg)
         {
             return orw.FpuRegister(reg, state);
         }
-
 
         public Expression MaybeCast(DataType type, Expression e)
         {
@@ -576,11 +573,21 @@ namespace Reko.Arch.X86
                 return e;
         }
 
-        private void WriteFpuStack(int offset)
+        private void GrowFpuStack(int amount)
         {
-            int o = offset - state.FpuStackItems;
-            if (o > maxFpuStackWrite)
-                maxFpuStackWrite = o;
+            //$TODO: do this in SSA.
+            //if (FpuStackItems > 7)
+            //{
+            //    Debug.WriteLine(string.Format("Possible FPU stack overflow at address {0}", addrInstr));    //$BUGBUG: should be an exception
+            //}
+            var top = binder.EnsureRegister(Registers.Top);
+            m.Assign(top, m.ISubS(top, amount));
+        }
+
+        private void ShrinkFpuStack(int amount)
+        {
+            var top = binder.EnsureRegister(Registers.Top);
+            m.Assign(top, m.IAddS(top, amount));
         }
     }
 }

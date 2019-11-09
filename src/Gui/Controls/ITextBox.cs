@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,12 +30,9 @@ namespace Reko.Gui.Controls
         event EventHandler TextChanged;
         event EventHandler<KeyEventArgs> KeyDown;
         event EventHandler<KeyEventArgs> KeyUp;
-        event EventHandler LostFocus;
 
         string Text { get; set; }
 
         void SelectAll();
-
-        void Focus();
     }
 }

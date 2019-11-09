@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ namespace Reko.UnitTests.Mocks
 		protected override void BuildBody()
 		{
 			var ptr = Local32("ptr");
+            Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
 			Assign(ptr, 0x04000000);
 			Label("looptest");
 			BranchIf(Uge(ptr, 0x04001000), "done");

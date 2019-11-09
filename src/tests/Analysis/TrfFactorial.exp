@@ -1,15 +1,15 @@
-fn0C00_0000 SCZO ah al ax ch cl cx dh dl dx eax ecx edx rax rcx rdx
-const ax:<invalid> cx:0x0064 dx:<invalid>
+fn0C00_0000 SCZO ax cx dx Top
+const ax:<invalid> cx:0x0064 dx:<invalid> Top:0
     fn0C00_0000_entry sp:fp
-    l0C00_0000 sp:fp
-    fn0C00_0000_exit ax:<invalid> cx:0x0064 dx:<invalid> sp:fp
+    l0C00_0000 sp:fp Top:0
+    fn0C00_0000_exit ax:<invalid> cx:0x0064 dx:<invalid> sp:fp Top:0
 
-fn0C00_000F SCZO ah al ax dh dl dx eax edx rax rdx
-const ax:<invalid> dx:<invalid> Sequence dx:ax:<invalid>
+fn0C00_000F SCZO ax dx Top
+const ax:<invalid> dx:<invalid> Sequence dx:ax:<invalid> Top:0
     fn0C00_000F_entry sp:fp
-    l0C00_000F sp:fp
-    l0C00_0018 ax:<invalid> bp:fp - 0x0002 sp:fp - 0x0002
-    l0C00_0026 ax:<invalid> bp:fp - 0x0002 sp:fp - 0x0002
-    l0C00_0029 ax:<invalid> bp:fp - 0x0002 dx:<invalid> Sequence dx:ax:<invalid> sp:fp - 0x0002
-    fn0C00_000F_exit ax:<invalid> bp:bp dx:<invalid> Sequence dx:ax:<invalid> sp:fp
+    l0C00_000F sp:fp Top:0
+    l0C00_0018 ax:<invalid> bp:fp - 2 sp:fp - 2 Top:0
+    l0C00_0026 ax:<invalid> bp:fp - 2 sp:fp - 2 Top:0
+    l0C00_0029 ax:<invalid> bp:fp - 2 dx:<invalid> Sequence dx:ax:<invalid> sp:fp - 0x0002 Top:0
+    fn0C00_000F_exit ax:<invalid> bp:bp dx:<invalid> Sequence dx:ax:<invalid> sp:fp Top:0
 

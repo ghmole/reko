@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,8 @@
  */
 #endregion
 
+using Reko.Core;
+using Reko.Core.Machine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,545 +29,591 @@ namespace Reko.Arch.X86
 {
     public partial class X86Disassembler
     {
-        private static OpRec[] CreateTwobyteOprecs()
+        private static Decoder[] CreateTwobyteDecoders()
         {
-            return new OpRec[]
+            return new Decoder[]
             {
-				// 00
-				new SingleByteOpRec(Opcode.illegal),
-                new GroupOpRec(7, ""),
-                new SingleByteOpRec(Opcode.lar, "Gv,Ew"),
-                new SingleByteOpRec(Opcode.lsl, "Gv,Ew"),
-                new SingleByteOpRec(Opcode.illegal),
-                new Alternative64OpRec(
-                    new SingleByteOpRec(Opcode.illegal),
-                    new SingleByteOpRec(Opcode.syscall)),
-                new SingleByteOpRec(Opcode.clts),
-                new Alternative64OpRec(
-                    new SingleByteOpRec(Opcode.illegal),
-                    new SingleByteOpRec(Opcode.sysret)),
+				// 0F 00
+				new GroupDecoder(6),
+                new GroupDecoder(7),
+                Instr(Mnemonic.lar, InstrClass.System, Gv,Ew),
+                Instr(Mnemonic.lsl, InstrClass.System, Gv,Ew),
+                s_invalid,
+                new Alternative64Decoder(
+                    s_invalid,
+                    Instr(Mnemonic.syscall, InstrClass.Transfer|InstrClass.Call)),
+                Instr(Mnemonic.clts),
+                new Alternative64Decoder(
+                    s_invalid,
+                    Instr(Mnemonic.sysret, InstrClass.Transfer)),
 
-                new SingleByteOpRec(Opcode.invd),
-                new SingleByteOpRec(Opcode.wbinvd),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.ud2),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.prefetchw, "Ev"),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
+                Instr(Mnemonic.invd, InstrClass.System),
+                Instr(Mnemonic.wbinvd, InstrClass.System),
+                s_invalid,
+                Instr(Mnemonic.ud2, InstrClass.Invalid),
+                s_invalid,
+                Instr(Mnemonic.prefetchw, Ev),
+                Instr(Mnemonic.femms),    // AMD-specific
+                s_invalid, // nyi("AMD 3D-Now instructions"), //$TODO: this requires adding separate processor model for AMD
 
-				// 10
-				new PrefixedOpRec(
-                    Opcode.movups, "Vps,Wps",
-                    Opcode.movupd, "Vpd,Wpd",
-                    Opcode.movss,  "Vx,Wss",
-                    Opcode.movsd,  "Vx,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.movups, "Wps,Vps",
-                    Opcode.movupd, "Wpd,Vpd",
-                    Opcode.movss,  "Wss,Vss",
-                    Opcode.movsd,  "Wsd,Vsd"),
-                new PrefixedOpRec(
-                    Opcode.movlps,   "Vq,Hq,Mq",
-                    Opcode.movlpd,   "Vq,Hq,Mq",
-                    Opcode.movsldup, "Vx,Wx",
-                    Opcode.movddup,  "Vx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
-                new PrefixedOpRec(
-                    Opcode.unpcklps, "Vx,Hx,Wx",
-                    Opcode.unpcklpd, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
-                new PrefixedOpRec(
-                    Opcode.movlhps, "Vx,Wx",
-                    Opcode.movhpd, "Vx,Wx",
-                    Opcode.movshdup, "Vx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.movhps, "Mq,Vq",
-                    Opcode.movhpd, "Mq,Vq"),
+				// 0F 10
+				new PrefixedDecoder(
+                    Instr(Mnemonic.movups, Vps,Wps),
+                    Instr(Mnemonic.movupd, Vpd,Wpd),
+                    Instr(Mnemonic.movss,  Vx,Wss),
+                    Instr(Mnemonic.movsd,  Vx,Wsd)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movups, Wps,Vps),
+                    Instr(Mnemonic.movupd, Wpd,Vpd),
+                    Instr(Mnemonic.movss,  Wss,Vss),
+                    Instr(Mnemonic.movsd,  Wsd,Vsd)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movlps,   Vq,Hq,Mq),
+                    Instr(Mnemonic.movlpd,   Vq,Hq,Mq),
+                    Instr(Mnemonic.movsldup, Vx,Wx),
+                    Instr(Mnemonic.movddup,  Vx,Wx)),
+                new PrefixedDecoder(
+					Instr(Mnemonic.vmovlps, Mq,Vq),
+                    dec66:Instr(Mnemonic.vmovlpd, Mq,Vq)),
 
-                new GroupOpRec(16, ""),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.nop, "Ev"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.unpcklps, Vx,Hx,Wx),
+                    Instr(Mnemonic.unpcklpd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.unpckhps, Vx,Hx,Wx),
+                    Instr(Mnemonic.unpckhpd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movlhps, Vx,Wx),
+                    Instr(Mnemonic.movhpd, Vx,Wx),
+                    Instr(Mnemonic.movshdup, Vx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movhps, Mq,Vq),
+                    Instr(Mnemonic.movhpd, Mq,Vq)),
+
+                new GroupDecoder(16),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
+                Instr(Mnemonic.cldemote, Eb),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding, Ev),
 
 				// 0F 20
-				new SingleByteOpRec(Opcode.mov, "Rv,Cd"),
-                new SingleByteOpRec(Opcode.mov, "Rv,Dd"),
-                new SingleByteOpRec(Opcode.mov, "Cd,Rv"),
-                new SingleByteOpRec(Opcode.mov, "Dd,Rv"),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
+				Instr(Mnemonic.mov, Rv,Cd),
+                Instr(Mnemonic.mov, Rv,Dd),
+                Instr(Mnemonic.mov, Cd,Rv),
+                Instr(Mnemonic.mov, Dd,Rv),
+				s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
 
-                new PrefixedOpRec(
-                    Opcode.movaps, "Vps,Wps",
-                    Opcode.movapd, "Vpd,Wpd"),
-                new PrefixedOpRec(
-                    Opcode.movaps, "Wps,Vps",
-                    Opcode.movapd, "Wpd,Vpd"),
-                new PrefixedOpRec(
-                    Opcode.cvtpi2ps, "Vps,Qpi",
-                    Opcode.cvtpi2pd, "Vpd,Qpi",
-                    Opcode.cvtsi2ss, "Vss,Hss,Ey",
-                    Opcode.cvtsi2sd, "Vsd,Hsd,Ey"),
-                new PrefixedOpRec(
-                    Opcode.movntps, "Mps,Vps",
-                    Opcode.movntpd, "Mpd,Vpd"),
-                new PrefixedOpRec(
-                    Opcode.cvttps2pi, "Ppi,Wps",
-                    Opcode.cvttpd2pi, "Ppi,Wpq",
-                    Opcode.cvttss2si, "Gd,Wss",
-                    Opcode.cvttsd2si, "Gd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.cvtps2pi, "Ppi,Wps",
-                    Opcode.cvtpd2si, "Qpi,Wpd",
-                    Opcode.cvtss2si, "Gy,Wss",
-                    Opcode.cvtsd2si, "Gy,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.ucomiss, "Vss,Wss",
-                    Opcode.ucomisd, "Vsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.comiss, "Vss,Wss",
-                    Opcode.comisd, "Vsd,Wsd"),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.movaps, Vps,Wps),
+                    dec66:Instr(Mnemonic.movapd, Vpd,Wpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.movaps, Wps,Vps),
+                    dec66:Instr(Mnemonic.movapd, Wpd,Vpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cvtpi2ps, Vps,Qpi),
+                    dec66:Instr(Mnemonic.cvtpi2pd, Vpd,Qpi),
+                    decF3:Instr(Mnemonic.cvtsi2ss, Vss,Hss,Ey),
+                    decF2:Instr(Mnemonic.cvtsi2sd, Vsd,Hsd,Ey)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.movntps, Mps,Vps),
+                    dec66:Instr(Mnemonic.movntpd, Mpd,Vpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cvttps2pi, Ppi,Wps),
+                    dec66:Instr(Mnemonic.cvttpd2pi, Ppi,Wpq),
+                    decF3:Instr(Mnemonic.cvttss2si, Gd,Wss),
+                    decF2:Instr(Mnemonic.cvttsd2si, Gd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cvtps2pi, Ppi,Wps),
+                    dec66:Instr(Mnemonic.cvtpd2si, Qpi,Wpd),
+                    decF3:Instr(Mnemonic.cvtss2si, Gy,Wss),
+                    decF2:Instr(Mnemonic.cvtsd2si, Gy,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.ucomiss, Vss,Wss),
+                    dec66:Instr(Mnemonic.ucomisd, Vsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.comiss, Vss,Wss),
+                    dec66:Instr(Mnemonic.comisd, Vsd,Wsd)),
 
 				// 0F 30
-				new SingleByteOpRec(Opcode.wrmsr),
-                new SingleByteOpRec(Opcode.rdtsc),
-                new SingleByteOpRec(Opcode.rdmsr),
-                new SingleByteOpRec(Opcode.rdpmc),
-                new SingleByteOpRec(Opcode.sysenter),
-                new SingleByteOpRec(Opcode.sysexit),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.getsec),
+				Instr(Mnemonic.wrmsr, InstrClass.System),
+                Instr(Mnemonic.rdtsc),
+                Instr(Mnemonic.rdmsr, InstrClass.System),
+                Instr(Mnemonic.rdpmc),
+                Instr(Mnemonic.sysenter),
+                Instr(Mnemonic.sysexit, InstrClass.Transfer),
+                s_invalid,
+                Instr(Mnemonic.getsec, InstrClass.System),
 
-                new ThreeByteOpRec(),
-                new SingleByteOpRec(Opcode.illegal),
-                new ThreeByteOpRec(),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
-                new SingleByteOpRec(Opcode.illegal),
+                new ThreeByteDecoder(), // 0F 38
+                s_invalid,
+                new ThreeByteDecoder(), // 0F 3A
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
 
 				// 0F 40
-				new SingleByteOpRec(Opcode.cmovo,  "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovno, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovc,  "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovnc, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovz,  "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovnz, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovbe, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmova,  "Gv,Ev"),
+				Instr(Mnemonic.cmovo,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovno, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovc,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovnc, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovz,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovnz, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovbe, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmova,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
 
-                new SingleByteOpRec(Opcode.cmovs,  "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovns, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovpe, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovpo, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovl,  "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovge, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovle, "Gv,Ev"),
-                new SingleByteOpRec(Opcode.cmovg,  "Gv,Ev"),
+                Instr(Mnemonic.cmovs,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovns, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovpe, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovpo, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovl,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovge, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovle, InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
+                Instr(Mnemonic.cmovg,  InstrClass.Linear|InstrClass.Conditional, Gv,Ev),
 
 				// 0F 50
-				new PrefixedOpRec(
-                    Opcode.movmskps, "Gy,Ups",
-                    Opcode.movmskpd, "Gy,Upd"),
-                new PrefixedOpRec(
-                    Opcode.sqrtps, "Vps,Wps",
-                    Opcode.sqrtpd, "Vpd,Wpd",
-                    Opcode.sqrtss, "Vss,Hss,Wss",
-                    Opcode.sqrtsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.rsqrtps, "Vps,Wps",
-                    Opcode.illegal, "",
-                    Opcode.rsqrtss, "Vss,Hss,Wss",
-                    Opcode.illegal, ""),
-                new PrefixedOpRec(
-                    Opcode.rcpps, "Vps,Wps",
-                    Opcode.illegal, "",
-                    Opcode.rcpss, "Vss,Hss,Wss",
-                    Opcode.illegal, ""),
-                new PrefixedOpRec(
-                    Opcode.andps, "Vps,Hps,Wps",
-                    Opcode.andpd, "Vpd,Hpd,Wpd"),
-                new PrefixedOpRec(
-                    Opcode.andnps, "Vps,Hps,Wps",
-                    Opcode.andnpd, "Vpd,Hpd,Wpd"),
-                new PrefixedOpRec(
-                    Opcode.orps, "Vps,Hps,Wps",
-                    Opcode.orpd, "Vpd,Hpd,Wpd"),
-                new PrefixedOpRec(
-                    Opcode.xorps, "Vps,Hps,Wps",
-                    Opcode.xorpd, "Vpd,Hpd,Wpd"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movmskps, Gy,Ups),
+                    Instr(Mnemonic.movmskpd, Gy,Upd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.sqrtps, Vps,Wps),
+                    dec66:Instr(Mnemonic.sqrtpd, Vpd,Wpd),
+                    decF3:Instr(Mnemonic.sqrtss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.sqrtsd, Vsd,Hsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.rsqrtps, Vps,Wps),
+                    dec66:s_invalid,
+                    decF3:Instr(Mnemonic.rsqrtss, Vss,Hss,Wss),
+                    decF2:s_invalid),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.rcpps, Vps,Wps),
+                    dec66:s_invalid,
+                    decF3:Instr(Mnemonic.rcpss, Vss,Hss,Wss),
+                    decF2:s_invalid),
+                new PrefixedDecoder(
+                    dec: Instr(Mnemonic.andps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.andpd, Vpd,Hpd,Wpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.andnps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.andnpd, Vpd,Hpd,Wpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.orps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.orpd, Vpd,Hpd,Wpd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.xorps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.xorpd, Vpd,Hpd,Wpd)),
 
-                new PrefixedOpRec(
-                    Opcode.addps, "Vps,Hps,Wps",
-                    Opcode.addpd, "Vpd,Hpd,Wpd",
-                    Opcode.addss, "Vss,Hss,Wss",
-                    Opcode.addsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.mulps, "Vps,Hps,Wps",
-                    Opcode.mulpd, "Vpd,Hpd,Wpd",
-                    Opcode.mulss, "Vss,Hss,Wss",
-                    Opcode.mulsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.cvtps2pd, "Vpd,Wps",
-                    Opcode.cvtpd2ps, "Vps,Wpd",
-                    Opcode.cvtss2sd, "Vsd,Hx,Wss",
-                    Opcode.cvtsd2ss, "Vss,Hx,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.cvtdq2ps, "Vps,Wdq",
-                    Opcode.cvtps2dq, "Vdq,Wps",
-                    Opcode.cvttps2dq, "Vdq,Wps",
-                    Opcode.illegal, ""),
-                new PrefixedOpRec(
-                    Opcode.subps, "Vps,Hps,Wps",
-                    Opcode.subpd, "Vpd,Hpd,Wpd",
-                    Opcode.subss, "Vss,Hss,Wss",
-                    Opcode.subsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.minps, "Vps,Hps,Wps",
-                    Opcode.minpd, "Vpd,Hpd,Wpd",
-                    Opcode.minss, "Vss,Hss,Wss",
-                    Opcode.minsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.divps, "Vps,Hps,Wps",
-                    Opcode.divpd, "Vpd,Hpd,Wpd",
-                    Opcode.divss, "Vss,Hss,Wss",
-                    Opcode.divsd, "Vsd,Hsd,Wsd"),
-                new PrefixedOpRec(
-                    Opcode.maxps, "Vps,Hps,Wps",
-                    Opcode.maxpd, "Vpd,Hpd,Wpd",
-                    Opcode.maxss, "Vss,Hss,Wss",
-                    Opcode.maxsd, "Vsd,Hsd,Wsd"),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.addps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.addpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.addss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.addsd, Vsd,Hsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.mulps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.mulpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.mulss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.mulsd, Vsd,Hsd,Wsd)),
+				new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cvtps2pd, Vpd,Wps),
+                    dec66:Instr(Mnemonic.cvtpd2ps, Vps,Wpd),
+                    decF3:Instr(Mnemonic.cvtss2sd, Vsd,Hx,Wss),
+                    decF2:Instr(Mnemonic.cvtsd2ss, Vss,Hx,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cvtdq2ps, Vps,Wdq),
+                    dec66:Instr(Mnemonic.cvtps2dq, Vdq,Wps),
+                    decF3:Instr(Mnemonic.cvttps2dq, Vdq,Wps),
+                    decF2:s_invalid),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.subps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.subpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.subss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.subsd, Vsd,Hsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.minps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.minpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.minss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.minsd, Vsd,Hsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.divps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.divpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.divss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.divsd, Vsd,Hsd,Wsd)),
+                new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.maxps, Vps,Hps,Wps),
+                    dec66:Instr(Mnemonic.maxpd, Vpd,Hpd,Wpd),
+                    decF3:Instr(Mnemonic.maxss, Vss,Hss,Wss),
+                    decF2:Instr(Mnemonic.maxsd, Vsd,Hsd,Wsd)),
 					
 				// 0F 60
-				new PrefixedOpRec(
-                    Opcode.punpcklbw, "Pq,Qd",
-                    Opcode.punpcklbw, "Vx,Wx"),
-				new PrefixedOpRec(
-                    Opcode.punpcklwd, "Pq,Qd",
-                    Opcode.punpcklwd, "Vx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.punpckldq, "Pq,Qd",
-                    Opcode.punpckldq, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
-                new PrefixedOpRec(
-                    Opcode.pcmpgtb, "Pq,Qd",
-                    Opcode.pcmpgtb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pcmpgtw, "Pq,Qd",
-                    Opcode.pcmpgtw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pcmpgtd, "Pq,Qd",
-                    Opcode.pcmpgtd, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.packuswb, "Pq,Qd",
-                    Opcode.vpunpckhbw, "Vx,Hx,Wx"),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.punpcklbw, Pq,Qd),
+                    dec66:Instr(Mnemonic.punpcklbw, Vx,Wx)),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.punpcklwd, Pq,Qd),
+                    Instr(Mnemonic.punpcklwd, Vx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.punpckldq, Pq,Qd),
+                    Instr(Mnemonic.punpckldq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.packsswb, Pq,Qd),
+                    Instr(Mnemonic.vpacksswb, Vx,Hx,Wx)),
 
-                new PrefixedOpRec(
-                    Opcode.punpckhbw, "Pq,Qd",
-                    Opcode.vpunpckhbw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.punpckhwd, "Pq,Qd",
-                    Opcode.vpunpckhwd, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.punpckhdq, "Pq,Qd",
-                    Opcode.vpunpckhdq, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.packssdw, "Pq,Qd",
-                    Opcode.vpackssdw, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.movd, "Vy,Ey"),
-				new SingleByteOpRec(Opcode.movdqa, "Vx,Wx"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpgtb, Pq,Qd),
+                    Instr(Mnemonic.pcmpgtb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpgtw, Pq,Qd),
+                    Instr(Mnemonic.pcmpgtw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpgtd, Pq,Qd),
+                    Instr(Mnemonic.pcmpgtd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.packuswb, Pq,Qd),
+                    Instr(Mnemonic.vpunpckhbw, Vx,Hx,Wx)),
+
+                new PrefixedDecoder(
+                    Instr(Mnemonic.punpckhbw, Pq,Qd),
+                    Instr(Mnemonic.vpunpckhbw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.punpckhwd, Pq,Qd),
+                    Instr(Mnemonic.vpunpckhwd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.punpckhdq, Pq,Qd),
+                    Instr(Mnemonic.vpunpckhdq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.packssdw, Pq,Qd),
+                    Instr(Mnemonic.vpackssdw, Vx,Hx,Wx)),
+
+                 new PrefixedDecoder(
+                    s_invalid,
+                    Instr(Mnemonic.vpunpcklqdq, Vx,Hx,Wx)),
+                 new PrefixedDecoder(
+                    s_invalid,
+                    Instr(Mnemonic.vpunpckhqdq, Vx,Hx,Wx)),
+                Instr(Mnemonic.movd, Vy,Ey),
+				Instr(Mnemonic.movdqa, Vx,Wx),
 
 				// 0F 70
-				new PrefixedOpRec(
-                    Opcode.pshufw, "Pq,Qq,Ib",
-                    Opcode.pshufd, "Vx,Wx,Ib",
-                    Opcode.pshufhw, "Vx,Wx,Ib",
-                    Opcode.pshuflw, "Vx,Wx,Ib"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new PrefixedOpRec(
-                    Opcode.pcmpeqb, "Pq,Qq",
-                    Opcode.pcmpeqb, "Vx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pcmpeqw, "Pq,Qq",
-                    Opcode.pcmpeqw, "Vx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pcmpeqd, "Pq,Qq",
-                    Opcode.pcmpeqd, "Vx,Wx"),
-                new SingleByteOpRec(Opcode.emms),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.pshufw, Pq,Qq,Ib),
+                    dec66:Instr(Mnemonic.pshufd, Vx,Wx,Ib),
+                    decF3:Instr(Mnemonic.pshufhw, Vx,Wx,Ib),
+                    decF2:Instr(Mnemonic.pshuflw, Vx,Wx,Ib)),
+                new GroupDecoder(12),
+                new GroupDecoder(13),
+                new GroupDecoder(14),
 
-				new SingleByteOpRec(Opcode.vmread, "Ey,Gy"),
-				new SingleByteOpRec(Opcode.vmwrite, "Gy,Ey"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new PrefixedOpRec(
-                    Opcode.movd, Opcode.movq, "Ey,Pd", 
-                    Opcode.movd, Opcode.movq, "Ey,Vy",
-                    Opcode.movq,              "Vy,Wy"),
-				new SingleByteOpRec(Opcode.movdqa, "Wx,Vx"),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpeqb, Pq,Qq),
+                    dec66:Instr(Mnemonic.pcmpeqb, Vx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpeqw, Pq,Qq),
+                    dec66:Instr(Mnemonic.pcmpeqw, Vx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pcmpeqd, Pq,Qq),
+                    dec66:Instr(Mnemonic.pcmpeqd, Vx,Wx)),
+                Instr(Mnemonic.emms, InstrClass.System),
+
+				new PrefixedDecoder(
+                    dec:Instr(Mnemonic.vmread, InstrClass.System, Ey,Gy)),
+				new PrefixedDecoder(
+                    dec:Instr(Mnemonic.vmwrite, InstrClass.System, Gy,Ey)),
+				s_invalid,
+				s_invalid,
+
+                new PrefixedDecoder(
+                    dec:s_invalid,
+                    dec66:Instr(Mnemonic.vhaddpd,  Vpd,Hpd,Wpd),
+                    decF2:Instr(Mnemonic.vhaddps, Vps,Hps,Wps)),
+                new PrefixedDecoder(
+                    dec:s_invalid,
+                    dec66:Instr(Mnemonic.vhsubpd, Vpd,Hpd,Wpd),
+                    decF2:Instr(Mnemonic.vhsubps, Vps,Hps,Wps)),
+                new PrefixedDecoder(
+                    dec: Instr(Mnemonic.movd, Ey,Pd), decWide: Instr(Mnemonic.movq, Ey,Pd),
+                    dec66: Instr(Mnemonic.movd, Ey,Vy), dec66Wide: Instr(Mnemonic.movq, Ey,Vy),
+                    decF3: Instr(Mnemonic.movq, Vy,Wy)),
+				new PrefixedDecoder(
+                    dec:Instr(Mnemonic.movq, Qq,Pq),
+                    dec66:Instr(Mnemonic.movdqa, Wx,Vx),
+                    decF3:Instr(Mnemonic.movdqu, Wx,Vx)),
 
 				// 0F 80
-				new SingleByteOpRec(Opcode.jo,	"Jv"),
-				new SingleByteOpRec(Opcode.jno,   "Jv"),
-				new SingleByteOpRec(Opcode.jc,	"Jv"),
-				new SingleByteOpRec(Opcode.jnc,	"Jv"),
-				new SingleByteOpRec(Opcode.jz,	"Jv"),
-				new SingleByteOpRec(Opcode.jnz,   "Jv"),
-				new SingleByteOpRec(Opcode.jbe,   "Jv"),
-				new SingleByteOpRec(Opcode.ja,    "Jv"),
+				Instr(Mnemonic.jo,	InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jno, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jc,	InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jnc,	InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jz,	InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jnz, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jbe, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.ja,  InstrClass.ConditionalTransfer, Jv),
 
-				new SingleByteOpRec(Opcode.js,    "Jv"),
-				new SingleByteOpRec(Opcode.jns,   "Jv"),
-				new SingleByteOpRec(Opcode.jpe,   "Jv"),
-				new SingleByteOpRec(Opcode.jpo,   "Jv"),
-				new SingleByteOpRec(Opcode.jl,    "Jv"),
-				new SingleByteOpRec(Opcode.jge,   "Jv"),
-				new SingleByteOpRec(Opcode.jle,   "Jv"),
-				new SingleByteOpRec(Opcode.jg,    "Jv"),
+				Instr(Mnemonic.js,  InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jns, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jpe, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jpo, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jl,  InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jge, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jle, InstrClass.ConditionalTransfer, Jv),
+				Instr(Mnemonic.jg,  InstrClass.ConditionalTransfer, Jv),
 
 				// 0F 90
-				new SingleByteOpRec(Opcode.seto, "Eb"),
-				new SingleByteOpRec(Opcode.setno,"Eb"),
-				new SingleByteOpRec(Opcode.setc, "Eb"),
-				new SingleByteOpRec(Opcode.setnc,"Eb"),
-				new SingleByteOpRec(Opcode.setz, "Eb"),
-				new SingleByteOpRec(Opcode.setnz,"Eb"),
-				new SingleByteOpRec(Opcode.setbe,"Eb"),
-				new SingleByteOpRec(Opcode.seta, "Eb"),
+				Instr(Mnemonic.seto, Eb),
+				Instr(Mnemonic.setno,Eb),
+				Instr(Mnemonic.setc, Eb),
+				Instr(Mnemonic.setnc,Eb),
+				Instr(Mnemonic.setz, Eb),
+				Instr(Mnemonic.setnz,Eb),
+				Instr(Mnemonic.setbe,Eb),
+				Instr(Mnemonic.seta, Eb),
 
-				new SingleByteOpRec(Opcode.sets,  "Eb"),
-				new SingleByteOpRec(Opcode.setns, "Eb"),
-				new SingleByteOpRec(Opcode.setpe, "Eb"),
-				new SingleByteOpRec(Opcode.setpo, "Eb"),
-				new SingleByteOpRec(Opcode.setl,  "Eb"),
-				new SingleByteOpRec(Opcode.setge, "Eb"),
-				new SingleByteOpRec(Opcode.setle, "Eb"),
-				new SingleByteOpRec(Opcode.setg,  "Eb"),
+				Instr(Mnemonic.sets,  Eb),
+				Instr(Mnemonic.setns, Eb),
+				Instr(Mnemonic.setpe, Eb),
+				Instr(Mnemonic.setpo, Eb),
+				Instr(Mnemonic.setl,  Eb),
+				Instr(Mnemonic.setge, Eb),
+				Instr(Mnemonic.setle, Eb),
+				Instr(Mnemonic.setg,  Eb),
 
 				// 0F A0
-				new SingleByteOpRec(Opcode.push, "s4"),
-				new SingleByteOpRec(Opcode.pop, "s4"),
-				new SingleByteOpRec(Opcode.cpuid, ""),
-				new SingleByteOpRec(Opcode.bt, "Ev,Gv"),
-				new SingleByteOpRec(Opcode.shld, "Ev,Gv,Ib"),
-				new SingleByteOpRec(Opcode.shld, "Ev,Gv,c"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				Instr(Mnemonic.push, s4),
+				Instr(Mnemonic.pop, s4),
+				Instr(Mnemonic.cpuid),
+				Instr(Mnemonic.bt, Ev,Gv),
+				Instr(Mnemonic.shld, Ev,Gv,Ib),
+				Instr(Mnemonic.shld, Ev,Gv,c),
+				s_invalid,
+                s_invalid,
 
-				new SingleByteOpRec(Opcode.push, "s5"),
-				new SingleByteOpRec(Opcode.pop, "s5"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.bts, "Ev,Gv"),
-				new SingleByteOpRec(Opcode.shrd, "Ev,Gv,Ib"),
-				new SingleByteOpRec(Opcode.shrd, "Ev,Gv,c"),
-				new GroupOpRec(15, ""),
-				new SingleByteOpRec(Opcode.imul, "Gv,Ev"),
+				Instr(Mnemonic.push, s5),
+				Instr(Mnemonic.pop, s5),
+				Instr(Mnemonic.rsm),
+                Instr(Mnemonic.bts, Ev,Gv),
+				Instr(Mnemonic.shrd, Ev,Gv,Ib),
+				Instr(Mnemonic.shrd, Ev,Gv,c),
+				new GroupDecoder(15),
+				Instr(Mnemonic.imul, Gv,Ev),
 
 				// 0F B0
-				new SingleByteOpRec(Opcode.cmpxchg, "Eb,Gb"),
-				new SingleByteOpRec(Opcode.cmpxchg, "Ev,Gv"),
-				new SingleByteOpRec(Opcode.lss, "Gv,Mp"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.lfs, "Gv,Mp"),
-				new SingleByteOpRec(Opcode.lgs, "Gv,Mp"),
-				new SingleByteOpRec(Opcode.movzx, "Gv,Eb"),
-				new SingleByteOpRec(Opcode.movzx, "Gv,Ew"),
+				Instr(Mnemonic.cmpxchg, Eb,Gb),
+				Instr(Mnemonic.cmpxchg, Ev,Gv),
+				Instr(Mnemonic.lss, Gv,Mp),
+				Instr(Mnemonic.btr, Ev,Gv),
+                Instr(Mnemonic.lfs, Gv,Mp),
+				Instr(Mnemonic.lgs, Gv,Mp),
+				Instr(Mnemonic.movzx, Gv,Eb),
+				Instr(Mnemonic.movzx, Gv,Ew),
 
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new GroupOpRec(8, "Ev,Ib"),
-				new SingleByteOpRec(Opcode.btc, "Gv,Ev"),
-				new SingleByteOpRec(Opcode.bsf, "Gv,Ev"),
-				new SingleByteOpRec(Opcode.bsr, "Gv,Ev"),
-				new SingleByteOpRec(Opcode.movsx, "Gv,Eb"),
-				new SingleByteOpRec(Opcode.movsx, "Gv,Ew"),
+				new PrefixedDecoder(
+                    dec:Instr(Mnemonic.jmpe),
+                    decF3:Instr(Mnemonic.popcnt, Gv,Ev)),
+				Instr(Mnemonic.ud1, InstrClass.Invalid, Gv,Ev),
+				new GroupDecoder(8, Ev,Ib),
+				Instr(Mnemonic.btc, Gv,Ev),
+
+                new PrefixedDecoder(
+                    dec: Instr(Mnemonic.bsf, Gv,Ev),
+                    decF3: Instr(Mnemonic.tzcnt, Gv,Ev)),
+                new PrefixedDecoder(
+                    dec: Instr(Mnemonic.bsr, Gv,Ev),
+                    dec66: Instr(Mnemonic.bsr, Gv,Ev),
+                    decF3: Instr(Mnemonic.lzcnt, Gv,Ev)),
+				Instr(Mnemonic.movsx, Gv,Eb),
+				Instr(Mnemonic.movsx, Gv,Ew),
 
 				// 0F C0
-				new SingleByteOpRec(Opcode.xadd, "Eb,Gb"),
-				new SingleByteOpRec(Opcode.xadd, "Ev,Gv"),
-				new PrefixedOpRec(
-                    Opcode.cmpps, "Vps,Hps,Wps,Ib",
-                    Opcode.cmppd, "Vpd,Hpd,Wpd,Ib",
-                    Opcode.cmpss, "Vss,Hss,Wss,Ib",
-                    Opcode.cmpsd, "Vpd,Hpd,Wpd,Ib"),
-				new PrefixedOpRec(
-                    Opcode.movnti, "My,Gy",
-                    Opcode.illegal, ""),
-                new PrefixedOpRec(
-                    Opcode.pinsrw, "Pq,Ry",     //$TODO: encoding is weird.
-                    Opcode.vpinsrw, "Vdq,Hdq,Ry"),
-                new PrefixedOpRec(
-                    Opcode.pextrw, "Gd,Nq,Ib",
-                    Opcode.vextrw, "Gd,Udq,Ib"),
-                new PrefixedOpRec(
-                    Opcode.vshufps, "Vps,Hps,Wps,Ib",
-                    Opcode.vshufpd, "Vpd,Hpd,Wpd,Ib"),
-                new SingleByteOpRec(Opcode.illegal),
+				Instr(Mnemonic.xadd, Eb,Gb),
+				Instr(Mnemonic.xadd, Ev,Gv),
+				new PrefixedDecoder(
+                    dec:  Instr(Mnemonic.cmpps, Vps,Hps,Wps,Ib),
+                    dec66:Instr(Mnemonic.cmppd, Vpd,Hpd,Wpd,Ib),
+                    decF3:Instr(Mnemonic.cmpss, Vss,Hss,Wss,Ib),
+                    decF2:Instr(Mnemonic.cmpsd, Vpd,Hpd,Wpd,Ib)),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.movnti, My,Gy),
+                    s_invalid),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pinsrw, Pq,Ry),     //$TODO: encoding is weird.
+                    Instr(Mnemonic.vpinsrw, Vdq,Hdq,Ry)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pextrw, Gd,Nq,Ib),
+                    Instr(Mnemonic.vextrw, Gd,Udq,Ib)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.vshufps, Vps,Hps,Wps,Ib),
+                    Instr(Mnemonic.vshufpd, Vpd,Hpd,Wpd,Ib)),
+				new GroupDecoder(9),
 
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
-				new SingleByteOpRec(Opcode.bswap, "rv"),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
+				Instr(Mnemonic.bswap, rv),
 
 				// 0F D0
-				new SingleByteOpRec(Opcode.illegal),
-				new PrefixedOpRec(
-                    Opcode.psrlw, "Pq,Qq",
-                    Opcode.vpsrlw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psrld, "Pq,Qq",
-                    Opcode.vpsrld, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psrlq, "Pq,Qq",
-                    Opcode.vpmullw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddq, "Pq,Qq",
-                    Opcode.vpaddq, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmullw, "Pq,Qq",
-                    Opcode.vpmullw, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.movq, "Wx,Vx"),
-                new PrefixedOpRec(
-                    Opcode.pmovmskb, "Gd,Nq",
-                    Opcode.vpmovmskb, "Gd,Ux"),
+				new PrefixedDecoder(
+                    dec:  s_invalid,
+					dec66:Instr(Mnemonic.addsubpd, Vpd,Hpd,Wpd),
+					decF3:s_invalid,
+					decF2:Instr(Mnemonic.addsubps, Vps,Hps,Wps)),
+				new PrefixedDecoder(
+                    Instr(Mnemonic.psrlw, Pq,Qq),
+                    Instr(Mnemonic.vpsrlw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrld, Pq,Qq),
+                    Instr(Mnemonic.vpsrld, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrlq, Pq,Qq),
+                    Instr(Mnemonic.vpmullw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddq, Pq,Qq),
+                    Instr(Mnemonic.vpaddq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmullw, Pq,Qq),
+                    Instr(Mnemonic.vpmullw, Vx,Hx,Wx)),
+				Instr(Mnemonic.movq, Wx,Vx),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmovmskb, Gd,Nq),
+                    Instr(Mnemonic.vpmovmskb, Gd,Ux)),
 
-                new PrefixedOpRec(
-                    Opcode.psubusb, "Pq,Qq",
-                    Opcode.vpsubusb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psubusw, "Pq,Qq",
-                    Opcode.vpsubusw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pminub, "Pq,Qq",
-                    Opcode.vpminub, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pand, "Pq,Qq",
-                    Opcode.vpand, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddusb, "Pq,Qq",
-                    Opcode.vpaddusb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddusw, "Pq,Qq",
-                    Opcode.vpaddusw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmaxub, "Pq,Qq",
-                    Opcode.vpmaxub, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pandn, "Pq,Qq",
-                    Opcode.vpandn, "Vx,Hx,Wx"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubusb, Pq,Qq),
+                    Instr(Mnemonic.vpsubusb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubusw, Pq,Qq),
+                    Instr(Mnemonic.vpsubusw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pminub, Pq,Qq),
+                    Instr(Mnemonic.vpminub, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pand, Pq,Qq),
+                    Instr(Mnemonic.vpand, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddusb, Pq,Qq),
+                    Instr(Mnemonic.vpaddusb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddusw, Pq,Qq),
+                    Instr(Mnemonic.vpaddusw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmaxub, Pq,Qq),
+                    Instr(Mnemonic.vpmaxub, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pandn, Pq,Qq),
+                    Instr(Mnemonic.vpandn, Vx,Hx,Wx)),
 
-				// E0
-                new PrefixedOpRec(
-                    Opcode.pavgb, "Pq,Qq",
-                    Opcode.vpavgb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psraw, "Pq,Qq",
-                    Opcode.vpsraw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psrad, "Pq,Qq",
-                    Opcode.vpsrad, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pavgw, "Pq,Qq",
-                    Opcode.vpavgw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmulhuw, "Pq,Qq",
-                    Opcode.vpmulhuw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmulhw, "Pq,Qq",
-                    Opcode.vpmulhw, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
-                new PrefixedOpRec(
-                    Opcode.movntq, "Mq,Pq",
-                    Opcode.vmovntq, "Mx,Vx"),
+				// 0F E0
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pavgb, Pq,Qq),
+                    Instr(Mnemonic.vpavgb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psraw, Pq,Qq),
+                    Instr(Mnemonic.vpsraw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrad, Pq,Qq),
+                    Instr(Mnemonic.vpsrad, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pavgw, Pq,Qq),
+                    Instr(Mnemonic.vpavgw, Vx,Hx,Wx)),
 
-                new PrefixedOpRec(
-                    Opcode.psubsb, "Pq,Qq",
-                    Opcode.vpsubsb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psubsw, "Pq,Qq",
-                    Opcode.vpsubsw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pminsw, "Pq,Qq",
-                    Opcode.vpminsw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.por, "Pq,Qq",
-                    Opcode.vpor, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddsb, "Pq,Qq",
-                    Opcode.vpaddsb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddsw, "Pq,Qq",
-                    Opcode.vpaddsw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmaxsw, "Pq,Qq",
-                    Opcode.vpmaxsw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pxor, "Pq,Qq",
-                    Opcode.vpxor, "Vx,Hx,Wx"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmulhuw, Pq,Qq),
+                    Instr(Mnemonic.vpmulhuw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmulhw, Pq,Qq),
+                    Instr(Mnemonic.vpmulhw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    dec:  s_invalid,
+                    dec66:Instr(Mnemonic.cvttpd2dq, Vdq,Wpd),
+                    decF3:Instr(Mnemonic.cvtdq2pd, Vx,Wpd),
+                    decF2:Instr(Mnemonic.cvtpd2dq, Vdq,Wpd)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.movntq, Mq,Pq),
+                    Instr(Mnemonic.vmovntq, Mx,Vx)),
 
-				// F0
-                new SingleByteOpRec(Opcode.illegal),
-                new PrefixedOpRec(
-                    Opcode.psllw, "Pq,Qq",
-                    Opcode.vpsllw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pslld, "Pq,Qq",
-                    Opcode.vpslld, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psllq, "Pq,Qq",
-                    Opcode.vpsllq, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmuludq, "Pq,Qq",
-                    Opcode.vpmuludq, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.pmaddwd, "Pq,Qq",
-                    Opcode.vpmaddwd, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psadbw, "Pq,Qq",
-                    Opcode.vpsadbw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.maskmovq, "Pq,Qq",
-                    Opcode.vmaskmovdqu, "Veq,Udq"),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubsb, Pq,Qq),
+                    Instr(Mnemonic.vpsubsb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubsw, Pq,Qq),
+                    Instr(Mnemonic.vpsubsw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pminsw, Pq,Qq),
+                    Instr(Mnemonic.vpminsw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.por, Pq,Qq),
+                    Instr(Mnemonic.vpor, Vx,Hx,Wx)),
 
-                new PrefixedOpRec(
-                    Opcode.psubb, "Pq,Qq",
-                    Opcode.vpsubb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psubw, "Pq,Qq",
-                    Opcode.vpsubw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psubd, "Pq,Qq",
-                    Opcode.vpsubd, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.psubq, "Pq,Qq",
-                    Opcode.vpsubq, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddb, "Pq,Qq",
-                    Opcode.vpaddb, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddw, "Pq,Qq",
-                    Opcode.vpaddw, "Vx,Hx,Wx"),
-                new PrefixedOpRec(
-                    Opcode.paddd, "Pq,Qq",
-                    Opcode.vpaddd, "Vx,Hx,Wx"),
-                new SingleByteOpRec(Opcode.illegal),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddsb, Pq,Qq),
+                    Instr(Mnemonic.vpaddsb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddsw, Pq,Qq),
+                    Instr(Mnemonic.vpaddsw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmaxsw, Pq,Qq),
+                    Instr(Mnemonic.vpmaxsw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pxor, Pq,Qq),
+                    Instr(Mnemonic.vpxor, Vx,Hx,Wx)),
+
+				// 0F F0
+                new PrefixedDecoder(
+                    s_invalid,
+                    decF2:Instr(Mnemonic.vlddqu, Vx,Mx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psllw, Pq,Qq), 
+                    dec66:Instr(Mnemonic.vpsllw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pslld, Pq,Qq),
+                    dec66:Instr(Mnemonic.vpslld, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psllq, Pq,Qq),
+                    dec66:Instr(Mnemonic.vpsllq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmuludq, Pq,Qq),
+                    dec66:Instr(Mnemonic.vpmuludq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pmaddwd, Pq,Qq),
+                    dec66:Instr(Mnemonic.vpmaddwd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psadbw, Pq,Qq),
+                    dec66:Instr(Mnemonic.vpsadbw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.maskmovq, Pq,Qq),
+                    dec66:Instr(Mnemonic.vmaskmovdqu, Vdq,Udq)),
+
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubb, Pq,Qq),
+                    Instr(Mnemonic.vpsubb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubw, Pq,Qq),
+                    Instr(Mnemonic.vpsubw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubd, Pq,Qq),
+                    Instr(Mnemonic.vpsubd, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psubq, Pq,Qq),
+                    Instr(Mnemonic.vpsubq, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddb, Pq,Qq),
+                    Instr(Mnemonic.vpaddb, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddw, Pq,Qq),
+                    Instr(Mnemonic.vpaddw, Vx,Hx,Wx)),
+                new PrefixedDecoder(
+                    Instr(Mnemonic.paddd, Pq,Qq),
+                    Instr(Mnemonic.vpaddd, Vx,Hx,Wx)),
+				Instr(Mnemonic.ud0, InstrClass.Invalid,  Gv,Ev),
 			};
         }
     }

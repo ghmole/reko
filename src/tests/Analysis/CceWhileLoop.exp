@@ -1,94 +1,97 @@
 fp:fp
-sp_1: orig: sp
 sp_2: orig: sp
+Top_3: orig: Top
+sp_4: orig: sp
 bp:bp
-wLoc02_4: orig: wLoc02
-bp_5: orig: bp
-bx_6: orig: bx
-    def:  bx_6 = 0x0000
-    uses: bx_22 = PHI(bx_6, bx_24)
-wArg04:Stack +0004
-    def:  def wArg04
-    uses: branch wArg04 <= 0x0000 l0C00_0015
-          ax_27 = -wArg04
-          cx_21 = wArg04
-ax_8: orig: ax
-ax_9: orig: ax
+ss:ss
+Mem7: orig: Mem0
+bp_8: orig: bp
+bx_9: orig: bx
+    def:  bx_9 = 0x0000
+    uses: bx_21 = PHI((bx_9, l0C00_000C), (bx_23, l0C00_000E))
 SZO_10: orig: SZO
 C_11: orig: C
 ax_12: orig: ax
-C_13: orig: C
-bx_14: orig: bx
-    def:  bx_14 = PHI(bx_24, bx_30)
-    uses: Mem17[ds:0x0300:word16] = bx_14
-SCZO_15: orig: SCZO
-cx_16: orig: cx
-Mem17: orig: Mem0
-    def:  Mem17[ds:0x0300:word16] = bx_14
+    def:  ax_12 = wArg04
+    uses: branch ax_12 <= 0x0000 l0C00_0015
+          ax_16 = -ax_12
+          cx_20 = ax_12
+ax_13: orig: ax
+SZO_14: orig: SZO
+C_15: orig: C
+ax_16: orig: ax
+    def:  ax_16 = -ax_12
+    uses: bx_19 = ax_16
+SCZO_17: orig: SCZO
+C_18: orig: C
+bx_19: orig: bx
+    def:  bx_19 = ax_16
+    uses: bx_26 = PHI((bx_23, l0C00_0012), (bx_19, l0C00_0015))
+cx_20: orig: cx
+    def:  cx_20 = ax_12
+    uses: cx_22 = PHI((cx_20, l0C00_000C), (cx_25, l0C00_000E))
+bx_21: orig: bx
+    def:  bx_21 = PHI((bx_9, l0C00_000C), (bx_23, l0C00_000E))
+    uses: bx_23 = bx_21 + cx_22
+cx_22: orig: cx
+    def:  cx_22 = PHI((cx_20, l0C00_000C), (cx_25, l0C00_000E))
+    uses: bx_23 = bx_21 + cx_22
+          cx_25 = cx_22 - 0x0001
+bx_23: orig: bx
+    def:  bx_23 = bx_21 + cx_22
+    uses: bx_21 = PHI((bx_9, l0C00_000C), (bx_23, l0C00_000E))
+          bx_26 = PHI((bx_23, l0C00_0012), (bx_19, l0C00_0015))
+SCZO_24: orig: SCZO
+cx_25: orig: cx
+    def:  cx_25 = cx_22 - 0x0001
+    uses: branch cx_25 != 0x0000 l0C00_000E
+          cx_22 = PHI((cx_20, l0C00_000C), (cx_25, l0C00_000E))
+bx_26: orig: bx
+    def:  bx_26 = PHI((bx_23, l0C00_0012), (bx_19, l0C00_0015))
+    uses: Mem30[ds:0x0300:word16] = bx_26
 ds:ds
     def:  def ds
-    uses: Mem17[ds:0x0300:word16] = bx_14
-bp_19: orig: bp
-sp_20: orig: sp
-cx_21: orig: cx
-    def:  cx_21 = wArg04
-    uses: cx_23 = PHI(cx_21, cx_26)
-bx_22: orig: bx
-    def:  bx_22 = PHI(bx_6, bx_24)
-    uses: bx_24 = bx_22 + cx_23
-cx_23: orig: cx
-    def:  cx_23 = PHI(cx_21, cx_26)
-    uses: bx_24 = bx_22 + cx_23
-          cx_26 = cx_23 - 0x0001
-bx_24: orig: bx
-    def:  bx_24 = bx_22 + cx_23
-    uses: bx_22 = PHI(bx_6, bx_24)
-          bx_14 = PHI(bx_24, bx_30)
-SCZO_25: orig: SCZO
-cx_26: orig: cx
-    def:  cx_26 = cx_23 - 0x0001
-    uses: branch cx_26 != 0x0000 l0C00_000E
-          cx_23 = PHI(cx_21, cx_26)
-ax_27: orig: ax
-    def:  ax_27 = -wArg04
-    uses: bx_30 = ax_27
-SCZO_28: orig: SCZO
-C_29: orig: C
-bx_30: orig: bx
-    def:  bx_30 = ax_27
-    uses: bx_14 = PHI(bx_24, bx_30)
-cx:cx
+    uses: Mem30[ds:0x0300:word16] = bx_26
+Mem30: orig: Mem0
+    def:  Mem30[ds:0x0300:word16] = bx_26
+wLoc02_37: orig: wLoc02
+wArg04:Stack +0004
+    def:  def wArg04
+    uses: ax_12 = wArg04
+bp_35: orig: bp
+sp_36: orig: sp
 // fn0C00_0000
-// Return size: 0
-void fn0C00_0000(selector ds, word16 wArg04)
+// Return size: 2
+define fn0C00_0000
 fn0C00_0000_entry:
-	def wArg04
 	def ds
+	def wArg04
 	// succ:  l0C00_0000
 l0C00_0000:
-	bx_6 = 0x0000
-	branch wArg04 <= 0x0000 l0C00_0015
+	bx_9 = 0x0000
+	ax_12 = wArg04
+	branch ax_12 <= 0x0000 l0C00_0015
 	// succ:  l0C00_000C l0C00_0015
 l0C00_000C:
-	cx_21 = wArg04
+	cx_20 = ax_12
 	// succ:  l0C00_000E
 l0C00_000E:
-	bx_22 = PHI(bx_6, bx_24)
-	cx_23 = PHI(cx_21, cx_26)
-	bx_24 = bx_22 + cx_23
-	cx_26 = cx_23 - 0x0001
-	branch cx_26 != 0x0000 l0C00_000E
+	cx_22 = PHI((cx_20, l0C00_000C), (cx_25, l0C00_000E))
+	bx_21 = PHI((bx_9, l0C00_000C), (bx_23, l0C00_000E))
+	bx_23 = bx_21 + cx_22
+	cx_25 = cx_22 - 0x0001
+	branch cx_25 != 0x0000 l0C00_000E
 	// succ:  l0C00_0012 l0C00_000E
 l0C00_0012:
 	goto l0C00_0019
 	// succ:  l0C00_0019
 l0C00_0015:
-	ax_27 = -wArg04
-	bx_30 = ax_27
+	ax_16 = -ax_12
+	bx_19 = ax_16
 	// succ:  l0C00_0019
 l0C00_0019:
-	bx_14 = PHI(bx_24, bx_30)
-	Mem17[ds:0x0300:word16] = bx_14
+	bx_26 = PHI((bx_23, l0C00_0012), (bx_19, l0C00_0015))
+	Mem30[ds:0x0300:word16] = bx_26
 	return
 	// succ:  fn0C00_0000_exit
 fn0C00_0000_exit:

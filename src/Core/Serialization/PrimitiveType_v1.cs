@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core.Types;
 using System;
 using System.ComponentModel;
+using System.Text;
 using System.Xml.Serialization;
 
 namespace Reko.Core.Serialization
@@ -105,6 +106,16 @@ namespace Reko.Core.Serialization
             return new PrimitiveType_v1 { Domain = Domain.Real, ByteSize = 8 };
         }
 
+        public static SerializedType Real80()
+        {
+            return new PrimitiveType_v1 { Domain = Domain.Real, ByteSize = 10 };
+        }
+
+        public static SerializedType Ptr32()
+        {
+            return new PrimitiveType_v1 { Domain = Domain.Pointer, ByteSize = 4 };
+        }
+
         public PrimitiveType_v1(Domain domain, int byteSize)
 		{
 			this.Domain = domain;	
@@ -118,7 +129,11 @@ namespace Reko.Core.Serialization
 
 		public override string ToString()
 		{
-			return string.Format("prim({0},{1})", Domain, ByteSize);
+            var sb = new StringBuilder();
+			sb.AppendFormat("prim({0},{1}", Domain, ByteSize);
+            base.WriteQualifier(Qualifier, sb);
+            sb.Append(")");
+            return sb.ToString();
 		}
     }
 }

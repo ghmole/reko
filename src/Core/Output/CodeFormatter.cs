@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -129,6 +129,7 @@ namespace Reko.Core.Output
                 typeof(AbsynBreak),
                 typeof(AbsynContinue),
                 typeof(AbsynAssignment),
+                typeof(AbsynCompoundAssignment),
                 typeof(AbsynSideEffect)
             };
 
@@ -243,6 +244,43 @@ namespace Reko.Core.Output
                 writer.Write("<invalid>");
                 return;
             }
+            if (c is StringConstant s)
+            {
+                writer.Write('"');
+                foreach (var ch in (string) s.GetValue())
+                {
+                    switch (ch)
+                    {
+                    case '\0': writer.Write("\\0"); break;
+                    case '\a': writer.Write("\\a"); break;
+                    case '\b': writer.Write("\\b"); break;
+                    case '\f': writer.Write("\\f"); break;
+                    case '\n': writer.Write("\\n"); break;
+                    case '\r': writer.Write("\\r"); break;
+                    case '\t': writer.Write("\\t"); break;
+                    case '\v': writer.Write("\\v"); break;
+                    case '\"': writer.Write("\\\""); break;
+                    case '\\': writer.Write("\\\\"); break;
+                    default:
+                        // The awful hack allows us to reuse .NET encodings
+                        // while encoding the original untranslateable 
+                        // code points into the Private use area.
+                        //$TODO: Clearly if the string was UTF8 or 
+                        // UTF-16 to begin with, we want to preserve the
+                        // private use area points.
+                        if (0xE000 <= ch && ch <= 0xE100)
+                            writer.Write("\\x{0:X2}", (ch - 0xE000));
+                        else if (0 <= ch && ch < ' ' || ch >= 0x7F)
+                            writer.Write("\\x{0:X2}", (int) ch);
+                        else
+                            writer.Write(ch);
+                        break;
+                    }
+                }
+                writer.Write('"');
+                return;
+            }
+
             var pt = c.DataType.ResolveAs<PrimitiveType>();
             if (pt != null)
             {
@@ -278,41 +316,6 @@ namespace Reko.Core.Output
                     writer.Write(FormatString(pt, v), v);
                 }
                 return;
-            }
-            if (c is StringConstant s)
-            {
-                writer.Write('"');
-                foreach (var ch in (string)s.GetValue())
-                {
-                    switch (ch)
-                    {
-                    case '\0': writer.Write("\\0"); break;
-                    case '\a': writer.Write("\\a"); break;
-                    case '\b': writer.Write("\\b"); break;
-                    case '\f': writer.Write("\\f"); break;
-                    case '\n': writer.Write("\\n"); break;
-                    case '\r': writer.Write("\\r"); break;
-                    case '\t': writer.Write("\\t"); break;
-                    case '\v': writer.Write("\\v"); break;
-                    case '\"': writer.Write("\\\""); break;
-                    case '\\': writer.Write("\\\\"); break;
-                    default:
-                        // The awful hack allows us to reuse .NET encodings
-                        // while encoding the original untranslateable 
-                        // code points into the Private use area.
-                        //$TODO: Clearly if the string was UTF8 or 
-                        // UTF-16 to begin with, we want to preserve the
-                        // private use area points.
-                        if (0xE000 <= ch && ch <= 0xE100)
-                            writer.Write("\\x{0:X2}", (ch - 0xE000));
-                        else if (0 <= ch && ch < ' ' || ch >= 0x7F)
-                            writer.Write("\\x{0:X2}", (int)ch);
-                        else
-                            writer.Write(ch);
-                        break;
-                    }
-                }
-                writer.Write('"');
             }
         }
 
@@ -428,10 +431,22 @@ namespace Reko.Core.Output
 		public void VisitPhiFunction(PhiFunction phi)
 		{
 			writer.WriteKeyword("PHI");
-			WriteActuals(phi.Arguments);
-		}
+            writer.Write("(");
+            var sep = "";
+            foreach (var arg in phi.Arguments)
+            {
+                writer.Write(sep);
+                sep = ", ";
+                writer.Write("(");
+                arg.Value.Accept(this);
+                writer.Write(", ");
+                writer.Write(arg.Block.Name);
+                writer.Write(")");
+            }
+            writer.Write(")");
+        }
 
-		public void VisitPointerAddition(PointerAddition pa)
+        public void VisitPointerAddition(PointerAddition pa)
 		{
             writer.Write("PTRADD(");
             WriteExpression(pa.Pointer);
@@ -513,7 +528,7 @@ namespace Reko.Core.Output
                 writer.Indentation += writer.TabSize;
                 writer.Indent();
                 writer.Write("uses: ");
-                writer.Write(string.Join(",", ci.Uses.OrderBy(u => ((Identifier)(u.Expression)).Name).Select(u => u.Expression)));
+                WriteCallBindings(ci.Uses);
                 writer.Terminate();
                 writer.Indentation -= writer.TabSize;
             }
@@ -522,12 +537,24 @@ namespace Reko.Core.Output
                 writer.Indentation += writer.TabSize;
                 writer.Indent();
                 writer.Write("defs: ");
-                writer.Write(string.Join(",", ci.Definitions.OrderBy(d => ((Identifier)d.Identifier).Name).Select(d => d.Identifier)));
+                WriteCallBindings(ci.Definitions);
                 writer.Terminate();
                 writer.Indentation -= writer.TabSize;
             }
 		}
 
+        private void WriteCallBindings(IEnumerable<CallBinding> bindings)
+        {
+            var sep = "";
+            foreach (var binding in bindings.OrderBy(b => b.Storage.ToString()))
+            {
+                writer.Write(sep);
+                sep = ",";
+                writer.Write(binding.Storage.ToString());
+                writer.Write(":");
+                binding.Expression.Accept(this);
+            }
+        }
         public void VisitComment(CodeComment comment)
         {
             foreach (var line in Lines(comment.Text))
@@ -538,7 +565,41 @@ namespace Reko.Core.Output
             }
         }
 
-		public void VisitDeclaration(Declaration decl)
+        /// <summary>
+        /// //$REVIEW: naturally for non-C++ like languages, this needs to be 
+        /// done differently. 
+        /// </summary>
+        /// <param name="compound"></param>
+        public void VisitCompoundAssignment(AbsynCompoundAssignment compound)
+        {
+            writer.Indent();
+            WriteCompoundAssignment(compound);
+            writer.Terminate(";");
+        }
+
+        public void WriteCompoundAssignment(AbsynCompoundAssignment compound)
+        { 
+            if (compound.Src.Right is Constant c &&
+                !c.IsReal && c.ToInt64() == 1)
+            {
+                if (compound.Src.Operator == Operator.IAdd)
+                {
+                    writer.Write("++");
+                    compound.Dst.Accept(this);
+                    return;
+                } else if (compound.Src.Operator == Operator.ISub)
+                {
+                    writer.Write("--");
+                    compound.Dst.Accept(this);
+                    return;
+                }
+            }
+            compound.Dst.Accept(this);
+            writer.Write(compound.Src.Operator.AsCompound());
+            compound.Src.Right.Accept(this);
+        }
+
+        public void VisitDeclaration(Declaration decl)
 		{
 			writer.Indent();
             Debug.Assert(decl.Identifier.DataType != null, "The DataType property can't ever be null");
@@ -647,18 +708,23 @@ namespace Reko.Core.Output
 			}
 			writer.Terminate();
 		}
-#endregion
+        #endregion
 
 
-		#region IAbsynStatementVisitor //////////////////////
+        #region IAbsynStatementVisitor //////////////////////
 
-		public void VisitAssignment(AbsynAssignment a)
-		{
-			writer.Indent();
+        public void VisitAssignment(AbsynAssignment a)
+        {
+            writer.Indent();
+            WriteAssignment(a);
+			writer.Terminate(";");
+        }
+
+        private void WriteAssignment(AbsynAssignment a)
+        { 
 			a.Dst.Accept(this);
 			writer.Write(" = ");
 			a.Src.Accept(this);
-			writer.Terminate(";");
 		}
 
 		public void VisitBreak(AbsynBreak brk)
@@ -732,7 +798,37 @@ namespace Reko.Core.Output
 			writer.Terminate(");");
 		}
 
-		public void VisitGoto(AbsynGoto g)
+        public void VisitFor(AbsynFor forLoop)
+        {
+            writer.Indent();
+            writer.WriteKeyword("for");
+            writer.Write(" (");
+            MaybeWriteAssignment(forLoop.Initialization);
+            writer.Write("; ");
+            forLoop.Condition.Accept(this);
+            writer.Write("; ");
+            MaybeWriteAssignment(forLoop.Iteration);
+            writer.Terminate(")");
+
+            WriteIndentedStatements(forLoop.Body, false);
+        }
+
+        private void MaybeWriteAssignment(AbsynAssignment ass)
+        {
+            if (ass != null)
+            {
+                if (ass is AbsynCompoundAssignment cass)
+                {
+                    WriteCompoundAssignment(cass);
+                }
+                else
+                {
+                    WriteAssignment(ass);
+                }
+            }
+        }
+
+        public void VisitGoto(AbsynGoto g)
 		{
 			writer.Indent();
 			writer.WriteKeyword("goto");
@@ -882,7 +978,7 @@ namespace Reko.Core.Output
 
 		public void Write(Procedure proc)
 		{
-			proc.Signature.Emit(proc.QualifiedName(), FunctionType.EmitFlags.None, writer, this, new TypeFormatter(writer));
+			proc.Signature.Emit(proc.QualifiedName(), FunctionType.EmitFlags.None, writer, this, new TypeReferenceFormatter(writer));
 			writer.WriteLine();
 			writer.Write("{");
             writer.WriteLine();
@@ -922,13 +1018,18 @@ namespace Reko.Core.Output
 		/// <param name="expr"></param>
 		public void WriteExpression(Expression expr)
 		{
+            if (expr == null)
+            {
+                writer.Write("<NULL>");
+                return;
+            }
 			int prec = precedenceCur;
 			precedenceCur = PrecedenceLeast;
 			expr.Accept(this);
 			precedenceCur = prec;
 		}
 
-        public void WriteFormalArgument(Identifier arg, bool writeStorage, TypeFormatter t)
+        public void WriteFormalArgument(Identifier arg, bool writeStorage, TypeReferenceFormatter t)
         {
             if (writeStorage)
             {
@@ -940,11 +1041,11 @@ namespace Reko.Core.Output
             {
                 if (arg.Storage is OutArgumentStorage)
                 {
-                    t.Write(new ReferenceTo(arg.DataType), arg.Name);
+                    t.WriteDeclaration(new ReferenceTo(arg.DataType), arg.Name);
                 }
                 else
                 {
-                    t.Write(arg.DataType, arg.Name);
+                    t.WriteDeclaration(arg.DataType, arg.Name);
                 }
             }
         }

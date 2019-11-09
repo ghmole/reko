@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             get { return arch; }
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             Tlcs90State state = (Tlcs90State)arch.CreateProcessorState();
             return new Tlcs90Rewriter(arch, new LeImageReader(image, 0), state, binder, host);
@@ -56,7 +56,7 @@ namespace Reko.UnitTests.Arch.Tlcs
 
         protected override MemoryArea RewriteCode(string hexBytes)
         {
-            var bytes = OperatingEnvironmentElement.LoadHexBytes(hexBytes)
+            var bytes = PlatformDefinition.LoadHexBytes(hexBytes)
                 .ToArray();
             this.image = new MemoryArea(LoadAddress, bytes);
             return image;
@@ -131,8 +131,8 @@ namespace Reko.UnitTests.Arch.Tlcs
         {
             RewriteCode("01");	// halt
             AssertCode(
-                "0|L--|0100(1): 1 instructions",
-                "1|L--|__halt()");
+                "0|H--|0100(1): 1 instructions",
+                "1|H--|__halt()");
         }
 
         [Test]

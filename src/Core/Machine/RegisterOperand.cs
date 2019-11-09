@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,27 +27,22 @@ using System.Text;
 namespace Reko.Core.Machine
 {
     /// <summary>
-    /// Represents a register operand of a <code>MachineInstruction</code>. Most
+    /// Represents a register operand of a <see cref="MachineInstruction"/>. Most
     /// modern architectures support this.
     /// </summary>
     public class RegisterOperand : MachineOperand
     {
-        private RegisterStorage reg;
-
         public RegisterOperand(RegisterStorage reg) :
             base(reg.DataType)
         {
-            this.reg = reg;
+            this.Register = reg;
         }
 
-        public RegisterStorage Register
-        {
-            get { return reg; }
-        }
+        public RegisterStorage Register { get; }
 
         public override void Write(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteString(reg.Name);
+            writer.WriteString(Register.Name);
         }
     }
 

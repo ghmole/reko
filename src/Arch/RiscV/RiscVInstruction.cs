@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,127 +18,106 @@
  */
 #endregion
 
-using System;
+using Reko.Core;
 using Reko.Core.Machine;
+
+using System;
 using System.Collections.Generic;
 
 namespace Reko.Arch.RiscV
 {
     public class RiscVInstruction : MachineInstruction
     {
-        private static Dictionary<Opcode, string> opcodeNames;
-        private static Dictionary<Opcode, InstructionClass> instrClasses;
+        private static Dictionary<Mnemonic, string> opcodeNames;
 
-        internal Opcode opcode;
-        internal MachineOperand op1;
-        internal MachineOperand op2;
-        internal MachineOperand op3;
-        internal MachineOperand op4;
+        public Mnemonic Mnemonic;
 
         static RiscVInstruction()
         {
-            opcodeNames = new Dictionary<Opcode, string>
+            opcodeNames = new Dictionary<Mnemonic, string>
             {
-                { Opcode.fadd_s, "fadd.s" },
-                { Opcode.fadd_d, "fadd.d" },
-                { Opcode.fcvt_d_s, "fcvt.d.s" },
-                { Opcode.fcvt_s_d, "fcvt.s.d" },
-                { Opcode.feq_s, "feq.s" },
-                { Opcode.fmadd_s, "fmadd.s" },
-                { Opcode.fmv_d_x, "fmv.d.x" },
-                { Opcode.fmv_s_x, "fmv.s.x" },
+                { Mnemonic.c_add, "c.add" },
+                { Mnemonic.c_addi, "c.addi" },
+                { Mnemonic.c_addiw, "c.addiw" },
+                { Mnemonic.c_addw, "c.addw" },
+                { Mnemonic.c_and, "c.and" },
+                { Mnemonic.c_andi, "c.andi" },
+                { Mnemonic.c_beqz,  "c.beqz" },
+                { Mnemonic.c_bnez,  "c.bnez" },
+                { Mnemonic.c_addi16sp, "c.addi16sp" },
+                { Mnemonic.c_addi4spn, "c.addi4spn" },
+                { Mnemonic.c_fld, "c.fld" },
+                { Mnemonic.c_fldsp, "c.fldsp" },
+                { Mnemonic.c_flw, "c.flw" },
+                { Mnemonic.c_flwsp, "c.flwsp" },
+                { Mnemonic.c_fsd, "c.fsd" },
+                { Mnemonic.c_fsdsp, "c.fsdsp" },
+                { Mnemonic.c_j, "c.j" },
+                { Mnemonic.c_jr, "c.jr" },
+                { Mnemonic.c_jalr, "c.jalr" },
+                { Mnemonic.c_ld, "c.ld" },
+                { Mnemonic.c_ldsp, "c.ldsp" },
+                { Mnemonic.c_lwsp, "c.lwsp" },
+                { Mnemonic.c_li, "c.li" },
+                { Mnemonic.c_lui, "c.lui" },
+                { Mnemonic.c_lw, "c.lw" },
+                { Mnemonic.c_mv, "c.mv" },
+                { Mnemonic.c_or, "c.or" },
+                { Mnemonic.c_sdsp, "c.sdsp" },
+                { Mnemonic.c_swsp, "c.swsp" },
+                { Mnemonic.c_slli, "c.slli" },
+                { Mnemonic.c_sd, "c.sd" },
+                { Mnemonic.c_srai, "c.srai" },
+                { Mnemonic.c_srli, "c.srli" },
+                { Mnemonic.c_sub, "c.sub" },
+                { Mnemonic.c_subw, "c.subw" },
+                { Mnemonic.c_sw, "c.sw" },
+                { Mnemonic.c_xor, "c.xor" },
+                { Mnemonic.fadd_s, "fadd.s" },
+                { Mnemonic.fadd_d, "fadd.d" },
+                { Mnemonic.fcvt_d_s, "fcvt.d.s" },
+                { Mnemonic.fcvt_s_d, "fcvt.s.d" },
+                { Mnemonic.feq_s, "feq.s" },
+                { Mnemonic.fmadd_s, "fmadd.s" },
+                { Mnemonic.fmsub_s,  "fmsub.s" },
+                { Mnemonic.fnmsub_s, "fnmsub.s" },
+                { Mnemonic.fnmadd_s, "fnmadd.s" },
+                { Mnemonic.fmv_d_x, "fmv.d.x" },
+                { Mnemonic.fmv_s_x, "fmv.s.x" },
             };
-
-            instrClasses = new Dictionary<Opcode, InstructionClass>
-            {
-                { Opcode.jal, InstructionClass.Transfer },
-                { Opcode.jalr, InstructionClass.Transfer },
-                { Opcode.beq, InstructionClass.Transfer | InstructionClass.Conditional },
-                { Opcode.bne, InstructionClass.Transfer | InstructionClass.Conditional },
-                { Opcode.blt, InstructionClass.Transfer | InstructionClass.Conditional },
-                { Opcode.bltu, InstructionClass.Transfer | InstructionClass.Conditional },
-                { Opcode.bge, InstructionClass.Transfer | InstructionClass.Conditional },
-                { Opcode.bgeu, InstructionClass.Transfer | InstructionClass.Conditional },
-            };
         }
 
-        public override InstructionClass InstructionClass
-        {
-            get {
-                InstructionClass c;
-                if (!instrClasses.TryGetValue(opcode, out c))
-                {
-                    return InstructionClass.Linear;
-                }
-                return c;
-            }
-        }
-
-        public override bool IsValid { get { return opcode != Opcode.invalid; } }
-
-        public override int OpcodeAsInteger { get { return (int)opcode; } }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            if (i == 0)
-                return op1;
-            else if (i == 1)
-                return op2;
-            else if (i == 2)
-                return op3;
-            else if (i == 3)
-                return op4;
-            return null;
-        }
+        public override int OpcodeAsInteger => (int) Mnemonic;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            string name;
-            if (!opcodeNames.TryGetValue(opcode, out name))
+            if (!opcodeNames.TryGetValue(Mnemonic, out string name))
             {
-                name = opcode.ToString();
+                name = Mnemonic.ToString();
             }
             writer.WriteOpcode(name);
-            if (op1 == null)
-                return;
-            writer.Tab();
-            WriteOp(op1, writer);
-            if (op2 == null)
-                return;
-            writer.WriteChar(',');
-            WriteOp(op2, writer);
-            if (op3 == null)
-                return;
-            writer.WriteChar(',');
-            WriteOp(op3, writer);
-            if (op4 == null)
-                return;
-            writer.WriteChar(',');
-            WriteOp(op4, writer);
+            RenderOperands(writer, options);
         }
 
-        private void WriteOp(MachineOperand op, MachineInstructionWriter writer)
+        protected override void RenderOperand(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            var rop = op as RegisterOperand;
-            if (rop != null)
+            switch (op)
             {
+            case RegisterOperand rop:
                 writer.WriteString(rop.Register.Name);
                 return;
-            }
-            var immop = op as ImmediateOperand;
-            if (immop != null)
-            {
-                writer.WriteString(immop.Value.ToString());
+            case ImmediateOperand immop:
+                immop.Write(writer, options);
                 return;
-            }
-            var addrop = op as AddressOperand;
-            if (addrop != null)
-            {
+            case AddressOperand addrop:
                 //$TODO: 32-bit?
                 writer.WriteAddress(string.Format("{0:X16}", addrop.Address.ToLinear()), addrop.Address);
                 return;
+            case MemoryOperand memop:
+                memop.Write(writer, options);
+                return;
             }
-            throw new NotImplementedException();
+            throw new NotImplementedException($"Risc-V operand type {op.GetType().Name} not implemented yet.");
         }
     }
 }

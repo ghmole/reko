@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ namespace Reko.Evaluation
     {
         private EvaluationContext ctx;
         private Identifier e;
+        private Identifier idUnused;
 
         public SelfDpbRule(EvaluationContext ctx)
         {
@@ -44,15 +45,25 @@ namespace Reko.Evaluation
             this.e = dpb.Source as Identifier;
             if (e == null)
                 return false;
+
             var c = dpb.InsertedBits as Cast;
-            if (c == null)
+            if (c != null)
+            {
+                idUnused = e;
+                return e == c.Expression;
+            }
+            if (!(dpb.InsertedBits is Identifier idBits))
                 return false;
-            return e == c.Expression;
+
+            if (!(ctx.GetValue(idBits) is Cast cid))
+                return false;
+            this.idUnused = idBits;
+            return e == cid.Expression;
         }
 
         public Expression Transform()
         {
-            ctx.RemoveIdentifierUse(e);
+            ctx.RemoveIdentifierUse(idUnused);
             return e;
         }
     }

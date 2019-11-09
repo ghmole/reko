@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -179,7 +179,8 @@ namespace Reko.WindowsItp
             var abImage = new byte[size];
             fs.Read(abImage, 0, (int)size);
             var exe = new ExeImageLoader(sc, "foolexe", abImage);
-            var peLdr = new PeImageLoader(sc, "foo.exe", abImage, exe.e_lfanew);
+            var lfanew = exe.LoadLfaToNewHeader();
+            var peLdr = new PeImageLoader(sc, "foo.exe", abImage, lfanew.Value);
             var addr = peLdr.PreferredBaseAddress;
             var program = peLdr.Load(addr);
             var rr = peLdr.Relocate(program, addr);
@@ -293,6 +294,22 @@ namespace Reko.WindowsItp
         private void rewriterToolStripMenuItem_Click(object sender, EventArgs e)
         {
             using (var dlg = new RewriterPerformanceDialog())
+            {
+                dlg.ShowDialog(this);
+            }
+        }
+
+        private void suffixArrayToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new SuffixArrayPerformanceDialog())
+            {
+                dlg.ShowDialog(this);
+            }
+        }
+
+        private void decoderToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new DecoderPerformanceDialog())
             {
                 dlg.ShowDialog(this);
             }

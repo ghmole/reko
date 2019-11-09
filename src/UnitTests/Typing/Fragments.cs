@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ namespace Reko.UnitTests.Typing
     {
         public static void MemStore(ProcedureBuilder m)
         {
+            m.Assign(m.Frame.EnsureRegister(m.Architecture.StackRegister), m.Frame.FramePointer);
             m.MStore(m.Word32(0x3120), m.Word32(0));
             m.MStore(m.Word32(0x3120), m.IAdd(m.Mem32(m.Word32(0x3120)), 1));
             m.Return();

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,112 +26,165 @@ using System.Text;
 using System.Collections;
 using Reko.Core;
 using Reko.Core.Expressions;
+using Reko.Core.Lib;
+using Reko.Core.Types;
 
 namespace Reko.Arch.RiscV
 {
+    using Decoder = Reko.Core.Machine.Decoder<RiscVDisassembler, Mnemonic, RiscVInstruction>;
+    using MaskDecoder = Reko.Core.Machine.MaskDecoder<RiscVDisassembler, Mnemonic, RiscVInstruction>;
+
     public class RiscVDisassembler : DisassemblerBase<RiscVInstruction>
     {
-        private static OpRec[] opRecs;
-        private static OpRec[] wideOpRecs;
-        private static OpRec[] compressed0;
-        private static OpRec[] compressed1;
-        private static OpRec[] compressed2;
+        private static readonly Decoder[] decoders;
+        private static readonly MaskDecoder w32decoders;
+        private static readonly Decoder[] compressed0;
+        private static readonly Decoder[] compressed1;
+        private static readonly Decoder[] compressed2;
+        private static readonly int[] compressedRegs;
+        private static readonly Decoder invalid;
 
-        private RiscVArchitecture arch;
-        private EndianImageReader rdr;
+        private readonly RiscVArchitecture arch;
+        private readonly EndianImageReader rdr;
         private Address addrInstr;
+        private State state;
 
         public RiscVDisassembler(RiscVArchitecture arch, EndianImageReader rdr)
         {
             this.arch = arch;
             this.rdr = rdr;
+            this.state = new State();
         }
 
         public override RiscVInstruction DisassembleInstruction()
         {
             this.addrInstr = rdr.Address;
-            ushort hInstr;
-            if (!rdr.TryReadLeUInt16(out hInstr))
+            if (!rdr.TryReadLeUInt16(out ushort hInstr))
             {
                 return null;
             }
-            return opRecs[hInstr & 0x3].Decode(this, hInstr);
-        }
-
-        private RiscVInstruction DecodeCompressedOperands(Opcode opcode, string fmt, uint wInstr)
-        {
-            var ops = new List<MachineOperand>();
-            for (int i = 0; i < fmt.Length; ++i)
-            {
-                MachineOperand op;
-                switch (fmt[i++])
-                {
-                default: throw new InvalidOperationException(string.Format("Unsupported operand code {0}", fmt[i - 1]));
-                case ',': continue;
-                case 'd': op = GetRegister(wInstr, 7); break;
-                case 'I': op = GetImmediate(wInstr, 12, fmt[i++]); break;
-                }
-                ops.Add(op);
-            }
-            return BuildInstruction(opcode, ops);
-        }
-
-        private RiscVInstruction BuildInstruction(Opcode opcode, List<MachineOperand> ops)
-        {
-            var instr = new RiscVInstruction
-            {
-                Address = this.addrInstr,
-                opcode = opcode,
-                Length = (int)(this.rdr.Address - addrInstr)
-            };
-            if (ops.Count > 0)
-            {
-                instr.op1 = ops[0];
-                if (ops.Count > 1)
-                {
-                    instr.op2 = ops[1];
-                    if (ops.Count > 2)
-                    {
-                        instr.op3 = ops[2];
-
-                        if (ops.Count > 3)
-                        {
-                            instr.op4 = ops[3];
-                        }
-                    }
-                }
-            }
+            var instr = decoders[hInstr & 0x3].Decode(hInstr, this);
+            instr.Address = addrInstr;
+            instr.Length = (int) (rdr.Address - addrInstr);
+            instr.InstructionClass |= hInstr == 0 ? InstrClass.Zero : 0;
             return instr;
         }
 
-        private RiscVInstruction DecodeWideOperands(Opcode opcode, string fmt, uint wInstr)
-        {
-            var ops = new List<MachineOperand>();
-            for (int i = 0; i < fmt.Length; ++i)
+        private RiscVInstruction BuildInstruction(Mnemonic opcode, InstrClass iclass, List<MachineOperand> ops)
+        { 
+            var instr = new RiscVInstruction
             {
-                MachineOperand op;
-                switch (fmt[i++])
-                {
-                default: throw new InvalidOperationException(string.Format("Unsupported operand code {0}", fmt[i - 1]));
-                case ',': continue;
-                case '1': op = GetRegister(wInstr, 15); break;
-                case '2': op = GetRegister(wInstr, 20); break;
-                case 'd': op = GetRegister(wInstr, 7); break;
-                case 'i': op = GetImmediate(wInstr, 20, 's'); break;
-                case 'B': op = GetBranchTarget(wInstr); break;
-                case 'F': op = GetFpuRegister(wInstr, fmt[i++]); break;
-                case 'J': op = GetJumpTarget(wInstr); break;
-                case 'I': op = GetImmediate(wInstr, 12, fmt[i++]); break;
-                case 'S': op = GetSImmediate(wInstr); break;
-                case 'L': // signed offset used in loads
-                    op = GetImmediate(wInstr, 20, 's');
-                    break;
-                case 'z': op = GetShiftAmount(wInstr, 5); break;
-                case 'Z': op = GetShiftAmount(wInstr, 6); break;
-                }
-                ops.Add(op);
-            }
-            return BuildInstruction(opcode, ops);
+                Address = this.addrInstr,
+                Mnemonic = opcode,
+                InstructionClass = iclass,
+                Operands = ops.ToArray(),
+                Length = (int)(this.rdr.Address - addrInstr)
+            };
+            return instr;
+        }
+
+        //private RiscVInstruction DecodeWideOperands(Opcode opcode, InstrClass iclass, Mutator<RiscVDisassembler>[] fmt, uint wInstr)
+        //{
+        //    for (int i = 0; i < fmt.Length; ++i)
+        //    {
+        //        MachineOperand op;
+        //        switch (fmt[i++])
+        //        {
+        //        default: throw new InvalidOperationException(string.Format("Unsupported operand code {0}", fmt[i - 1]));
+        //        case ',': continue;
+        //   return BuildInstruction(opcode, iclass, ops);
+        // 
+        private static bool r1(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetRegister(wInstr, 15);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool r2(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetRegister(wInstr, 20);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool d(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetRegister(wInstr, 7);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool i(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetImmediate(wInstr, 20, 's');
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool B(uint wInstr, RiscVDisassembler dasm)
+        { 
+            var op = dasm.GetBranchTarget(wInstr);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static Mutator<RiscVDisassembler> Ff(int bitPos)
+        {
+            return (u, d) =>
+            {
+                var op = d.GetFpuRegister(u, bitPos);
+                d.state.ops.Add(op);
+                return true;
+            };
+        }
+        private static readonly Mutator<RiscVDisassembler> F1 = Ff(15);
+        private static readonly Mutator<RiscVDisassembler> F2 = Ff(20);
+        private static readonly Mutator<RiscVDisassembler> F3 = Ff(27);
+        private static readonly Mutator<RiscVDisassembler> Fd = Ff(7);
+
+        private static bool J (uint u, RiscVDisassembler d)
+        {
+            var offset = Bitfield.ReadSignedFields(j_bitfields, u) << 1;
+            d.state.ops.Add(AddressOperand.Create(d.addrInstr + offset));
+            return true;
+        }
+
+        private static bool Iu(uint wInstr, RiscVDisassembler dasm)
+        {
+            uint u = wInstr >> 12;
+            var op = ImmediateOperand.Word32(u);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool Ss(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetSImmediate(wInstr);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        // signed offset used in loads
+        private static bool Ls(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetImmediate(wInstr, 20, 's');
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool z(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetShiftAmount(wInstr, 5);
+            dasm.state.ops.Add(op);
+            return true;
+        }
+
+        private static bool Z(uint wInstr, RiscVDisassembler dasm)
+        {
+            var op = dasm.GetShiftAmount(wInstr, 6);
+            dasm.state.ops.Add(op);
+            return true;
         }
 
         private RegisterOperand GetRegister(uint wInstr, int bitPos)
@@ -140,18 +193,9 @@ namespace Reko.Arch.RiscV
             return new RegisterOperand(reg);
         }
 
-        private RegisterOperand GetFpuRegister(uint wInstr, char bitPos)
+        private RegisterOperand GetFpuRegister(uint wInstr, int bitPos)
         {
-            int pos;
-            switch (bitPos)
-            {
-            case '1': pos = 15; break;
-            case '2': pos = 20; break;
-            case '3': pos = 27; break;
-            case 'd': pos = 7; break;
-            default: throw new InvalidOperationException();
-            }
-            var reg = arch.GetRegister(32 + ((int)(wInstr >> pos) & 0x1F));
+            var reg = arch.GetRegister(32 + ((int)(wInstr >> bitPos) & 0x1F));
             return new RegisterOperand(reg);
         }
 
@@ -219,361 +263,872 @@ namespace Reko.Arch.RiscV
             return ImmediateOperand.Int32(offset);
         }
 
-        public abstract class OpRec
+        private static HashSet<uint> seen = new HashSet<uint>();
+
+        private new RiscVInstruction NotYetImplemented(uint instr, string message)
         {
-            public abstract RiscVInstruction Decode(RiscVDisassembler dasm, uint hInstr);
-        }
-
-        public class COpRec : OpRec
-        {
-            private Opcode opcode;
-            private string fmt;
-
-            public COpRec(Opcode opcode, string fmt)
+            if (!seen.Contains(instr))
             {
-                this.opcode = opcode;
-                this.fmt = fmt;
-            }
-
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
-            {
-                return dasm.DecodeCompressedOperands(opcode, fmt, wInstr);
-            }
-        }
-
-
-        public class WOpRec : OpRec
-        {
-            private Opcode opcode;
-            private string fmt;
-
-            public WOpRec(Opcode opcode, string fmt)
-            {
-                this.opcode = opcode;
-                this.fmt = fmt;
-            }
-
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
-            {
-                return dasm.DecodeWideOperands(opcode, fmt, wInstr);
-            }
-        }
-
-        public class FpuOpRec : OpRec
-        {
-            private string fmt;
-            private Opcode opcode;
-
-            public FpuOpRec(Opcode opcode, string fmt)
-            {
-                this.opcode = opcode;
-                this.fmt = fmt;
-            }
-
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
-            {
-                return dasm.DecodeWideOperands(opcode, fmt, wInstr);
-            }
-        }
-
-        public class MaskOpRec : OpRec
-        {
-            private readonly int mask;
-            private readonly int shift;
-            private readonly OpRec[] subcodes;
-
-            public MaskOpRec(int shift, int mask, OpRec[] subcodes)
-            {
-                this.mask = mask;
-                this.shift = shift;
-                this.subcodes = subcodes;
-            }
-
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
-            {
-                var slot = (wInstr >> shift) & mask;
-                return subcodes[slot].Decode(dasm, wInstr);
-            }
-        }
-
-        public class SparseMaskOpRec : OpRec
-        {
-            private readonly int mask;
-            private readonly int shift;
-            private readonly Dictionary<int, OpRec> subcodes;
-
-            public SparseMaskOpRec(int shift, int mask, Dictionary<int, OpRec> subcodes)
-            {
-                this.mask = mask;
-                this.shift = shift;
-                this.subcodes = subcodes;
-            }
-
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
-            {
-                var slot = (int)((wInstr >> shift) & mask);
-                OpRec oprec;
-                if (!subcodes.TryGetValue(slot, out oprec))
+                seen.Add(instr);
+                base.EmitUnitTest("RiscV", instr.ToString("X8"), message, "RiscV_dasm", Address.Ptr32(0x00100000), w =>
                 {
-                    return new RiscVInstruction
-                    {
-                        Address = dasm.addrInstr,
-                        opcode = Opcode.invalid
-                    };
+                    w.WriteLine("    AssertCode(\"@@@\", 0x{0:X8});", instr);
+                });
+            }
+            return CreateInvalidInstruction();
+        }
+
+        public RiscVInstruction MakeInstruction()
+        {
+            var i = state.instr;
+            i.Address = this.addrInstr;
+            var ops = this.state.ops;
+            i.Operands = ops.ToArray();
+            state.instr = new RiscVInstruction();
+            return i;
+        }
+
+        protected override RiscVInstruction CreateInvalidInstruction()
+        {
+            return new RiscVInstruction
+            {
+                Address = addrInstr,
+                InstructionClass = InstrClass.Invalid,
+                Mnemonic = Mnemonic.invalid,
+                Operands = new MachineOperand[0]
+            };
+        }
+
+
+        internal class State
+        {
+            public RiscVInstruction instr = new RiscVInstruction();
+            public List<MachineOperand> ops = new List<MachineOperand>();
+        }
+
+        #region Decoders
+
+        public class NyiDecoder : Decoder
+        {
+            private readonly string message; 
+
+            public NyiDecoder(string message)
+            {
+                this.message = message;
+            }
+
+            public override RiscVInstruction Decode(uint hInstr, RiscVDisassembler dasm)
+            {
+                return dasm.NotYetImplemented(hInstr, message);
+            }
+        }
+
+        public class CDecoder : Decoder
+        {
+            private readonly InstrClass iclass;
+            private readonly Mnemonic opcode;
+            private readonly Mutator<RiscVDisassembler>[] mutators;
+
+            internal CDecoder(InstrClass iclass, Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutators)
+            {
+                this.iclass = iclass;
+                this.opcode = opcode;
+                this.mutators = mutators;
+            }
+
+            public override RiscVInstruction Decode(uint wInstr, RiscVDisassembler dasm)
+            {
+                dasm.state.instr.InstructionClass = this.iclass;
+                dasm.state.instr.Mnemonic = opcode;
+                dasm.state.ops.Clear();
+                foreach (var m in mutators)
+                {
+                    if (!m(wInstr, dasm))
+                        return dasm.CreateInvalidInstruction();
                 }
-                return oprec.Decode(dasm, wInstr);
+                return dasm.MakeInstruction();
             }
         }
 
-        public class WideOpRec : OpRec
+        public class WInstrDecoderOld : Decoder
         {
-            public WideOpRec()
+            private readonly Mnemonic opcode;
+            private readonly InstrClass iclass;
+            private readonly Mutator<RiscVDisassembler> [] mutators;
+
+            public WInstrDecoderOld(InstrClass iclass, Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutators)
             {
+                this.iclass = iclass;
+                this.opcode = opcode;
+                this.mutators = mutators;
             }
 
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint hInstr)
+            public override RiscVInstruction Decode(uint wInstr, RiscVDisassembler dasm)
             {
-                ushort hiword;
-                if (!dasm.rdr.TryReadUInt16(out hiword))
+                dasm.state.instr.InstructionClass = this.iclass;
+                dasm.state.instr.Mnemonic = opcode;
+                dasm.state.ops.Clear();
+                foreach (var m in mutators)
                 {
-                    return new RiscVInstruction { opcode = Opcode.invalid, Address = dasm.addrInstr };
+                    if (!m(wInstr, dasm))
+                        return dasm.CreateInvalidInstruction();
+                }
+                return dasm.MakeInstruction();
+            }
+        }
+
+        public class FpuDecoder : Decoder
+        {
+            private readonly Mutator<RiscVDisassembler>[] mutators;
+            private readonly Mnemonic opcode;
+
+            public FpuDecoder(Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutators)
+            {
+                this.opcode = opcode;
+                this.mutators = mutators;
+            }
+
+            public override RiscVInstruction Decode(uint wInstr, RiscVDisassembler dasm)
+            {
+                dasm.state.instr.InstructionClass = InstrClass.Linear;
+                dasm.state.instr.Mnemonic = opcode;
+                dasm.state.ops.Clear();
+                foreach (var m in mutators)
+                {
+                    if (!m(wInstr, dasm))
+                        return dasm.CreateInvalidInstruction();
+                }
+                return dasm.MakeInstruction();
+            }
+        }
+
+        public class W32Decoder : Decoder
+        {
+            private readonly MaskDecoder<RiscVDisassembler, Mnemonic, RiscVInstruction> subDecoders;
+
+            public W32Decoder(MaskDecoder subDecoders)
+            {
+                this.subDecoders = subDecoders;
+            }
+
+            public override RiscVInstruction Decode(uint hInstr, RiscVDisassembler dasm)
+            {
+                if (!dasm.rdr.TryReadUInt16(out ushort hiword))
+                {
+                    return dasm.CreateInvalidInstruction();
                 }
                 uint wInstr = (uint)hiword << 16;
                 wInstr |= hInstr;
-                var slot = (wInstr >> 2) & 0x1F;
-                return wideOpRecs[slot].Decode(dasm, wInstr);
+                return subDecoders.Decode(wInstr, dasm);
             }
         }
 
-        public class ShiftOpRec : OpRec
+        public class ShiftDecoder : Decoder
         {
-            private Opcode[] rl_ra;
-            private string fmt;
+            private readonly Decoder[] decoders;
 
-            public ShiftOpRec(string fmt, params Opcode[] rl_ra)
+            public ShiftDecoder(params Decoder[] decoders)
             {
-                this.rl_ra = rl_ra;
-                this.fmt = fmt;
+                this.decoders = decoders;
             }
 
-            public override RiscVInstruction Decode(RiscVDisassembler dasm, uint wInstr)
+            public override RiscVInstruction Decode(uint wInstr, RiscVDisassembler dasm)
             {
-                var opcode = rl_ra[bit(wInstr, 30) ? 1 : 0];
-                return dasm.DecodeWideOperands(opcode, fmt, wInstr);
+                var decoder = decoders[bit(wInstr, 30) ? 1 : 0];
+                return decoder.Decode(wInstr, dasm);
             }
         }
 
+        /// <summary>
+        /// Handle instructions that are encoded differently depending on the word size
+        /// of the CPU architecture.
+        /// </summary>
+        internal class WordSizeDecoder : Decoder
+        {
+            private readonly Decoder rv32;
+            private readonly Decoder rv64;
+            private readonly Decoder rv128;
+
+            public WordSizeDecoder(
+                Decoder rv32 = null,
+                Decoder rv64 = null,
+                Decoder rv128 = null)
+            {
+                this.rv32 = rv32 ?? invalid;
+                this.rv64 = rv64 ?? invalid;
+                this.rv128 = rv128 ?? invalid;
+            }
+
+            public override RiscVInstruction Decode(uint wInstr, RiscVDisassembler dasm)
+            {
+                switch (dasm.arch.WordWidth.Size)
+                {
+                case 4: return rv32.Decode(wInstr, dasm);
+                case 8: return rv64.Decode(wInstr, dasm);
+                case 16: return rv128.Decode(wInstr, dasm);
+                }
+                throw new NotSupportedException($"{dasm.arch.WordWidth.Size}-bit Risc-V instructions not supported.");
+            }
+        }
+
+        #endregion
+
+        private static WInstrDecoderOld Instr(Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutators)
+        {
+            return new WInstrDecoderOld(InstrClass.Linear, opcode, mutators);
+        }
+
+        private static WInstrDecoderOld Instr(Mnemonic opcode, InstrClass iclass, params Mutator<RiscVDisassembler>[] mutators)
+        {
+            return new WInstrDecoderOld(iclass, opcode, mutators);
+        }
+
+        // Compact instruction decoder
+
+        private static CDecoder CInstr(Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutators)
+        {
+            return new CDecoder(InstrClass.Linear, opcode, mutators);
+        }
+
+        private static CDecoder CInstr(InstrClass iclass, Mnemonic opcode, params Mutator<RiscVDisassembler>[] mutator)
+        {
+            return new CDecoder(iclass, opcode, mutator);
+        }
+
+        // Conditional decoder
+
+        private static WordSizeDecoder WordSize(
+            Decoder rv32 = null,
+            Decoder rv64 = null,
+            Decoder rv128 = null)
+        {
+            return new WordSizeDecoder(rv32, rv64, rv128);
+        }
+
+        private static NyiDecoder Nyi(string message)
+        {
+            return new NyiDecoder(message);
+        }
+
+        #region Mutators
+
+        // The Risc-V manual specifies 5 immediate formats
+
+        // I-immediate
+        private static readonly Bitfield iI = new Bitfield(20, 12);
+        // S-immediate
+        private static readonly Bitfield[] iS = Bf((25, 7), (7, 5));
+        // B-immediate
+        private static readonly Bitfield[] iB = Bf((31, 1), (7, 1), (25, 6), (8, 4));
+        // U-immediate
+        private static readonly Bitfield iU = new Bitfield(12, 20);
+        // J-immediate
+        private static readonly Bitfield[] iJ = Bf((31, 1), (12, 8), (20, 1), (21, 10));
+
+        // Integer register
+        private static Mutator<RiscVDisassembler> R(int bitPos)
+        {
+            var regMask = new Bitfield(bitPos, 5);
+            return (u, d) =>
+            {
+                var iReg = (int) regMask.Read(u);
+                var reg = new RegisterOperand(d.arch.GetRegister(iReg));
+                d.state.ops.Add(reg);
+                return true;
+            };
+        }
+
+        // Registers specified at fixed positions.
+
+        private static readonly Mutator<RiscVDisassembler> Rd = R(7);
+        private static readonly Mutator<RiscVDisassembler> R1 = R(15);
+        private static readonly Mutator<RiscVDisassembler> R2 = R(20);
+
+        // Floating point register
+        private static Mutator<RiscVDisassembler> F(int bitPos)
+        {
+            var regMask = new Bitfield(bitPos, 5);
+            return (u, d) =>
+            {
+                var iReg = (int) regMask.Read(u);
+                var reg = new RegisterOperand(d.arch.FpRegs[iReg]);
+                d.state.ops.Add(reg);
+                return true;
+            };
+        }
+        //private static readonly Mutator<RiscVDisassembler> Fd = F(7);
+        //private static readonly Mutator<RiscVDisassembler> F1 = F(15);
+        //private static readonly Mutator<RiscVDisassembler> F2 = F(20);
+        //private static readonly Mutator<RiscVDisassembler> F3 = F(27);
+
+        // Compressed format register (r')
+        private static Mutator<RiscVDisassembler> Rc(int bitPos)
+        {
+            var regMask = new Bitfield(bitPos, 3);
+            return (u, d) =>
+            {
+                var iReg = compressedRegs[regMask.Read(u)];
+                var reg = new RegisterOperand(d.arch.GetRegister(iReg));
+                d.state.ops.Add(reg);
+                return true;
+            };
+        }
+
+        // Compressed format floating point register (fr')
+        private static Mutator<RiscVDisassembler> Fc(int bitPos)
+        {
+            var regMask = new Bitfield(bitPos, 3);
+            return (u, d) =>
+            {
+                var iReg = compressedRegs[regMask.Read(u)];
+                var reg = new RegisterOperand(d.arch.FpRegs[iReg]);
+                d.state.ops.Add(reg);
+                return true;
+            };
+        }
+
+
+        private static Mutator<RiscVDisassembler> ImmSigned(int bitPos, int length)
+        {
+            var field = new Bitfield(bitPos, length);
+            return (u, d) =>
+            {
+                var imm = Constant.Create(d.arch.NaturalSignedInteger, field.ReadSigned(u));
+                d.state.ops.Add(new ImmediateOperand(imm));
+                return true;
+            };
+        }
+
+        private static Mutator<RiscVDisassembler> ImmSigned(Bitfield[] fields)
+        {
+            return (u, d) =>
+            {
+                var n = Bitfield.ReadSignedFields(fields, u);
+                var imm = Constant.Create(d.arch.NaturalSignedInteger, n);
+                d.state.ops.Add(new ImmediateOperand(imm));
+                return true;
+            };
+        }
+
+        // Unsigned immediate
+        private static Mutator<RiscVDisassembler> Imm(int bitPos1, int length1)
+        {
+            var mask = new Bitfield(bitPos1, length1);
+            return (u, d) =>
+            {
+                var imm = Constant.Create(d.arch.WordWidth, mask.Read(u));
+                d.state.ops.Add(new ImmediateOperand(imm));
+                return true;
+            };
+        }
+
+        private static Mutator<RiscVDisassembler> Imm(params (int pos, int len) [] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uImm = Bitfield.ReadFields(masks, u);
+                d.state.ops.Add(new ImmediateOperand(
+                    Constant.Create(d.arch.WordWidth, uImm)));
+                return true;
+            };
+        }
+
+        // Immediate with a shift
+        private static Mutator<RiscVDisassembler> ImmSh(int sh, params (int pos, int len)[] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uImm = Bitfield.ReadFields(masks, u) << sh;
+                d.state.ops.Add(new ImmediateOperand(
+                    Constant.Create(d.arch.WordWidth, uImm)));
+                return true;
+            };
+        }
+
+        private static Mutator<RiscVDisassembler> ImmB(params (int pos, int len)[] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uImm = Bitfield.ReadFields(masks, u);
+                d.state.ops.Add(new ImmediateOperand(
+                    Constant.Create(PrimitiveType.Byte, uImm)));
+                return true;
+            };
+        }
+
+        private static Mutator<RiscVDisassembler> ImmS(params (int pos, int len)[] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var sImm = Bitfield.ReadSignedFields(masks, u);
+                d.state.ops.Add(new ImmediateOperand(
+                    Constant.Create(d.arch.WordWidth, sImm)));
+                return true;
+            };
+        }
+
+        // Signed immediate with a shift
+        private static Mutator<RiscVDisassembler> ImmShS(int sh, params (int pos, int len)[] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uImm = Bitfield.ReadSignedFields(masks, u) << sh;
+                d.state.ops.Add(new ImmediateOperand(
+                    Constant.Create(d.arch.WordWidth, uImm)));
+                return true;
+            };
+        }
+
+        // Common immediate fields
+        private static readonly Mutator<RiscVDisassembler> I20s = ImmS((20, 12));
+        private static readonly Mutator<RiscVDisassembler> I12 = Imm(12, 20);
+
+        // PC-relative displacement with shift.
+        private static Mutator<RiscVDisassembler> PcRel(int sh, params (int pos, int len)[] fields)
+        {
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var sImm = Bitfield.ReadSignedFields(masks, u) << sh;
+                var addr = d.addrInstr + sImm;
+                d.state.ops.Add(AddressOperand.Create(addr));
+                return true;
+            };
+        }
+
+        // Memory operand format, where offset is not scaled
+        private static Mutator<RiscVDisassembler> Mem(PrimitiveType dt, int regOffset, params (int pos, int len)[] fields)
+        {
+            var baseRegMask = new Bitfield(regOffset, 5);
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uOffset = (int) Bitfield.ReadFields(masks, u);
+                var iBase = (int) baseRegMask.Read(u);
+
+                d.state.ops.Add(new MemoryOperand(dt)
+                {
+                    Base = d.arch.GetRegister(iBase),
+                    Offset = uOffset
+                });
+                return true;
+            };
+        }
+
+
+        // Memory operand format, where offset is scaled by the register size
+        private static Mutator<RiscVDisassembler> Mems(PrimitiveType dt, int regOffset, params (int pos, int len)[] fields)
+        {
+            var baseRegMask = new Bitfield(regOffset, 5);
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uOffset = (int) Bitfield.ReadFields(masks, u) * dt.Size;
+                var iBase = (int)baseRegMask.Read(u);
+
+                d.state.ops.Add(new MemoryOperand(dt)
+                {
+                    Base = d.arch.GetRegister(iBase),
+                    Offset = uOffset
+                });
+                return true;
+            };
+        }
+
+        // Memory operand format used for compressed instructions
+        private static Mutator<RiscVDisassembler> Memc(PrimitiveType dt, int regOffset, params (int pos, int len)[] fields)
+        {
+            var baseRegMask = new Bitfield(regOffset, 3);
+            var masks = fields
+                .Select(field => new Bitfield(field.pos, field.len))
+                .ToArray();
+            return (u, d) =>
+            {
+                var uOffset = (int) Bitfield.ReadFields(masks, u) * dt.Size;
+                var iBase = compressedRegs[baseRegMask.Read(u)];
+
+                d.state.ops.Add(new MemoryOperand(dt)
+                {
+                    Base = d.arch.GetRegister(iBase),
+                    Offset = uOffset
+                });
+                return true;
+            };
+        }
+
+        private static readonly Bitfield[] j_bitfields = new[]
+        {
+            new Bitfield(31, 1),
+            new Bitfield(12, 8),
+            new Bitfield(20, 1),
+            new Bitfield(21, 10)
+        };
+
+        #endregion
 
         static RiscVDisassembler()
         {
-            var loads = new OpRec[]
-            {
-                new WOpRec(Opcode.lb, "d,1,Ls"),
-                new WOpRec(Opcode.lh, "d,1,Ls"),
-                new WOpRec(Opcode.lw, "d,1,Ls"),
-                new WOpRec(Opcode.ld, "d,1,Ls"),
+            invalid = Instr(Mnemonic.invalid, InstrClass.Invalid);
 
-                new WOpRec(Opcode.lbu, "d,1,Ls"),
-                new WOpRec(Opcode.lhu, "d,1,Ls"),
-                new WOpRec(Opcode.lwu, "d,1,Ls"),
-                new WOpRec(Opcode.invalid, ""),
+            var loads = new Decoder[]
+            {
+                Instr(Mnemonic.lb, d,r1,Ls),
+                Instr(Mnemonic.lh, d,r1,Ls),
+                Instr(Mnemonic.lw, d,r1,Ls),
+                Instr(Mnemonic.ld, d,r1,Ls),
+
+                Instr(Mnemonic.lbu, d,r1,Ls),
+                Instr(Mnemonic.lhu, d,r1,Ls),
+                Instr(Mnemonic.lwu, d,r1,Ls),    // 64
+                Nyi(""),
             };
 
-            var fploads = new OpRec[]
+            var fploads = new Decoder[8]
             {
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.flw, "Fd,1,Ls"),
-                new WOpRec(Opcode.invalid, ""),
+                invalid,
+                invalid,
+                CInstr(Mnemonic.flw, Fd,Mem(PrimitiveType.Real32, 15, (20, 12))),
+                CInstr(Mnemonic.fld, Fd,Mem(PrimitiveType.Real64, 15, (20, 12))),
 
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
             };
 
-            var stores = new OpRec[]
+            var stores = new Decoder[]
             {
-                new WOpRec(Opcode.sb, "2,1,Ss"),
-                new WOpRec(Opcode.sh, "2,1,Ss"),
-                new WOpRec(Opcode.sw, "2,1,Ss"),
-                new WOpRec(Opcode.sd, "2,1,Ss"),
+                Instr(Mnemonic.sb, r2,r1,Ss),
+                Instr(Mnemonic.sh, r2,r1,Ss),
+                Instr(Mnemonic.sw, r2,r1,Ss),
+                Instr(Mnemonic.sd, r2,r1,Ss),
 
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
             };
 
-            var op = new OpRec[]
+            var fpstores = new Decoder[8]
             {
-                new ShiftOpRec( "d,1,2", Opcode.add, Opcode.sub),
-                new WOpRec(Opcode.sll, "d,1,2"),
-                new WOpRec(Opcode.slt, "d,1,2"),
-                new WOpRec(Opcode.sltu, "d,1,2"),
+                invalid,
+                invalid,
+                CInstr(Mnemonic.fsw, F2,Memc(PrimitiveType.Real32, 15, (25,7),(7,5))),
+                CInstr(Mnemonic.fsd, F2,Memc(PrimitiveType.Real64, 15, (25,7),(7,5))),
 
-                new WOpRec(Opcode.xor, "d,1,2"),
-                new ShiftOpRec("d,1,2", Opcode.srl, Opcode.sra),
-                new WOpRec(Opcode.or, "d,1,2"),
-                new WOpRec(Opcode.and, "d,1,2"),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
             };
 
-            var opimm = new OpRec[]
+            var op = new Decoder[]
             {
-                new WOpRec(Opcode.addi, "d,1,i"),
-                new ShiftOpRec("d,1,z", Opcode.slli, Opcode.invalid),
-                new WOpRec(Opcode.slti, "d,1,i"),
-                new WOpRec(Opcode.sltiu, "d,1,i"),
+                new ShiftDecoder(
+                    Instr(Mnemonic.add, d,r1,r2),
+                    Instr(Mnemonic.sub, d,r1,r2)),
+                CInstr(Mnemonic.sll, Rd,R1,R2),
+                CInstr(Mnemonic.slt, Rd,R1,R2),
+                CInstr(Mnemonic.sltu, Rd,R1,R2),
 
-                new WOpRec(Opcode.xori, "d,1,i"),
-                new ShiftOpRec("d,1,z", Opcode.srli, Opcode.srai),
-                new WOpRec(Opcode.ori, "d,1,i"),
-                new WOpRec(Opcode.andi, "d,1,i"),
+                CInstr(Mnemonic.xor, Rd,R1,R2),
+                new ShiftDecoder(
+                    Instr(Mnemonic.srl, d,r1,r2),
+                    Instr(Mnemonic.sra, d,r1,r2)),
+                CInstr(Mnemonic.or, Rd,R1,R2),
+                CInstr(Mnemonic.and, Rd,R1,R2),
             };
 
-            var opimm32 = new OpRec[]
+            var opimm = new Decoder[]
             {
-                new WOpRec(Opcode.addiw, "d,1,i"),
-                new ShiftOpRec("d,1,Z", Opcode.slliw, Opcode.invalid),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                                           
-                new WOpRec(Opcode.invalid, ""),
-                new ShiftOpRec("d,1,Z", Opcode.srliw, Opcode.sraiw),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.addi, d,r1,i),
+                new ShiftDecoder(
+                    Instr(Mnemonic.slli, d,r1,z),
+                    Instr(Mnemonic.invalid, InstrClass.Invalid)),
+                Instr(Mnemonic.slti, d,r1,i),
+                Instr(Mnemonic.sltiu, d,r1,i),
+
+                Instr(Mnemonic.xori, d,r1,i),
+                new ShiftDecoder(
+                    Instr(Mnemonic.srli, d,r1,z),
+                    Instr(Mnemonic.srai, d,r1,z)),
+                Instr(Mnemonic.ori, d,r1,i),
+                Instr(Mnemonic.andi, d,r1,i),
             };
 
-            var op32 = new OpRec[]
+            var opimm32 = new Decoder[]
             {
-                new ShiftOpRec("d,1,2", Opcode.addw, Opcode.subw),
-                new ShiftOpRec("d,1,2", Opcode.sllw, Opcode.invalid),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-
-                new WOpRec(Opcode.invalid, ""),
-                new ShiftOpRec("d,1,2", Opcode.srlw, Opcode.sraw),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                CInstr(Mnemonic.addiw, Rd,R1,I20s),
+                CInstr(Mnemonic.slliw, Rd,R1,Imm(20, 5)),
+                Nyi(""),
+                Nyi(""),
+ 
+                Nyi(""),
+                new ShiftDecoder(
+                    Instr(Mnemonic.srliw, d,r1,Z),
+                    Instr(Mnemonic.sraiw, d,r1,Z)),
+                Nyi(""),
+                Nyi(""),
             };
 
-            var opfp = new Dictionary<int, OpRec>
+            var op32 = new Decoder[]
             {
-                { 0x00, new FpuOpRec(Opcode.fadd_s, "Fd,F1,F2") },
-                { 0x01, new FpuOpRec(Opcode.fadd_d, "Fd,F1,F2") },
-                { 0x21, new FpuOpRec(Opcode.fcvt_d_s, "Fd,F1") },
-                { 0x50, new SparseMaskOpRec(12, 7, new Dictionary<int, OpRec>
-                    {
-                        { 2, new WOpRec(Opcode.feq_s, "d,F1,F2") }
-                    })
-                },
-                { 0x71, new FpuOpRec(Opcode.fmv_d_x, "Fd,1") },
-                { 0x78, new FpuOpRec(Opcode.fmv_s_x, "Fd,1") },
+                new ShiftDecoder(
+                    Instr(Mnemonic.addw, d,r1,r2),
+                    Instr(Mnemonic.subw, d,r1,r2)),
+                new ShiftDecoder(
+                    Instr(Mnemonic.sllw, d,r1,r2),
+                    Instr(Mnemonic.invalid, InstrClass.Invalid)),
+                Nyi(""),
+                Nyi(""),
+
+                Nyi(""),
+                new ShiftDecoder(
+                    Instr(Mnemonic.srlw, d,r1,r2),
+                    Instr(Mnemonic.sraw, d,r1,r2)),
+                Nyi(""),
+                Nyi(""),
             };
 
-            var branches = new OpRec[]
+            var opfp = new(uint, Decoder)[]
             {
-                new WOpRec(Opcode.beq, "1,2,B"),
-                new WOpRec(Opcode.bne, "1,2,B"),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-
-                new WOpRec(Opcode.blt, "1,2,B"),
-                new WOpRec(Opcode.bge, "1,2,B"),
-                new WOpRec(Opcode.bltu, "1,2,B"),
-                new WOpRec(Opcode.bgeu, "1,2,B"),
+                ( 0x00, new FpuDecoder(Mnemonic.fadd_s, Fd,F1,F2) ),
+                ( 0x01, new FpuDecoder(Mnemonic.fadd_d, Fd,F1,F2) ),
+                ( 0x21, new FpuDecoder(Mnemonic.fcvt_d_s, Fd,F1) ),
+                ( 0x50, Sparse(12, 3, invalid,
+                        ( 2, Instr(Mnemonic.feq_s, d,F1,F2)))),
+                ( 0x71, new FpuDecoder(Mnemonic.fmv_d_x, Fd,r1) ),
+                ( 0x78, new FpuDecoder(Mnemonic.fmv_s_x, Fd,r1) )
             };
 
-            wideOpRecs = new OpRec[]
+            var branches = new Decoder[]
             {
+                Instr(Mnemonic.beq, InstrClass.ConditionalTransfer, r1,r2,B),
+                Instr(Mnemonic.bne, InstrClass.ConditionalTransfer, r1,r2,B),
+                Nyi(""),
+                Nyi(""),
+
+                Instr(Mnemonic.blt, InstrClass.ConditionalTransfer,  r1,r2,B),
+                Instr(Mnemonic.bge, InstrClass.ConditionalTransfer,  r1,r2,B),
+                Instr(Mnemonic.bltu, InstrClass.ConditionalTransfer, r1,r2,B),
+                Instr(Mnemonic.bgeu, InstrClass.ConditionalTransfer, r1,r2,B),
+            };
+
+            var system = Sparse(20, 12, "system",
+                Nyi("system"),
+                (0, Instr(Mnemonic.ecall)),
+                (1, Instr(Mnemonic.ebreak)));
+
+
+            w32decoders = Mask(2, 5, "w32decoders", 
                 // 00
-                new MaskOpRec(12, 7, loads),
-                new MaskOpRec(12, 7, fploads),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                Mask(12, 3, "loads", loads),
+                Mask(12, 3, "fploads", fploads),
+                Nyi("custom-0"),
+                Nyi("misc-mem"),
 
-                new MaskOpRec(12, 7, opimm),
-                new WOpRec(Opcode.auipc, "d,Iu"),
-                new MaskOpRec(12, 7, opimm32),
-                new WOpRec(Opcode.invalid, ""),
+                Mask(12, 3, "opimm", opimm),
+                Instr(Mnemonic.auipc, d,Iu),
+                Mask(12, 3, "opimm32", opimm32),
+                Nyi("48-bit instruction"),
 
-                new MaskOpRec(12, 7, stores),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                Mask(12, 3, "stores", stores),
+                Mask(12, 3, "fpstores", fpstores),
+                Nyi("custom-1"),
+                Nyi("amo"),
 
-                new MaskOpRec(12, 7, op),
-                new WOpRec(Opcode.lui, "d,Iu"),
-                new MaskOpRec(12, 7, op32),
-                new WOpRec(Opcode.invalid, ""),
+                Mask(30, 1, "op",
+                    Mask(12, 3, "alu",
+                         CInstr(Mnemonic.add, Rd,R1,R2),
+                         CInstr(Mnemonic.sll, Rd,R1,R2),
+                         CInstr(Mnemonic.slt, Rd,R1,R2),
+                         CInstr(Mnemonic.sltu, Rd,R1,R2),
+
+                         CInstr(Mnemonic.xor, Rd,R1,R2),
+                         CInstr(Mnemonic.srl, Rd,R1,R2),
+                         CInstr(Mnemonic.or,  Rd,R1,R2),
+                         CInstr(Mnemonic.and, Rd,R1,R2)),
+                    new MaskDecoder(12, 3, "alu2",
+                         CInstr(Mnemonic.sub, Rd,R1,R2),
+                         Nyi("op - 20 - 0b001"),
+                         Nyi("op - 20 - 0b010"),
+                         Nyi("op - 20 - 0b011"),
+
+                         Nyi("op - 20 - 0b100"),
+                         CInstr(Mnemonic.sra, Rd,R1,R2),
+                         Nyi("op - 20 - 0b110"),
+                         Nyi("op - 20 - 0b111"))),
+                Instr(Mnemonic.lui, d,Iu),
+                Sparse(25, 7, "op32",
+                    invalid, 
+                    ( 1, new MaskDecoder(12, 3, "muldiv",
+                        CInstr(Mnemonic.mulw, Rd,R1,R2),
+                        invalid,
+                        invalid,
+                        invalid,
+                        
+                        CInstr(Mnemonic.divw, Rd,R1,R2),
+                        CInstr(Mnemonic.divuw, Rd,R1,R2),
+                        CInstr(Mnemonic.remw, Rd,R1,R2),
+                        CInstr(Mnemonic.remuw, Rd,R1,R2))
+                    ),
+                    ( 0x20, new MaskDecoder(12, 3, "suww",
+                        CInstr(Mnemonic.subw, Rd,R1,R2),
+                        Nyi("20 - 001"),
+                        Nyi("20 - 010"),
+                        Nyi("20 - 011"),
+
+                        Nyi("20 - 100"),
+                        Nyi("20 - 101"),
+                        Nyi("20 - 110"),
+                        Nyi("20 - 111")))),
+                Nyi("64-bit instruction"),
 
                 // 10
-                new FpuOpRec(Opcode.fmadd_s, "Fd,F1,F2,F3"),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                CInstr(Mnemonic.fmadd_s,  Fd,F1,F2,F3),
+                CInstr(Mnemonic.fmsub_s , Fd,F1,F2,F3),
+                CInstr(Mnemonic.fnmsub_s, Fd,F1,F2,F3),
+                CInstr(Mnemonic.fnmadd_s, Fd,F1,F2,F3),
 
-                new SparseMaskOpRec(25, 0x7F, opfp),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                Sparse(25, 7, invalid, opfp),
+                Nyi("Reserved"),
+                Nyi("custom-2"),
+                Nyi("48-bit instruction"),
 
-                new MaskOpRec(12, 7, branches),
-                new WOpRec(Opcode.jalr, "d,1,i"),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.jal, "d,J"),
+                new MaskDecoder(12, 3, "branches", branches),
+                Instr(Mnemonic.jalr, InstrClass.Transfer, d,r1,i),
+                Nyi("Reserved"),
+                CInstr(InstrClass.Transfer|InstrClass.Call, Mnemonic.jal, Rd,J),
 
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
-                new WOpRec(Opcode.invalid, ""),
+                system,
+                Nyi("Reserved"),
+                Nyi("custom-3"),
+                Nyi(">= 80-bit instruction"));
+
+            compressedRegs = new int[8]
+            {
+                8, 9, 10, 11, 12, 13, 14, 15
             };
 
-            compressed0 = new OpRec[]
+            compressed0 = new Decoder[8]
             {
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                Select((0, 16), u => u != 0, "zero",
+                    CInstr(Mnemonic.c_addi4spn, Rc(2), Imm((7,4), (11,2), (5, 1),(6, 1), (0,2))),
+                    CInstr(InstrClass.Invalid|InstrClass.Zero, Mnemonic.invalid)),
+                WordSize(
+                    rv32: CInstr(Mnemonic.c_fld, Fc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3))),
+                    rv64: CInstr(Mnemonic.c_fld, Fc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3))),
+                    rv128: Nyi("lq")),
+                CInstr(Mnemonic.c_lw, Rc(7), Memc(PrimitiveType.Word32, 2, (5,1), (10,3), (6,1))),
+                WordSize(
+                    rv32: CInstr(Mnemonic.c_flw, Fc(7), Memc(PrimitiveType.Real32, 2, (5,1), (10,3), (6,1))),
+                    rv64: CInstr(Mnemonic.c_ld, Rc(7), Memc(PrimitiveType.Word64, 2, (5,2), (10, 3))),
+                    rv128: CInstr(Mnemonic.c_ld, Rc(7), Memc(PrimitiveType.Word64, 2, (5,2), (10, 3)))),
 
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                Nyi("reserved"),
+                WordSize(
+                    rv32: CInstr(Mnemonic.c_fsd, Fc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3))),
+                    rv64: CInstr(Mnemonic.c_fsd, Fc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3))),
+                    rv128: Nyi("sq")),
+                CInstr(Mnemonic.c_sw, Rc(7), Memc(PrimitiveType.Word32, 2, (5,1), (10,3), (6,1))),
+                WordSize(
+                    rv32: Nyi("fsw"),
+                    rv64: CInstr(Mnemonic.c_sd, Rc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3))),
+                    rv128: CInstr(Mnemonic.c_sd, Rc(7), Memc(PrimitiveType.Real64, 2, (5,2), (10, 3)))),
             };
 
-            compressed1 = new OpRec[]
+            compressed1 = new Decoder[8]
             {
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                CInstr(Mnemonic.c_addi, R(7), ImmS((12, 1), (2, 5))),
+                WordSize(
+                    rv32: Nyi("c.jal"),
+                    rv64: CInstr(Mnemonic.c_addiw, R(7), ImmS((12, 1), (2, 5))),
+                    rv128: CInstr(Mnemonic.c_addiw, R(7), ImmS((12, 1), (2, 5)))),
+                CInstr(Mnemonic.c_li, R(7), ImmS((12,1), (2, 5))),
+                Select((7, 5), u => u == 2,
+                    CInstr(Mnemonic.c_addi16sp, ImmShS(4, (12,1), (3,2), (5,1), (2,1), (6, 1))),
+                    CInstr(Mnemonic.c_lui, R(7), ImmShS(12, (12,1), (2, 5)))),
 
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                new MaskDecoder(10, 2, "comp1",
+                    CInstr(Mnemonic.c_srli, Rc(7), Imm((12,1), (2,5))),
+                    CInstr(Mnemonic.c_srai, Rc(7), Imm((12,1), (2,5))),
+                    CInstr(Mnemonic.c_andi, Rc(7), ImmS((12,1), (2,5))),
+                    new MaskDecoder(12, 1, "comp1_1",
+                        new MaskDecoder(5, 2, "comp1_1_1",
+                            CInstr(Mnemonic.c_sub, Rc(7), Rc(2)),
+                            CInstr(Mnemonic.c_xor, Rc(7), Rc(2)),
+                            CInstr(Mnemonic.c_or, Rc(7), Rc(2)),
+                            CInstr(Mnemonic.c_and, Rc(7), Rc(2))),
+                        new MaskDecoder(5, 2, "comp1_1_2",
+                            WordSize(
+                                rv64: CInstr(Mnemonic.c_subw, Rc(7),Rc(2)),
+                                rv128: CInstr(Mnemonic.c_subw, Rc(7),Rc(2))),
+                            WordSize(
+                                rv64: CInstr(Mnemonic.c_addw, Rc(7),Rc(2)),
+                                rv128: CInstr(Mnemonic.c_addw, Rc(7),Rc(2))),
+                            invalid,
+                            invalid))),
+
+// imm[11|4|9:8|10|6|7|3:1|5]
+     //11 10  9  8 7 6   3 2
+                CInstr(InstrClass.Transfer, Mnemonic.c_j, PcRel(1, (11,1), (8,1), (9,2), (6,1), (7,1), (2,1), (10,1), (3,2))),
+                CInstr(InstrClass.ConditionalTransfer, Mnemonic.c_beqz, Rc(7), PcRel(1, (12,1), (5,2), (2,1), (10,2), (3, 2))),
+                CInstr(InstrClass.ConditionalTransfer, Mnemonic.c_bnez, Rc(7), PcRel(1, (12,1), (5,2), (2,1), (10,2), (3, 2))),
             };
 
-            compressed2 = new OpRec[]
+            compressed2 = new Decoder[8]
             {
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                CInstr(Mnemonic.c_slli, R(7), ImmB((12, 1), (2, 5))),
+                WordSize(
+                    rv32: CInstr(Mnemonic.c_fldsp, F(2), ImmSh(3, (12,1),(7,3),(10,3))),
+                    rv64: CInstr(Mnemonic.c_fldsp, F(2), ImmSh(3, (12,1),(7,3),(10,3)))),
+                CInstr(Mnemonic.c_lwsp, R(2), ImmSh(2, (12,1),(7,3),(10,3))),
+                CInstr(Mnemonic.c_ldsp, R(2), ImmSh(3, (12,1),(7,3),(10,3))),
 
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
-                new COpRec(Opcode.invalid, ""),
+                new MaskDecoder(12, 1,  "",
+                    Select((2, 5), u => u == 0, "",
+                        CInstr(InstrClass.Transfer, Mnemonic.c_jr, R(7)),
+                        CInstr(Mnemonic.c_mv, R(7), R(2))),
+                    Select((2, 5), u => u == 0,
+                        Select((7, 5), u => u == 0,
+                            Nyi("c.ebreak"),
+                            CInstr(InstrClass.Transfer, Mnemonic.c_jalr, R(7))),
+                        CInstr(Mnemonic.c_add, R(7), R(2)))),
+                WordSize(
+                    rv32: CInstr(Mnemonic.c_fsdsp, F(2), ImmSh(3, (7,3), (10,3))),
+                    rv64: CInstr(Mnemonic.c_fsdsp, F(2), ImmSh(3, (7,3), (10,3))),
+                    rv128:Nyi("sqsp")),
+                CInstr(Mnemonic.c_swsp, R(2), ImmSh(2, (7,3),(10,3))),
+                CInstr(Mnemonic.c_sdsp, R(2), ImmSh(3, (7,3),(10,3))),
             };
 
-            opRecs = new OpRec[] 
+            decoders = new Decoder[4]
             {
-                new MaskOpRec(0x13, 7, compressed0),
-                new MaskOpRec(0x13, 7, compressed1),
-                new MaskOpRec(0x13, 7, compressed2),
-                new WideOpRec()
+                new MaskDecoder(13, 3, "compressed0", compressed0),
+                new MaskDecoder(13, 3, "compressed1", compressed1),
+                new MaskDecoder(13, 3, "compressed2", compressed2),
+                new W32Decoder(w32decoders)
             };
         }
     }

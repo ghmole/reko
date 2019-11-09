@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +18,14 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Arch.Sparc;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
 using Reko.Core.Types;
-using NUnit.Framework;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -39,9 +39,8 @@ namespace Reko.UnitTests.Arch.Sparc
         private SparcArchitecture arch = new SparcArchitecture("sparc", PrimitiveType.Word32);
         private Address baseAddr = Address.Ptr32(0x00100000);
         private SparcProcessorState state;
-        private IRewriterHost host;
+        private Mock<IRewriterHost> host;
         private IEnumerable<RtlInstructionCluster> e;
-        private MockRepository repository;
 
         public override IProcessorArchitecture Architecture
         {
@@ -55,10 +54,10 @@ namespace Reko.UnitTests.Arch.Sparc
 
         protected override IRewriterHost CreateRewriterHost()
         {
-            return host;
+            return host.Object;
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             return e;
         }
@@ -67,13 +66,11 @@ namespace Reko.UnitTests.Arch.Sparc
         public void Setup()
         {
             state = (SparcProcessorState)arch.CreateProcessorState();
-            repository = new MockRepository();
-            host = repository.StrictMock<IRewriterHost>();
+            host = new Mock<IRewriterHost>();
         }
 
         private void BuildTest(params uint[] words)
         {
-            repository.ReplayAll();
             byte[] bytes = words.SelectMany(w => new byte[]
             {
                 (byte) (w >> 24),
@@ -82,7 +79,7 @@ namespace Reko.UnitTests.Arch.Sparc
                 (byte) w
             }).ToArray();
             var image = new MemoryArea(LoadAddress, bytes);
-            e = new SparcRewriter(arch, new LeImageReader(image, 0), state, new Frame(arch.WordWidth), host);
+            e = new SparcRewriter(arch, new LeImageReader(image, 0), state, new Frame(arch.WordWidth), host.Object);
         }
 
         private void BuildTest(params SparcInstruction[] instrs)
@@ -96,24 +93,16 @@ namespace Reko.UnitTests.Arch.Sparc
                     addr += 4;
                     return i;
                 });
-            e = new SparcRewriter(arch, exts.GetEnumerator(), state, new Frame(arch.WordWidth), host);
+            e = new SparcRewriter(arch, exts.GetEnumerator(), state, new Frame(arch.WordWidth), host.Object);
         }
 
-        private SparcInstruction Instr(Opcode opcode, params object[] ops)
+        private SparcInstruction Instr(Mnemonic opcode, params object[] ops)
         {
-            var instr = new SparcInstruction { Opcode = opcode };
-            if (ops.Length > 0)
+            var instr = new SparcInstruction
             {
-                instr.Op1 = Op(ops[0]);
-                if (ops.Length > 1)
-                {
-                    instr.Op2 = Op(ops[1]);
-                    if (ops.Length > 2)
-                    {
-                        instr.Op3 = Op(ops[2]);
-                    }
-                }
-            }
+                Mnemonic = opcode,
+                Operands = ops.Select(Op).ToArray()
+            };
             return instr;
         }
 
@@ -195,11 +184,11 @@ namespace Reko.UnitTests.Arch.Sparc
         [Ignore("")]
         public void SparcRw_mulscc()
         {
-            host.Stub(h => h.PseudoProcedure(
-                Arg<string>.Is.Equal("__mulscc"),
-                Arg<DataType>.Is.Equal(VoidType.Instance),
-                Arg<Expression[]>.Is.NotNull))
-                .Return(new Application(
+            host.Setup(h => h.PseudoProcedure(
+                "__mulscc",
+                VoidType.Instance,
+                It.IsNotNull<Expression[]>()))
+                .Returns(new Application(
                      new ProcedureConstant(
                         PrimitiveType.Ptr32,
                         new PseudoProcedure("__mulscc", PrimitiveType.Int32, 2)),
@@ -342,11 +331,11 @@ namespace Reko.UnitTests.Arch.Sparc
         [Test]
         public void SparcRw_ta()
         {
-            host.Stub(h => h.PseudoProcedure(
-                Arg<string>.Is.Equal(PseudoProcedure.Syscall),
-                Arg<DataType>.Is.Equal(VoidType.Instance),
-                Arg<Expression[] >.Is.NotNull))
-                .Return(new Application(
+            host.Setup(h => h.PseudoProcedure(
+                PseudoProcedure.Syscall,
+                VoidType.Instance,
+                It.IsNotNull<Expression[] >()))
+                .Returns(new Application(
                     new ProcedureConstant(
                         PrimitiveType.Ptr32,
                         new PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, 1)),
@@ -408,7 +397,7 @@ namespace Reko.UnitTests.Arch.Sparc
         public void SparcRw_or_imm_g0()
         {
             BuildTest(
-                Instr(Opcode.or, Registers.g0, Constant.Word32(3), Registers.g1));
+                Instr(Mnemonic.or, Registers.g0, Constant.Word32(3), Registers.IntegerRegisters[1]));
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
                 "1|L--|g1 = 0x00000000 | 0x00000003");      // Simplification happens later in the decompiler.
@@ -494,6 +483,25 @@ namespace Reko.UnitTests.Arch.Sparc
             AssertCode(
                "0|L--|00100000(4): 1 instructions",
                "1|L--|g2 = o3 >>u 0x00000010");
+        }
+
+        [Test]
+        public void SparcRw_fcmpd()
+        {
+            BuildTest(0x81A90A47);	// fcmpd	%f4,%f38
+            AssertCode(
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|ELGU = cond(f38_f39 - f4_f5)");
+        }
+
+        [Test]
+        [Ignore("analysis-development")]
+        public void SparcRw_fcmpq()
+        {
+            BuildTest(0x81A90A45);	// fcmpq %f4,%f36
+            AssertCode(
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|ELGU = cond(f36_f37 - f4_f5)");
         }
     }
 }

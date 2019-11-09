@@ -1,20 +1,20 @@
 // fn0C00_0000
 // Return size: 2
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ax:ax
-// SZO:Flags
-// C:Flags
+// SZO:SZO
+// C:C
 // ebx:ebx
-// Z:Flags
+// Z:Z
 // ds:ds
 // return address size: 2
-void fn0C00_0000()
+define fn0C00_0000
 fn0C00_0000_entry:
+	sp = fp
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
 	ax = ax & 0x000F
 	SZO = cond(ax)
 	C = false

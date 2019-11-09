@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,15 +29,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Moq;
+using Reko.Arch.Mos6502;
 
 namespace Reko.UnitTests.Environments.C64
 {
     [TestFixture]
-    public class C64BasicRewriterTests : ArchTestBase
+    public class C64BasicRewriterTests : RewriterTestBase
     {
         private BasicProcessor m;
         private C64Basic arch;
+        private Mos6502ProcessorArchitecture arch6502;
         private SortedList<ushort, C64BasicInstruction> lines;
+        private Mock<ArchTestBase.RewriterHost> host;
 
         public override IProcessorArchitecture Architecture
         {
@@ -49,7 +53,7 @@ namespace Reko.UnitTests.Environments.C64
             get { throw new NotImplementedException(); }
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             var addr = Address.Ptr16(10);
             var image = new MemoryArea(addr, new byte[1]);
@@ -58,6 +62,11 @@ namespace Reko.UnitTests.Environments.C64
                 arch.CreateProcessorState(),
                 binder,
                 host);
+        }
+
+        protected override IRewriterHost CreateRewriterHost()
+        {
+            return host.Object;
         }
 
         private class BasicProcessor
@@ -109,7 +118,11 @@ namespace Reko.UnitTests.Environments.C64
         {
             lines = new SortedList<ushort, C64BasicInstruction>();
             arch = new C64Basic(lines);
+            arch6502 = new Mos6502ProcessorArchitecture("m6502");
             m = new BasicProcessor(lines);
+            host = new Mock<RewriterTestBase.RewriterHost>(arch) { CallBase = true };
+            host.Setup(h => h.GetArchitecture("m6502"))
+                .Returns(arch6502);
         }
 
         [Test]
@@ -126,8 +139,8 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, m.Sys(), " 2064");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
-                "1|L--|__Sys(fn0810)");
+                "0|T--|000A(1): 1 instructions",
+                "1|T--|callx m6502 0810 (2)");
         }
 
         [Test]

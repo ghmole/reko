@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,12 +33,12 @@ namespace Reko.Core.Rtl
             this.Expression = sideEffect;
         }
 
+        public Expression Expression { get; }
+
         public override T Accept<T>(RtlInstructionVisitor<T> visitor)
         {
             return visitor.VisitSideEffect(this);
         }
-
-        public Expression Expression { get; private set; }
 
         protected override void WriteInner(TextWriter writer)
         {

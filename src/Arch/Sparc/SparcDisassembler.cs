@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,601 +30,650 @@ using System.Text;
 
 namespace Reko.Arch.Sparc
 {
+    using Decoder = Decoder<SparcDisassembler, Mnemonic, SparcInstruction>;
+
     public class SparcDisassembler : DisassemblerBase<SparcInstruction>
     {
+        private const InstrClass Transfer = InstrClass.Delay | InstrClass.Transfer;
+        private const InstrClass CondTransfer = InstrClass.Delay | InstrClass.Transfer | InstrClass.Conditional;
+        private const InstrClass LinkTransfer = InstrClass.Delay | InstrClass.Transfer | InstrClass.Call;
+
+        private static readonly Decoder rootDecoder;
+        private static readonly Decoder[] branchOps;
+
         private SparcInstruction instrCur;
         private EndianImageReader imageReader;
+        private readonly List<MachineOperand> ops;
 
         public SparcDisassembler(SparcArchitecture arch, EndianImageReader imageReader)
         {
             this.imageReader = imageReader;
+            this.ops = new List<MachineOperand>();
         }
 
-
-        // Format 1 (op == 1)
-        // +----+-------------------------------------------------------------+
-        // | op | disp30                                                      |
-        // +----+-------------------------------------------------------------+
-        //
-        // Format 2 (op == 0). SETHI and branches Bicc, FBcc, CBcc
-        // +----+---+------+-----+--------------------------------------------+
-        // | op | rd       | op2 | imm22                                      |
-        // +----+---+------+-----+--------------------------------------------+
-        // | op | a | cond | op2 | disp22                                     |
-        // +----+---+------+-----+--------------------------------------------+
-        // 31   29  28     24    21
-        //
-        // Format 3 (op = 2, 3)
-        // +----+----------+--------+------+-----+--------------------+-------+
-        // | op |    rd    |   op3  |  rs1 | i=0 |        asi         |  rs2  |
-        // +----+----------+--------+------+-----+--------------------+-------+
-        // | op |    rd    |   op3  |  rs1 | i=1 |        simm13              |
-        // +----+----------+--------+------+-----+--------------------+-------+
-        // | op |    rd    |   op3  |  rs1 |           opf            |  rs2  |
-        // +----+----------+--------+------+--------------------------+-------+
-        // 31   29         24       18     13    12                   4
         public override SparcInstruction DisassembleInstruction()
         {
             if (!imageReader.IsValid)
                 return null;
+            ops.Clear();
             var addr = imageReader.Address;
             uint wInstr = imageReader.ReadBeUInt32();
-            switch (wInstr >> 30)
-            {
-            default: Debug.Assert(false, "Impossible!"); break;
-
-            case 0:
-                instrCur = opRecs_0[(wInstr >> 22) & 7].Decode(this, wInstr);
-                break;
-            case 1:
-                instrCur = new SparcInstruction
-                {
-                    Opcode = Opcode.call,
-                    Op1 = new AddressOperand((imageReader.Address - 4) + ((int)wInstr << 2)),
-                };
-                break;
-            case 2:
-                instrCur = opRecs_2[(wInstr >> 19) & 0x3F].Decode(this, wInstr);
-                break;
-            case 3:
-                instrCur = opRecs_3[(wInstr >> 19) & 0x3F].Decode(this, wInstr);
-                break;
-            }
+            instrCur = rootDecoder.Decode(wInstr, this);
             instrCur.Address = addr;
             instrCur.Length = 4;
+            instrCur.InstructionClass |= wInstr == 0 ? InstrClass.Zero : 0;
             return instrCur;
         }
 
-        private class OpRec
+        protected override SparcInstruction CreateInvalidInstruction()
         {
-            public Opcode code;
-            public string fmt;
+            return invalid.Decode(0, this);
+        }
 
-            public virtual SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
+        private sealed class InstrDecoder : Decoder
+        {
+            public Mnemonic code;
+            public InstrClass iclass = InstrClass.Linear;
+            public Mutator<SparcDisassembler>[] mutators;
+
+            public override SparcInstruction Decode(uint wInstr, SparcDisassembler dasm)
             {
-                if (fmt == null)
-                    return new SparcInstruction { Opcode = code };
-                var ops = new List<MachineOperand>();
-                int i = 0;
-                while (i != fmt.Length)
+                foreach (var m in mutators)
                 {
-                    char c = fmt[i++];
-                    if (c == ',')
-                        continue;
-                    switch (c)
-                    {
-                    default: throw new NotSupportedException(string.Format("Format {0} not supported.", c));
-                    case 'r':       // Register reference
-                        ops.Add(GetRegisterOperand(wInstr, ref i));
-                        break;
-                    case 'f':       // FPU register
-                        ops.Add(GetFpuRegisterOperand(wInstr, ref i));
-                        break;
-                    case 'A':
-                        ops.Add(GetAlternateSpaceOperand(wInstr, GetOperandSize(ref i)));
-                        break;
-                    case 'I':       // 22-bit immediate value
-                        ops.Add(GetImmOperand(wInstr, 22));
-                        break;
-                    case 'J':
-                        ops.Add(GetAddressOperand(dasm.imageReader.Address, wInstr));
-                        break;
-                    case 'M':
-                        ops.Add(GetMemoryOperand(wInstr, GetOperandSize(ref i)));
-                        break;
-                    case 'R':       // Register or simm13.
-                                    // if 's', return a signed immediate operand where relevant.
-                        ops.Add(GetRegImmOperand(wInstr, fmt[i++] == 's', 13));
-                        break;
-                    case 'S':       // Register or uimm5
-                        ops.Add(GetRegImmOperand(wInstr, false, 6));
-                        break;
-                    case 'T':       // trap number
-                        ops.Add(GetRegImmOperand(wInstr, false, 7));
-                        break;
-                    case '%':
-                        ops.Add(GetRegByName(ref i));
-                        break;
-                    }
+                    if (!m(wInstr, dasm))
+                        return invalid.Decode(wInstr, dasm);
                 }
                 return new SparcInstruction
                 {
-                    Opcode = code,
-                    Op1 = ops.Count > 0 ? ops[0] : null,
-                    Op2 = ops.Count > 1 ? ops[1] : null,
-                    Op3 = ops.Count > 2 ? ops[2] : null,
+                    Mnemonic = code,
+                    InstructionClass = iclass,
+                    Operands = dasm.ops.ToArray()
                 };
-            }
-
-            private MachineOperand GetRegByName(ref int i)
-            {
-                var iStart = i;
-                while (i < fmt.Length)
-                {
-                    if (!Char.IsLetter(fmt[i]) && !Char.IsDigit(fmt[i]))
-                        break;
-                    ++i;
-                }
-                var regName = fmt.Substring(iStart, i - iStart);
-                var reg = Registers.GetRegister(regName);
-                return new RegisterOperand(reg);
-            }
-
-            private PrimitiveType GetOperandSize(ref int i)
-            {
-                int size = fmt[i++];
-                bool signed = (i < fmt.Length -1 && fmt[i] == '+');
-                if (signed)
-                    ++i;
-                {
-                    signed = true;
-                }
-                switch (size)
-                {
-                case 'b': return signed ? PrimitiveType.SByte : PrimitiveType.Byte;
-                case 'h': return signed ? PrimitiveType.Int16 : PrimitiveType.UInt16;
-                case 'w': return signed ? PrimitiveType.Int32 : PrimitiveType.UInt32;
-                case 'd': return signed ? PrimitiveType.Int64 : PrimitiveType.UInt64;
-                }
-                throw new NotImplementedException(string.Format("Unknown format character {0}.", fmt[i-1]));
-            }
-
-            private int SignExtend(uint word, int bits)
-            {
-                int imm = (int) word & ((1 << bits) - 1);
-                int mask = (0 - (imm & (1 << (bits - 1)))) << 1;
-                return imm | mask;
-            }
-
-            private AddressOperand GetAddressOperand(Address addr, uint wInstr)
-            {
-                int offset = SignExtend(wInstr, 22) << 2;
-                return new AddressOperand(addr + (offset - 4));
-            }
-
-            private MachineOperand GetAlternateSpaceOperand(uint wInstr, PrimitiveType type)
-            {
-                RegisterStorage b = Registers.GetRegister(wInstr >> 14);
-                RegisterStorage idx = Registers.GetRegister(wInstr);
-                var asi = (wInstr >> 4) & 0xFF;
-                return new MemoryOperand(b, Constant.Int32((int)asi), type);
-            }
-
-            private MachineOperand GetMemoryOperand(uint wInstr, PrimitiveType type)
-            {
-                RegisterStorage b = Registers.GetRegister(wInstr >> 14);
-                if ((wInstr & (1 << 13)) != 0)
-                {
-                    return new MemoryOperand(b, Constant.Int32(SignExtend(wInstr, 13)), type);
-                }
-                else
-                {
-                    RegisterStorage idx = Registers.GetRegister(wInstr);
-                    return new IndexedMemoryOperand(b, idx, type);
-                }
-            }
-
-            private RegisterOperand GetRegisterOperand(uint wInstr, ref int i)
-            {
-                return new RegisterOperand(GetRegister(wInstr, ref i));
-            }
-
-            private RegisterOperand GetFpuRegisterOperand(uint wInstr, ref int i)
-            {
-                // Register operand are followed by their bit offset within the instruction,
-                // expressed as decimal digits.
-                int offset = 0;
-                while (i < fmt.Length && Char.IsDigit(fmt[i]))
-                {
-                    offset = offset * 10 + (fmt[i++] - '0');
-                }
-                return new RegisterOperand(Registers.GetFpuRegister((wInstr >> offset) & 0x1F));
-            }
-
-            private RegisterStorage GetRegister(uint wInstr, ref int i)
-            {
-                if (fmt[i] == 'y')
-                {
-                    ++i;
-                    return Registers.y;
-                }
-
-                // Register operand are followed by their bit offset within the instruction,
-                // expressed as decimal digits.
-                int offset = 0;
-                while (i < fmt.Length && Char.IsDigit(fmt[i]))
-                {
-                    offset = offset * 10 + (fmt[i++] - '0');
-                }
-                return Registers.GetRegister((wInstr >> offset) & 0x1F);
-            }
-
-            private MachineOperand GetRegImmOperand(uint wInstr, bool signed, int bits)
-            {
-                if ((wInstr & (1 << 13)) != 0)
-                {
-                    // Sign-extend the bastard.
-                    int imm = (int) wInstr & ((1 << bits) - 1);
-                    int mask = (0 - (imm & (1 << (bits - 1)))) << 1;
-                    imm |= mask;
-                    return new ImmediateOperand(
-                        signed 
-                            ? Constant.Int32(imm)
-                            : Constant.Word32(imm));
-                }
-                else
-                {
-                    return new RegisterOperand(Registers.GetRegister(wInstr & 0x1Fu));
-                }
-            }
-
-            private ImmediateOperand GetImmOperand(uint wInstr, int bits)
-            {
-                uint imm = wInstr & ((1u << bits) - 1);
-                return new ImmediateOperand(Constant.Word32(imm));
             }
         }
 
-        private OpRec[] opRecs_0 = new OpRec[]
+        #region Mutators
+
+        // Register reference
+        private static Mutator<SparcDisassembler> r(int pos)
         {
-            new OpRec { code=Opcode.unimp, },
-            new OpRec { code=Opcode.illegal, },
-            new BrachOpRec { offset = 0x00 },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.sethi, fmt="I,r25" }, 
-            new OpRec { code=Opcode.illegal, },
-            new BrachOpRec { offset = 0x10 },
-            new BrachOpRec { offset = 0x20 },
+            return (wInstr, dasm) =>
+            {
+                var reg = Registers.GetRegister((wInstr >> pos) & 0x1F);
+                dasm.ops.Add(new RegisterOperand(reg));
+                return true;
+            };
+        }
+        private static Mutator<SparcDisassembler> r0 = r(0);
+        private static Mutator<SparcDisassembler> r14 = r(14);
+        private static Mutator<SparcDisassembler> r25 = r(25);
+
+        private static Mutator<SparcDisassembler> r(RegisterStorage reg)
+        {
+            return (u, d) =>
+            {
+                d.ops.Add(new RegisterOperand(reg));
+                return true;
+            };
+        }
+
+        private static Mutator<SparcDisassembler> rfsr = r(Registers.fsr);
+        private static Mutator<SparcDisassembler> ry = r(Registers.y);
+
+        // FPU register
+        private static Mutator<SparcDisassembler> f(int pos)
+        {
+            return (u, d) =>
+            {
+                var freg = Registers.GetFpuRegister((int) (u >> pos) & 0x1F);
+                d.ops.Add(new RegisterOperand(freg));
+                return true;
+            };
+        }
+        private static readonly Mutator<SparcDisassembler> f0 = f(0);
+        private static readonly Mutator<SparcDisassembler> f14 = f(14);
+        private static readonly Mutator<SparcDisassembler> f24 = f(24);
+        private static readonly Mutator<SparcDisassembler> f25 = f(25);
+
+        // double FPU register encoding
+        private static Mutator<SparcDisassembler> d(int pos)
+        {
+            return (u, d) =>
+            {
+                var dreg = GetDoubleRegisterOperand(u, pos);
+                if (dreg == null)
+                    return false;
+                d.ops.Add(dreg);
+                return true;
+            };
+        }
+        private static Mutator<SparcDisassembler> d0 = d(0);
+        private static Mutator<SparcDisassembler> d14 = d(14);
+        private static Mutator<SparcDisassembler> d25 = d(25);
+
+        // quad FPU register encoding
+        private static Mutator<SparcDisassembler> q(int pos)
+        {
+            return (u, d) =>
+            {
+                var qreg = GetQuadRegisterOperand(u, pos);
+                if (qreg == null)
+                    return false;
+                d.ops.Add(qreg);
+                return true;
+            };
+        }
+        private static Mutator<SparcDisassembler> q0 = q(0);
+        private static Mutator<SparcDisassembler> q14 = q(14);
+        private static Mutator<SparcDisassembler> q25 = q(25);
+
+        private static Mutator<SparcDisassembler> A(PrimitiveType size)
+        {
+            return (u, d) =>
+            {
+                d.ops.Add(GetAlternateSpaceOperand(u, size));
+                return true;
+            };
+        }
+        private static readonly Mutator<SparcDisassembler> Ab = A(PrimitiveType.Byte);
+        private static readonly Mutator<SparcDisassembler> Ah = A(PrimitiveType.Word16);
+        private static readonly Mutator<SparcDisassembler> Aw = A(PrimitiveType.Word32);
+        private static readonly Mutator<SparcDisassembler> Ad = A(PrimitiveType.Word64);
+
+        // 22-bit immediate value
+        private static bool I(uint wInstr, SparcDisassembler dasm)
+        {
+            dasm.ops.Add(GetImmOperand(wInstr, 22));
+            return true;
+        }
+
+        private static bool J(uint wInstr, SparcDisassembler dasm)
+        {
+
+            dasm.ops.Add(GetAddressOperand(dasm.imageReader.Address, wInstr));
+            return true;
+        }
+
+        private static bool JJ(uint wInstr, SparcDisassembler dasm)
+        {
+            dasm.ops.Add(new AddressOperand((dasm.imageReader.Address - 4) + ((int) wInstr << 2)));
+            return true;
+        }
+
+        private static Mutator<SparcDisassembler> M(PrimitiveType size)
+        {
+            return (u, d) =>
+            {
+                d.ops.Add(GetMemoryOperand(u, size));
+                return true;
+            };
+        }
+        private static Mutator<SparcDisassembler> Mb = M(PrimitiveType.Byte);
+        private static Mutator<SparcDisassembler> Mh = M(PrimitiveType.Word16);
+        private static Mutator<SparcDisassembler> Mw = M(PrimitiveType.Word32);
+        private static Mutator<SparcDisassembler> Md = M(PrimitiveType.Word64);
+        private static Mutator<SparcDisassembler> Msb = M(PrimitiveType.SByte);
+        private static Mutator<SparcDisassembler> Msh = M(PrimitiveType.Int16);
+
+        // Register or simm13.
+        private static Mutator<SparcDisassembler> R(bool signed)
+        {
+            return (u, d) =>
+            {
+                // if 's', return a signed immediate operand where relevant.
+                d.ops.Add(GetRegImmOperand(u, signed, 13));
+                return true;
+            };
+        }
+        private static Mutator<SparcDisassembler> R0 = R(false);
+        private static Mutator<SparcDisassembler> Rs = R(true);
+
+        // Register or uimm5
+        private static bool S(uint wInstr, SparcDisassembler dasm)
+        {
+            dasm.ops.Add(GetRegImmOperand(wInstr, false, 6));
+            return true;
+        }
+
+        // trap number
+        private static bool T(uint wInstr, SparcDisassembler dasm)
+        {
+            dasm.ops.Add(GetRegImmOperand(wInstr, false, 7));
+            return true;
+        }
+        
+        #endregion
+
+        private static int SignExtend(uint word, int bits)
+        {
+            int imm = (int) word & ((1 << bits) - 1);
+            int mask = (0 - (imm & (1 << (bits - 1)))) << 1;
+            return imm | mask;
+        }
+
+        private static AddressOperand GetAddressOperand(Address addr, uint wInstr)
+        {
+            int offset = SignExtend(wInstr, 22) << 2;
+            return new AddressOperand(addr + (offset - 4));
+        }
+
+        private static MachineOperand GetAlternateSpaceOperand(uint wInstr, PrimitiveType type)
+        {
+            RegisterStorage b = Registers.GetRegister(wInstr >> 14);
+            RegisterStorage idx = Registers.GetRegister(wInstr);
+            var asi = (wInstr >> 4) & 0xFF;
+            return new MemoryOperand(b, Constant.Int32((int) asi), type);
+        }
+
+        private static MachineOperand GetMemoryOperand(uint wInstr, PrimitiveType type)
+        {
+            RegisterStorage b = Registers.GetRegister(wInstr >> 14);
+            if ((wInstr & (1 << 13)) != 0)
+            {
+                return new MemoryOperand(b, Constant.Int32(SignExtend(wInstr, 13)), type);
+            }
+            else
+            {
+                RegisterStorage idx = Registers.GetRegister(wInstr);
+                return new IndexedMemoryOperand(b, idx, type);
+            }
+        }
+
+        private static RegisterOperand GetDoubleRegisterOperand(uint wInstr, int offset)
+        {
+            int encodedReg = (int) (wInstr >> offset) & 0x1F;
+            int reg = ((encodedReg & 1) << 5) | (encodedReg & ~1);
+            return new RegisterOperand(Registers.GetFpuRegister(reg));
+        }
+
+        private static RegisterOperand GetQuadRegisterOperand(uint wInstr, int offset)
+        {
+            int encodedReg = (int) (wInstr >> offset) & 0x1F;
+            int reg = ((encodedReg & 1) << 5) | (encodedReg & ~1);
+            if ((reg & 0x3) != 0)
+                return null;
+            return new RegisterOperand(Registers.GetFpuRegister(reg));
+        }
+
+        private static MachineOperand GetRegImmOperand(uint wInstr, bool signed, int bits)
+        {
+            if ((wInstr & (1 << 13)) != 0)
+            {
+                // Sign-extend the bastard.
+                int imm = (int) wInstr & ((1 << bits) - 1);
+                int mask = (0 - (imm & (1 << (bits - 1)))) << 1;
+                imm |= mask;
+                return new ImmediateOperand(
+                    signed
+                        ? Constant.Int32(imm)
+                        : Constant.Word32(imm));
+            }
+            else
+            {
+                return new RegisterOperand(Registers.GetRegister(wInstr & 0x1Fu));
+            }
+        }
+
+        private static ImmediateOperand GetImmOperand(uint wInstr, int bits)
+        {
+            uint imm = wInstr & ((1u << bits) - 1);
+            return new ImmediateOperand(Constant.Word32(imm));
+        }
+
+        private static Decoder[] decoders_0 = new Decoder[]
+        {
+            Instr(Mnemonic.unimp, InstrClass.Invalid),
+            Instr(Mnemonic.illegal, InstrClass.Invalid),
+            new BranchDecoder { offset = 0x00 },
+            Instr(Mnemonic.illegal, InstrClass.Invalid),
+
+            Instr(Mnemonic.sethi, I,r25),
+            Instr(Mnemonic.illegal, InstrClass.Invalid),
+            new BranchDecoder { offset = 0x10 },
+            new BranchDecoder { offset = 0x20 },
         };
 
-        private class BrachOpRec : OpRec
+        private class BranchDecoder : Decoder
         {
             public uint offset;
 
-            public override SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
+            public override SparcInstruction Decode(uint wInstr, SparcDisassembler dasm)
             {
                 uint i = ((wInstr >> 25) & 0xF) + offset;
-                SparcInstruction instr = branchOps[i].Decode(dasm, wInstr);
-                if ((wInstr & (1u << 29)) != 0)
-                    instr.Annul = true;
+                SparcInstruction instr = branchOps[i].Decode(wInstr, dasm);
+                instr.InstructionClass |= ((wInstr & (1u << 29)) != 0) ? InstrClass.Annul : 0;
                 return instr;
             }
         }
 
-        private static OpRec[] branchOps = new OpRec[] 
+        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<SparcDisassembler>[] mutators)
         {
-            // 00
-            new OpRec { code=Opcode.bn, fmt="J"},
-            new OpRec { code=Opcode.be, fmt="J"},
-            new OpRec { code=Opcode.ble,fmt="J" },
-            new OpRec { code=Opcode.bl, fmt="J" },
-            new OpRec { code=Opcode.bleu, fmt="J" },
-            new OpRec { code=Opcode.bcs, fmt="J" },
-            new OpRec { code=Opcode.bneg, fmt="J" },
-            new OpRec { code=Opcode.bvs, fmt="J" },
-
-            new OpRec { code=Opcode.ba, fmt="J" },
-            new OpRec { code=Opcode.bne, fmt="J" },
-            new OpRec { code=Opcode.bg, fmt="J" },
-            new OpRec { code=Opcode.bge, fmt="J" },
-            new OpRec { code=Opcode.bgu, fmt="J" },
-            new OpRec { code=Opcode.bcc, fmt="J" },
-            new OpRec { code=Opcode.bpos, fmt="J" },
-            new OpRec { code=Opcode.bvc, fmt="J" },
-
-            // 10
-            new OpRec { code=Opcode.fbn, fmt="J" },
-            new OpRec { code=Opcode.fbne, fmt="J" },
-            new OpRec { code=Opcode.fblg, fmt="J" },
-            new OpRec { code=Opcode.fbul, fmt="J" },
-            new OpRec { code=Opcode.fbug, fmt="J" },
-            new OpRec { code=Opcode.fbg, fmt="J" }, 
-            new OpRec { code=Opcode.fbu, fmt="J" },
-            new OpRec { code=Opcode.fbug, fmt="J" },
-
-            new OpRec { code=Opcode.fba, fmt="J" },
-            new OpRec { code=Opcode.fbe, fmt="J" },
-            new OpRec { code=Opcode.fbue, fmt="J" },
-            new OpRec { code=Opcode.fbge, fmt="J" },
-            new OpRec { code=Opcode.fbuge, fmt="J" },
-            new OpRec { code=Opcode.fble, fmt="J" },
-            new OpRec { code=Opcode.fbule, fmt="J" },
-            new OpRec { code=Opcode.fbo, fmt="J" },
-
-            // 20
-            new OpRec { code=Opcode.cbn, fmt="J" },
-            new OpRec { code=Opcode.cb123, fmt="J" },
-            new OpRec { code=Opcode.cb12, fmt="J" },
-            new OpRec { code=Opcode.cb13, fmt="J" },
-            new OpRec { code=Opcode.cb1, fmt="J" },
-            new OpRec { code=Opcode.cb23, fmt="J" },
-            new OpRec { code=Opcode.cb2, fmt="J" },
-            new OpRec { code=Opcode.cb3, fmt="J" },
-
-            new OpRec { code=Opcode.cba, fmt="J" },
-            new OpRec { code=Opcode.cb0, fmt="J" },
-            new OpRec { code=Opcode.cb03, fmt="J" },
-            new OpRec { code=Opcode.cb02, fmt="J" },
-            new OpRec { code=Opcode.cb023, fmt="J" },
-            new OpRec { code=Opcode.cb01, fmt="J" },
-            new OpRec { code=Opcode.cb013, fmt="J" },
-            new OpRec { code=Opcode.cb012, fmt="J" },
-
-            // 30
-            new OpRec { code=Opcode.tn, fmt="r14,T" },
-            new OpRec { code=Opcode.te, fmt="r14,T" },
-            new OpRec { code=Opcode.tle, fmt="r14,T" },
-            new OpRec { code=Opcode.tl, fmt="r14,T" },
-            new OpRec { code=Opcode.tleu, fmt="r14,T" },
-            new OpRec { code=Opcode.tcs, fmt="r14,T" },
-            new OpRec { code=Opcode.tneg, fmt="r14,T" },
-            new OpRec { code=Opcode.tvs, fmt="r14,T" },
-                                    
-            new OpRec { code=Opcode.ta, fmt="r14,T" },
-            new OpRec { code=Opcode.tne, fmt="r14,T" },
-            new OpRec { code=Opcode.tg, fmt="r14,T" },
-            new OpRec { code=Opcode.tge, fmt="r14,T" },
-            new OpRec { code=Opcode.tgu, fmt="r14,T" },
-            new OpRec { code=Opcode.tcc, fmt="r14,T" },
-            new OpRec { code=Opcode.tpos, fmt="r14,T" },
-            new OpRec { code=Opcode.tvc, fmt="r14,T" },
-        };
-
-        private static OpRec[] opRecs_2 = new OpRec[] 
-        {
-            // 00
-            new OpRec { code=Opcode.add, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.and, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.or,  fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.xor, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.sub, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.andn,fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.orn, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.xnor,fmt="r14,R0,r25" },
-
-            new OpRec { code=Opcode.addx, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.illegal,  },
-            new OpRec { code=Opcode.umul, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.smul, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.subx, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.udiv, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.sdiv, fmt="r14,R0,r25" },
-
-            // 10
-            new OpRec { code=Opcode.addcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.andcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.orcc,  fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.xorcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.subcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.andncc,fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.orncc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.xnorcc,fmt="r14,R0,r25" },
-
-            new OpRec { code=Opcode.addxcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.illegal,  },
-            new OpRec { code=Opcode.umulcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.smulcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.subxcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.udivcc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.sdivcc, fmt="r14,R0,r25" },
-
-            // 20
-            new OpRec { code=Opcode.taddcc, fmt="r14,R0,r25"},
-            new OpRec { code=Opcode.tsubcc, fmt="r14,R0,r25"},
-            new OpRec { code=Opcode.taddcctv, fmt="r14,R0,r25"},
-            new OpRec { code=Opcode.tsubcctv, fmt="r14,R0,r25"},
-            new OpRec { code=Opcode.mulscc, fmt="r14,R0,r25" },
-            new OpRec { code=Opcode.sll, fmt="r14,S,r25" },
-            new OpRec { code=Opcode.srl, fmt="r14,S,r25" },
-            new OpRec { code=Opcode.sra, fmt="r14,S,r25" },
-
-            new OpRec { code=Opcode.rd, fmt="ry,r25" },
-            new OpRec { code=Opcode.rdpsr, },
-            new OpRec { code=Opcode.rdtbr, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-
-            // 30
-            new OpRec { code=Opcode.wrasr, },
-            new OpRec { code=Opcode.wrpsr, },
-            new OpRec { code=Opcode.wrwim, },
-            new OpRec { code=Opcode.wrtbr, },
-            new FPop1Rec { },
-            new FPop2Rec { },
-            new CPop1 {  },
-            new CPop2 {  },
-
-            new OpRec { code=Opcode.jmpl, fmt = "r14,Rs,r25"},
-            new OpRec { code=Opcode.rett, fmt = "r14,Rs" },
-            new BrachOpRec { offset= 0x30, },
-            new OpRec { code=Opcode.flush, },
-            new OpRec { code=Opcode.save,    fmt ="r14,R0,r25" },
-            new OpRec { code=Opcode.restore, fmt= "r14,R0,r25" },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-        };
-
-        private static OpRec[] opRecs_3 = new OpRec[]
-        {
-            // 00
-            new OpRec { code=Opcode.ld,   fmt="Mw,r25" },
-            new OpRec { code=Opcode.ldub, fmt="Mb,r25" },
-            new OpRec { code=Opcode.lduh, fmt="Mh,r25" },
-            new OpRec { code=Opcode.ldd,  fmt="Md,r25" },
-            new OpRec { code=Opcode.st,   fmt="r25,Mw"},
-            new OpRec { code=Opcode.stb,  fmt="r25,Mb"},
-            new OpRec { code=Opcode.sth,  fmt="r25,Mh"},
-            new OpRec { code=Opcode.std,  fmt="r25,Md"},
-
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.ldsb,    fmt="Mb+,r25" },
-            new OpRec { code=Opcode.ldsh,    fmt="Mh+,r25" },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.ldstub,  },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.swap,    fmt="Mw,r25" },
-
-            // 10
-            new OpRec { code=Opcode.lda,  fmt="Aw,r25" },
-            new OpRec { code=Opcode.lduba,fmt="Ab,r25" }, 
-            new OpRec { code=Opcode.lduha,fmt="Ah,r25" }, 
-            new OpRec { code=Opcode.ldda, fmt="Ad,r25" },
-            new OpRec { code=Opcode.sta,  fmt="r25,Aw" },
-            new OpRec { code=Opcode.stba, fmt="r25,Ab" },
-            new OpRec { code=Opcode.stha, fmt="r25,Ah" },
-            new OpRec { code=Opcode.stda, fmt="r25,Ad" },
-
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.ldsba,   fmt="r25,Ab" },
-            new OpRec { code=Opcode.ldsha,   fmt="r25,Ah" },
-            new OpRec { code=Opcode.illegal  },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.ldstuba, fmt="Ab,r25"},
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.swapa,  fmt="Aw,r25" },
-
-            // 20
-            new OpRec { code=Opcode.ldf,   fmt="Mw,f24", },
-            new OpRec { code=Opcode.ldfsr, fmt="Mw,%fsr" },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.lddf,  fmt="Md,f24" },
-            new OpRec { code=Opcode.stf,   fmt ="f24,Mw" },
-            new OpRec { code=Opcode.stfsr, fmt="%fsr,Mw" },
-            new OpRec { code=Opcode.stdfq, },
-            new OpRec { code=Opcode.stdf, fmt= "f24,Md" },
-
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-
-            // 30
-            new OpRec { code=Opcode.ldc, },
-            new OpRec { code=Opcode.ldcsr, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.lddc, },
-            new OpRec { code=Opcode.stc, },
-            new OpRec { code=Opcode.stcsr, },
-            new OpRec { code=Opcode.stdcq, },
-            new OpRec { code=Opcode.stdc, },
-
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-            new OpRec { code=Opcode.illegal, },
-        };
-
-        private class FPop1Rec : OpRec
-        {
-            public override SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
-            {
-                return fpOprecs[(wInstr >> 5) & 0x1FF].Decode(dasm, wInstr);
-            }
+            return new InstrDecoder { code = opcode, iclass = InstrClass.Linear, mutators = mutators };
         }
 
-        private class FPop2Rec : OpRec
+        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<SparcDisassembler>[] mutators)
         {
-            public override SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
-            {
-                return fpOprecs[(wInstr >> 5) & 0x1FF].Decode(dasm, wInstr);
-            }
+            return new InstrDecoder { code = opcode, iclass = iclass, mutators = mutators };
         }
 
-        private class CPop1 : OpRec
+        private static InstrDecoder invalid = Instr(Mnemonic.illegal, InstrClass.Invalid);
+
+        static SparcDisassembler()
         {
-            public override SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
+            branchOps = new Decoder[]
             {
-                return fpOprecs[(wInstr >> 4) & 0x1FF].Decode(dasm, wInstr);
-            }
-        }
-        private class CPop2 : OpRec
-        {
-            public override SparcInstruction Decode(SparcDisassembler dasm, uint wInstr)
+                // 00
+                Instr(Mnemonic.bn, CondTransfer, J),
+                Instr(Mnemonic.be, CondTransfer, J),
+                Instr(Mnemonic.ble, CondTransfer, J),
+                Instr(Mnemonic.bl, CondTransfer, J),
+                Instr(Mnemonic.bleu, CondTransfer, J),
+                Instr(Mnemonic.bcs, CondTransfer, J),
+                Instr(Mnemonic.bneg, CondTransfer, J),
+                Instr(Mnemonic.bvs, CondTransfer, J),
+
+                Instr(Mnemonic.ba, CondTransfer, J),
+                Instr(Mnemonic.bne, CondTransfer, J),
+                Instr(Mnemonic.bg, CondTransfer, J),
+                Instr(Mnemonic.bge, CondTransfer, J),
+                Instr(Mnemonic.bgu, CondTransfer, J),
+                Instr(Mnemonic.bcc, CondTransfer, J),
+                Instr(Mnemonic.bpos, CondTransfer, J),
+                Instr(Mnemonic.bvc, CondTransfer, J),
+
+                // 10
+                Instr(Mnemonic.fbn, CondTransfer, J),
+                Instr(Mnemonic.fbne, CondTransfer, J),
+                Instr(Mnemonic.fblg, CondTransfer, J),
+                Instr(Mnemonic.fbul, CondTransfer, J),
+                Instr(Mnemonic.fbug, CondTransfer, J),
+                Instr(Mnemonic.fbg, CondTransfer, J),
+                Instr(Mnemonic.fbu, CondTransfer, J),
+                Instr(Mnemonic.fbug, CondTransfer, J),
+
+                Instr(Mnemonic.fba, CondTransfer, J),
+                Instr(Mnemonic.fbe, CondTransfer, J),
+                Instr(Mnemonic.fbue, CondTransfer, J),
+                Instr(Mnemonic.fbge, CondTransfer, J),
+                Instr(Mnemonic.fbuge, CondTransfer, J),
+                Instr(Mnemonic.fble, CondTransfer, J),
+                Instr(Mnemonic.fbule, CondTransfer, J),
+                Instr(Mnemonic.fbo, CondTransfer, J),
+
+                // 20
+                Instr(Mnemonic.cbn, J),
+                Instr(Mnemonic.cb123, J),
+                Instr(Mnemonic.cb12, J),
+                Instr(Mnemonic.cb13, J),
+                Instr(Mnemonic.cb1, J),
+                Instr(Mnemonic.cb23, J),
+                Instr(Mnemonic.cb2, J),
+                Instr(Mnemonic.cb3, J),
+
+                Instr(Mnemonic.cba, J),
+                Instr(Mnemonic.cb0, J),
+                Instr(Mnemonic.cb03, J),
+                Instr(Mnemonic.cb02, J),
+                Instr(Mnemonic.cb023, J),
+                Instr(Mnemonic.cb01, J),
+                Instr(Mnemonic.cb013, J),
+                Instr(Mnemonic.cb012, J),
+
+                // 30
+                Instr(Mnemonic.tn, r14,T),
+                Instr(Mnemonic.te, r14,T),
+                Instr(Mnemonic.tle, r14,T),
+                Instr(Mnemonic.tl, r14,T),
+                Instr(Mnemonic.tleu, r14,T),
+                Instr(Mnemonic.tcs, r14,T),
+                Instr(Mnemonic.tneg, r14,T),
+                Instr(Mnemonic.tvs, r14,T),
+
+                Instr(Mnemonic.ta, r14,T),
+                Instr(Mnemonic.tne, r14,T),
+                Instr(Mnemonic.tg, r14,T),
+                Instr(Mnemonic.tge, r14,T),
+                Instr(Mnemonic.tgu, r14,T),
+                Instr(Mnemonic.tcc, r14,T),
+                Instr(Mnemonic.tpos, r14,T),
+                Instr(Mnemonic.tvc, r14,T),
+            };
+
+            var fpDecoders = new (uint, Decoder)[]
             {
-                return fpOprecs[(wInstr >> 4) & 0xFF].Decode(dasm, wInstr);
-            }
+                // 00 
+                (0x01, Instr(Mnemonic.fmovs, f0, f25)),
+                (0x05, Instr(Mnemonic.fnegs, f0, f25)),
+                (0x09, Instr(Mnemonic.fabss, f0, f25)),
+                (0x29, Instr(Mnemonic.fsqrts, f0, f25)),
+                (0x2A, Instr(Mnemonic.fsqrtd, d0, d25)),
+                (0x2B, Instr(Mnemonic.fsqrtq, q0, q25)),
+
+                (0x41, Instr(Mnemonic.fadds, f14, f0, f25)),
+                (0x42, Instr(Mnemonic.faddd, d14, d0, d25)),
+                (0x43, Instr(Mnemonic.faddq, q14, q0, q25)),
+                (0x45, Instr(Mnemonic.fsubs, f14, f0, f25)),
+                (0x46, Instr(Mnemonic.fsubd, d14, d0, d25)),
+                (0x47, Instr(Mnemonic.fsubq, q14, q0, q25)),
+
+                (0xC4, Instr(Mnemonic.fitos, f0, f25)),
+                (0xC6, Instr(Mnemonic.fdtos, d0, f25)),
+                (0xC7, Instr(Mnemonic.fqtos, q0, f25)),
+                (0xC8, Instr(Mnemonic.fitod, f0, d25)),
+                (0xC9, Instr(Mnemonic.fstod, f0, d25)),
+                (0xCB, Instr(Mnemonic.fqtod, q0, d25)),
+                (0xCC, Instr(Mnemonic.fitoq, f0, q25)),
+                (0xCD, Instr(Mnemonic.fstoq, f0, q25)),
+                (0xCE, Instr(Mnemonic.fdtoq, d0, q25)),
+                (0xD1, Instr(Mnemonic.fstoi, f0, f25)),
+                (0xD2, Instr(Mnemonic.fdtoi, d0, f25)),
+                (0xD3, Instr(Mnemonic.fqtoi, q0, f25)),
+
+                (0x49, Instr(Mnemonic.fmuls, f14, f0, f25)),
+                (0x4A, Instr(Mnemonic.fmuld, d14, d0, d25)),
+                (0x4B, Instr(Mnemonic.fmulq, q14, q0, q25)),
+                (0x4D, Instr(Mnemonic.fdivs, f14, f0, f25)),
+                (0x4E, Instr(Mnemonic.fdivd, d14, d0, d25)),
+                (0x4F, Instr(Mnemonic.fdivq, q14, q0, q25)),
+
+                (0x69, Instr(Mnemonic.fsmuld, f14, f0, d25)),
+                (0x6E, Instr(Mnemonic.fdmulq, d14, d0, q25)),
+
+                (0x51, Instr(Mnemonic.fcmps, f14, f0)),
+                (0x52, Instr(Mnemonic.fcmpd, d14, d0)),
+                (0x53, Instr(Mnemonic.fcmpq, f14, f0)),
+                (0x55, Instr(Mnemonic.fcmpes, f14, f0)),
+                (0x56, Instr(Mnemonic.fcmped, d14, d0)),
+                (0x57, Instr(Mnemonic.fcmpeq, q14, q0))
+            };
+
+            var decoders_2 = new Decoder[]
+            {
+                // 00
+                Instr(Mnemonic.add, r14,R0,r25),
+                Instr(Mnemonic.and, r14,R0,r25),
+                Instr(Mnemonic.or, r14,R0,r25),
+                Instr(Mnemonic.xor, r14,R0,r25),
+                Instr(Mnemonic.sub, r14,R0,r25),
+                Instr(Mnemonic.andn, r14,R0,r25),
+                Instr(Mnemonic.orn, r14,R0,r25),
+                Instr(Mnemonic.xnor, r14,R0,r25),
+
+                Instr(Mnemonic.addx, r14,R0,r25),
+                invalid,
+                Instr(Mnemonic.umul, r14,R0,r25),
+                Instr(Mnemonic.smul, r14,R0,r25),
+                Instr(Mnemonic.subx, r14,R0,r25),
+                invalid,
+                Instr(Mnemonic.udiv, r14,R0,r25),
+                Instr(Mnemonic.sdiv, r14,R0,r25),
+
+                // 10
+                Instr(Mnemonic.addcc, r14,R0,r25),
+                Instr(Mnemonic.andcc, r14,R0,r25),
+                Instr(Mnemonic.orcc, r14,R0,r25),
+                Instr(Mnemonic.xorcc, r14,R0,r25),
+                Instr(Mnemonic.subcc, r14,R0,r25),
+                Instr(Mnemonic.andncc, r14,R0,r25),
+                Instr(Mnemonic.orncc, r14,R0,r25),
+                Instr(Mnemonic.xnorcc, r14,R0,r25),
+
+                Instr(Mnemonic.addxcc, r14,R0,r25),
+                invalid,
+                Instr(Mnemonic.umulcc, r14,R0,r25),
+                Instr(Mnemonic.smulcc, r14,R0,r25),
+                Instr(Mnemonic.subxcc, r14,R0,r25),
+                invalid,
+                Instr(Mnemonic.udivcc, r14,R0,r25),
+                Instr(Mnemonic.sdivcc, r14,R0,r25),
+
+                // 20
+                Instr(Mnemonic.taddcc, r14,R0,r25),
+                Instr(Mnemonic.tsubcc, r14,R0,r25),
+                Instr(Mnemonic.taddcctv, r14,R0,r25),
+                Instr(Mnemonic.tsubcctv, r14,R0,r25),
+                Instr(Mnemonic.mulscc, r14,R0,r25),
+                Instr(Mnemonic.sll, r14,S,r25),
+                Instr(Mnemonic.srl, r14,S,r25),
+                Instr(Mnemonic.sra, r14,S,r25),
+
+                Instr(Mnemonic.rd, ry,r25),
+                new InstrDecoder { code=Mnemonic.rdpsr, },
+                new InstrDecoder { code=Mnemonic.rdtbr, },
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+
+                // 30
+                new InstrDecoder { code=Mnemonic.wrasr, },
+                new InstrDecoder { code=Mnemonic.wrpsr, },
+                new InstrDecoder { code=Mnemonic.wrwim, },
+                new InstrDecoder { code=Mnemonic.wrtbr, },
+                Sparse(5, 9, "  FOp1", invalid, fpDecoders),
+                Sparse(5, 9, "  FOp2", invalid, fpDecoders),
+                Sparse(4, 9, "  CPop1", invalid, fpDecoders),
+                Sparse(4, 9, "  CPop2", invalid, fpDecoders),
+
+                Instr(Mnemonic.jmpl, r14,Rs,r25),
+                Instr(Mnemonic.rett, r14,Rs ),
+                new BranchDecoder { offset= 0x30, },
+                Instr(Mnemonic.flush),
+                Instr(Mnemonic.save, r14,R0,r25),
+                Instr(Mnemonic.restore, r14,R0,r25),
+                invalid,
+                invalid,
+            };
+
+            var decoders_3 = new InstrDecoder[]
+            {
+                // 00
+                Instr(Mnemonic.ld, Mw,r25),
+                Instr(Mnemonic.ldub, Mb,r25),
+                Instr(Mnemonic.lduh, Mh,r25),
+                Instr(Mnemonic.ldd, Md,r25),
+                Instr(Mnemonic.st, r25,Mw),
+                Instr(Mnemonic.stb, r25,Mb),
+                Instr(Mnemonic.sth, r25,Mh),
+                Instr(Mnemonic.std, r25,Md),
+
+                invalid,
+                Instr(Mnemonic.ldsb, Msb,r25),
+                Instr(Mnemonic.ldsh, Msh,r25),
+                invalid,
+                invalid,
+                new InstrDecoder { code=Mnemonic.ldstub,  iclass=InstrClass.Invalid },
+                invalid,
+                Instr(Mnemonic.swap, Mw,r25),
+
+                // 10
+                Instr(Mnemonic.lda, Aw,r25),
+                Instr(Mnemonic.lduba, Ab,r25),
+                Instr(Mnemonic.lduha, Ah,r25),
+                Instr(Mnemonic.ldda, Ad,r25),
+                Instr(Mnemonic.sta, r25,Aw),
+                Instr(Mnemonic.stba, r25,Ab),
+                Instr(Mnemonic.stha, r25,Ah),
+                Instr(Mnemonic.stda, r25,Ad),
+
+                invalid,
+                Instr(Mnemonic.ldsba, r25,Ab),
+                Instr(Mnemonic.ldsha, r25,Ah),
+                invalid,
+                invalid,
+                Instr(Mnemonic.ldstuba, Ab,r25),
+                invalid,
+                Instr(Mnemonic.swapa, Aw,r25),
+
+                // 20
+                Instr(Mnemonic.ldf,   Mw,f24),
+                Instr(Mnemonic.ldfsr, Mw,rfsr),
+                invalid,
+                Instr(Mnemonic.lddf, Md,f24),
+                Instr(Mnemonic.stf, f24,Mw),
+                Instr(Mnemonic.stfsr, rfsr,Mw),
+                Instr(Mnemonic.stdfq),
+                Instr(Mnemonic.stdf, f24,Md),
+
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+
+                // 30
+                new InstrDecoder { code=Mnemonic.ldc, },
+                new InstrDecoder { code=Mnemonic.ldcsr, },
+                invalid,
+                new InstrDecoder { code=Mnemonic.lddc, },
+                new InstrDecoder { code=Mnemonic.stc, },
+                new InstrDecoder { code=Mnemonic.stcsr, },
+                new InstrDecoder { code=Mnemonic.stdcq, },
+                new InstrDecoder { code=Mnemonic.stdc, },
+
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+            };
+
+
+            // Format 1 (op == 1)
+            // +----+-------------------------------------------------------------+
+            // | op | disp30                                                      |
+            // +----+-------------------------------------------------------------+
+            //
+            // Format 2 (op == 0). SETHI and branches Bicc, FBcc, CBcc
+            // +----+---+------+-----+--------------------------------------------+
+            // | op | rd       | op2 | imm22                                      |
+            // +----+---+------+-----+--------------------------------------------+
+            // | op | a | cond | op2 | disp22                                     |
+            // +----+---+------+-----+--------------------------------------------+
+            // 31   29  28     24    21
+            //
+            // Format 3 (op = 2, 3)
+            // +----+----------+--------+------+-----+--------------------+-------+
+            // | op |    rd    |   op3  |  rs1 | i=0 |        asi         |  rs2  |
+            // +----+----------+--------+------+-----+--------------------+-------+
+            // | op |    rd    |   op3  |  rs1 | i=1 |        simm13              |
+            // +----+----------+--------+------+-----+--------------------+-------+
+            // | op |    rd    |   op3  |  rs1 |           opf            |  rs2  |
+            // +----+----------+--------+------+--------------------------+-------+
+            // 31   29         24       18     13    12                   4
+
+            rootDecoder = Mask(30, 2, "SPARC",
+                Mask(22, 3, "  Format 0", decoders_0),
+                Instr(Mnemonic.call, LinkTransfer, JJ),
+                Mask(19, 6, "  Format 2", decoders_2),
+                Mask(19, 6, "  Format 3", decoders_3));
         }
-
-        private static Dictionary<uint, OpRec> fpOprecs = new Dictionary<uint,OpRec>
-        {
-            // 00 
-            { 0x01, new OpRec { code=Opcode.fmovs, fmt="f0,f25" } },
-            { 0x05, new OpRec { code=Opcode.fnegs, fmt="f0,f25" } },
-            { 0x09, new OpRec { code=Opcode.fabss, fmt="f0,f25" } },
-            { 0x29, new OpRec { code=Opcode.fsqrts, fmt="f0,f25" } },
-            { 0x2A, new OpRec { code=Opcode.fsqrtd, fmt="f0,f25" } },
-            { 0x2B, new OpRec { code=Opcode.fsqrtq, fmt="f0,f25" } },
-
-            { 0x41, new OpRec { code=Opcode.fadds, fmt="f14,f0,f25" } },
-            { 0x42, new OpRec { code=Opcode.faddd, fmt="f14,f0,f25" } },
-            { 0x43, new OpRec { code=Opcode.faddq, fmt="f14,f0,f25" } },
-            { 0x45, new OpRec { code=Opcode.fsubs, fmt="f14,f0,f25" } },
-            { 0x46, new OpRec { code=Opcode.fsubd, fmt="f14,f0,f25" } },
-            { 0x47, new OpRec { code=Opcode.fsubq, fmt="f14,f0,f25" } },
-
-            { 0xC4, new OpRec { code=Opcode.fitos, fmt="f0,f25" } },
-            { 0xC6, new OpRec { code=Opcode.fdtos, fmt="f0,f25" } },
-            { 0xC7, new OpRec { code=Opcode.fqtos, fmt="f0,f25" } },
-            { 0xC8, new OpRec { code=Opcode.fitod, fmt="f0,f25" } },
-            { 0xC9, new OpRec { code=Opcode.fstod, fmt="f0,f25" } },
-            { 0xCB, new OpRec { code=Opcode.fqtod, fmt="f0,f25" } },
-            { 0xCC, new OpRec { code=Opcode.fitoq, fmt="f0,f25" } },
-            { 0xCD, new OpRec { code=Opcode.fstoq, fmt="f0,f25" } },
-            { 0xCE, new OpRec { code=Opcode.fdtoq, fmt="f0,f25" } },
-            { 0xD1, new OpRec { code=Opcode.fstoi, fmt="f0,f25" } },
-            { 0xD2, new OpRec { code=Opcode.fdtoi, fmt="f0,f25" } },
-            { 0xD3, new OpRec { code=Opcode.fqtoi, fmt="f0,f25" } },
-
-            { 0x49, new OpRec { code=Opcode.fmuls, fmt="f14,f0,f25" } },
-            { 0x4A, new OpRec { code=Opcode.fmuld, fmt="f14,f0,f25" } },
-            { 0x4B, new OpRec { code=Opcode.fmulq, fmt="f14,f0,f25" } },
-            { 0x4D, new OpRec { code=Opcode.fdivs, fmt="f14,f0,f25" } },
-            { 0x4E, new OpRec { code=Opcode.fdivd, fmt="f14,f0,f25" } },
-            { 0x4F, new OpRec { code=Opcode.fdivq, fmt="f14,f0,f25" } },
-
-            { 0x69, new OpRec { code=Opcode.fsmuld, fmt="f14,f0,f25" } },
-            { 0x6E, new OpRec { code=Opcode.fdmulq, fmt="f14,f0,f25" } },
-
-            { 0x51, new OpRec { code=Opcode.fcmps, fmt="f14,f0" } },
-            { 0x52, new OpRec { code=Opcode.fcmpd, fmt="f14,f0" } },
-            { 0x53, new OpRec { code=Opcode.fcmpq, fmt="f14,f0" } },
-            { 0x55, new OpRec { code=Opcode.fcmpes, fmt="f14,f0" } },
-            { 0x56, new OpRec { code=Opcode.fcmped, fmt="f14,f0" } },
-            { 0x57, new OpRec { code=Opcode.fcmpeq, fmt="f14,f0" } },
-        };
     }
 }

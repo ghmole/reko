@@ -102,8 +102,10 @@
     <Compile Include="X86CallingConvention.cs" />
     <Compile Include="X86Disassembler.0F38.cs" />
     <Compile Include="X86Disassembler.0F3A.cs" />
+    <Compile Include="X86Disassembler.Decoders.cs" />
     <Compile Include="X86Disassembler.Vex.cs" />
     <Compile Include="X86Emulator.cs" />
+    <Compile Include="X86FrameApplicationBuilder.cs" />
     <Compile Include="X86Options.cs" />
     <Compile Include="X86PointerScanner.cs" />
     <Compile Include="X86AddressOperand.cs" />
@@ -136,7 +138,7 @@
     <Compile Include="MemoryOperand.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Opcode.cs">
+    <Compile Include="Mnemonic.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="ProcessorMode.cs">

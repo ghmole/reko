@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,13 +31,18 @@ namespace Reko.Core.CLanguage
     /// </summary>
     public class SymbolTable 
     {
-        private IPlatform platform;
+        private readonly IPlatform platform;
 
-        public SymbolTable(IPlatform platform) : this(platform, new Dictionary<string, SerializedType>())
+        public SymbolTable(IPlatform platform) : this(platform,
+            new Dictionary<string, PrimitiveType_v1>(),
+            new Dictionary<string, SerializedType>())
         {
         }
 
-        public SymbolTable(IPlatform platform, Dictionary<string, SerializedType> namedTypes)
+        public SymbolTable(
+            IPlatform platform,
+            Dictionary<string, PrimitiveType_v1> primitiveTypes,
+            Dictionary<string, SerializedType> namedTypes)
         {
             this.platform = platform;
 
@@ -48,8 +53,9 @@ namespace Reko.Core.CLanguage
             this.Constants = new Dictionary<string, int>();
             this.Procedures = new List<ProcedureBase_v1>();
             this.Variables = new List<GlobalDataItem_v2>();
+            this.PrimitiveTypes = primitiveTypes;
             this.NamedTypes = namedTypes;
-            this.Sizer = new TypeSizer(this.NamedTypes);
+            this.Sizer = new TypeSizer(platform, this.NamedTypes);
         }
 
         public List<SerializedType> Types { get; private set; }
@@ -58,6 +64,7 @@ namespace Reko.Core.CLanguage
         public Dictionary<string, SerializedEnumType> EnumsSeen { get; private set; }
         public Dictionary<string, int> Constants { get; private set; }
         public Dictionary<string, SerializedType> NamedTypes { get; private set; }
+        public Dictionary<string, PrimitiveType_v1> PrimitiveTypes { get; private set; }
         public List<ProcedureBase_v1> Procedures { get; private set; }
         public List<GlobalDataItem_v2> Variables { get; private set; }
 
@@ -71,16 +78,15 @@ namespace Reko.Core.CLanguage
         public List<SerializedType> AddDeclaration(Decl decl)
         {
             var types = new List<SerializedType>();
-            var fndec = decl as FunctionDecl;
-            if (fndec != null)
+            if (decl is FunctionDecl fndec)
             {
                 return types;
             }
 
             IEnumerable<DeclSpec> declspecs = decl.decl_specs;
             var isTypedef = false;
-            var scspec = decl.decl_specs[0] as StorageClassSpec;
-            if (scspec != null && scspec.Type == CTokenType.Typedef)
+            if (decl.decl_specs[0] is StorageClassSpec scspec &&
+                scspec.Type == CTokenType.Typedef)
             {
                 declspecs = decl.decl_specs.Skip(1);
                 isTypedef = true;
@@ -92,8 +98,7 @@ namespace Reko.Core.CLanguage
                 var nt = ntde.GetNameAndType(declarator.Declarator);
                 var serType = nt.DataType;
 
-                var sSig = nt.DataType as SerializedSignature;
-                if (sSig != null)
+                if (nt.DataType is SerializedSignature sSig)
                 {
                     if (sSig.ReturnValue != null)
                     {

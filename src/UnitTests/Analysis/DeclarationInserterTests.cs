@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,14 +41,15 @@ namespace Reko.UnitTests.Analysis
 			Build(new DiamondMock().Procedure);
 			DeclarationInserter deci = new DeclarationInserter(ssaIds, doms);
 			Web web = new Web();
-			SsaIdentifier r_1 = ssaIds.Where(s => s.Identifier.Name == "r_1").Single();
+
+			SsaIdentifier r_2 = ssaIds.Where(s => s.Identifier.Name == "r_2").Single();
             SsaIdentifier r_3 = ssaIds.Where(s => s.Identifier.Name == "r_3").Single();
-            SsaIdentifier r_4 = ssaIds.Where(s => s.Identifier.Name == "r_4").Single();
-			web.Add(r_1);
+            SsaIdentifier r_5 = ssaIds.Where(s => s.Identifier.Name == "r_5").Single();
+			web.Add(r_2);
 			web.Add(r_3);
-			web.Add(r_4);
+			web.Add(r_5);
 			deci.InsertDeclaration(web);
-			Assert.AreEqual("word32 r_1", proc.ControlGraph.Blocks[2].Statements[0].Instruction.ToString());
+			Assert.AreEqual("word32 r_2", proc.ControlGraph.Blocks[2].Statements[0].Instruction.ToString());
 		}
 
 		private void Build(Procedure proc)
@@ -56,13 +57,14 @@ namespace Reko.UnitTests.Analysis
 			this.proc = proc;
 			this.doms = proc.CreateBlockDominatorGraph();
 
-			SsaTransform sst = new SsaTransform(
-                new ProgramDataFlow(), 
-                proc, 
-                null, 
-                doms,
-                new HashSet<RegisterStorage>());
-			
+            SsaTransform sst = new SsaTransform(
+                new Program(),
+                proc,
+                new HashSet<Procedure>(),
+                null,
+                new ProgramDataFlow());
+            sst.Transform();
+
 			this.ssaIds = sst.SsaState.Identifiers;
 		}
 	}

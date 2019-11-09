@@ -1,31 +1,31 @@
-Mem0:Global memory
+Mem0:Mem
     def:  def Mem0
-    uses: r0_1 = Mem0[0x01001000:word32]
-r0_1: orig: r0
-    def:  r0_1 = Mem0[0x01001000:word32]
-    uses: r0_6 = r0_1 * 0x00000002 + (r1 <u 2)
+    uses: r0_2 = Mem0[0x01001000:word32]
+r0_2: orig: r0
+    def:  r0_2 = Mem0[0x01001000:word32]
+    uses: r0_7 = r0_2 * 0x00000002 + (r1 <u 2)
 r1:r1
     def:  def r1
-    uses: r0_6 = r0_1 * 0x00000002 + (r1 <u 2)
-SZC_3: orig: SZC
-C_4: orig: C
-r0_5: orig: r0
+    uses: r0_7 = r0_2 * 0x00000002 + (r1 <u 2)
+SZC_4: orig: SZC
+C_5: orig: C
 r0_6: orig: r0
-    def:  r0_6 = r0_1 * 0x00000002 + (r1 <u 2)
-    uses: Mem7[0x01001004:word32] = r0_6
-Mem7: orig: Mem0
-    def:  Mem7[0x01001004:word32] = r0_6
+r0_7: orig: r0
+    def:  r0_7 = r0_2 * 0x00000002 + (r1 <u 2)
+    uses: Mem8[0x01001004:word32] = r0_7
+Mem8: orig: Mem0
+    def:  Mem8[0x01001004:word32] = r0_7
 // AdcMock
 // Return size: 0
-void AdcMock(word32 r1)
+define AdcMock
 AdcMock_entry:
 	def Mem0
 	def r1
 	// succ:  l1
 l1:
-	r0_1 = Mem0[0x01001000:word32]
-	r0_6 = r0_1 * 0x00000002 + (r1 <u 2)
-	Mem7[0x01001004:word32] = r0_6
+	r0_2 = Mem0[0x01001000:word32]
+	r0_7 = r0_2 * 0x00000002 + (r1 <u 2)
+	Mem8[0x01001004:word32] = r0_7
 	return
 	// succ:  AdcMock_exit
 AdcMock_exit:

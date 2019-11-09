@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,9 @@ namespace Reko.Scanning
 {
     public class PromoteBlockWorkItem : WorkItem
     {
-        public Block Block;
+        private static TraceSwitch trace = new TraceSwitch(nameof(PromoteBlockWorkItem), "Trace the workings of PromoteBlockWorkItem") { Level = TraceLevel.Info };
+
+        public Block Block; 
         public Procedure ProcNew;
         public IScanner Scanner;
         public Program Program;
@@ -49,7 +51,7 @@ namespace Reko.Scanning
             var movedBlocks = new HashSet<Block>();
             var stack = new Stack<IEnumerator<Block>>();
             stack.Push(new Block[] { Block }.Cast<Block>().GetEnumerator());
-            var replacer = new IdentifierReplacer(ProcNew.Frame);
+            var replacer = new IdentifierRelocator(ProcNew.Frame);
             while (stack.Count != 0)
             {
                 DumpBlocks(Block.Procedure);
@@ -63,7 +65,7 @@ namespace Reko.Scanning
                 if (b.Procedure == ProcNew || b == b.Procedure.ExitBlock || b.Procedure.EntryBlock.Succ[0] == b)
                     continue;
 
-                Debug.Print("PromoteBlock visiting block {0}", b.Name);
+                DebugEx.Inform(trace, "PromoteBlock visiting block {0}, stack depth {1}", b.Name, stack.Count);
                 b.Procedure.RemoveBlock(b);
                 ProcNew.AddBlock(b);
                 b.Procedure = ProcNew;
@@ -83,13 +85,13 @@ namespace Reko.Scanning
             }
         }
 
-        [Conditional("DEBUG_VERBOSE")]
+        [Conditional("DEBU")]
         private void DumpBlocks(Procedure procedure)
         {
-            Debug.Print("{0}", procedure.Name);
+            DebugEx.Verbose(trace, "{0}", procedure.Name);
             foreach (var block in procedure.ControlGraph.Blocks)
             {
-                Debug.Print("  {0}; {1}", block.Name, block.Procedure.Name);
+                DebugEx.Verbose(trace, "  {0}; {1}", block.Name, block.Procedure.Name);
             }
         }
 
@@ -108,11 +110,13 @@ namespace Reko.Scanning
                 }
                 else
                 {
-                    inb.Statements.Add(0, new CallInstruction(
-                                    new ProcedureConstant(Program.Platform.PointerType, ProcNew),
-                                    new CallSite(ProcNew.Signature.ReturnAddressOnStack, 0)));
+                    inb.Statements.Add(
+                        inb.Address.ToLinear(),
+                        new CallInstruction(
+                            new ProcedureConstant(Program.Platform.PointerType, ProcNew),
+                            new CallSite(0, 0)));
                     Program.CallGraph.AddEdge(inb.Statements.Last, ProcNew);
-                    inb.Statements.Add(0, new ReturnInstruction());
+                    inb.Statements.Add(inb.Address.ToLinear(), new ReturnInstruction());
                     inb.Procedure.ControlGraph.AddEdge(inb, inb.Procedure.ExitBlock);
                 }
             }
@@ -125,10 +129,10 @@ namespace Reko.Scanning
         private Address GetAddressOfLastInstruction(Block inboundBlock)
         {
             if (inboundBlock.Statements.Count == 0)
-                return Program.Platform.MakeAddressFromLinear(0);
+                return Program.Platform.MakeAddressFromLinear(0, true);
             return inboundBlock.Address != null
                 ? inboundBlock.Address + (inboundBlock.Statements.Last.LinearAddress - inboundBlock.Statements[0].LinearAddress)
-                : Program.Platform.MakeAddressFromLinear(inboundBlock.Statements.Last.LinearAddress);
+                : Program.Platform.MakeAddressFromLinear(inboundBlock.Statements.Last.LinearAddress, true);
         }
 
         public void FixOutboundEdges(Block block)
@@ -140,14 +144,15 @@ namespace Reko.Scanning
                     continue;
                 if (s.Procedure.EntryBlock.Succ[0] == s)
                 {
+                    // s is the first block of a (different) procedure
                     var lastAddress = GetAddressOfLastInstruction(block);
                     var retCallThunkBlock = Scanner.CreateCallRetThunk(lastAddress, block.Procedure, s.Procedure);
                     block.Succ[i] = retCallThunkBlock;
                     retCallThunkBlock.Pred.Add(block);
+                    s.Pred.Remove(block);
                 }
             }
         }
-
 
         private void ReplaceSuccessorsWith(Block block, Block blockOld, Block blockNew)
         {

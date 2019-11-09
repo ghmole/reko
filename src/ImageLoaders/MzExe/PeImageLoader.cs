@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,17 +37,20 @@ namespace Reko.ImageLoaders.MzExe
 {
     /// <summary>
     /// Loads Windows NT PE images.
+    /// http://geos.icc.ru:8080/scripts/wwwbinv.dll/ShowR?coff.rfi
     /// </summary>
 	public class PeImageLoader : ImageLoader
 	{
+        internal static TraceSwitch trace = new TraceSwitch(nameof(PeImageLoader), "Traces the progress of loading PE binary images") { Level = TraceLevel.Verbose };
+
         private const ushort MACHINE_x86_64 = (ushort) 0x8664u;
 		private const ushort MACHINE_m68k = (ushort)0x0268;
         private const ushort MACHINE_UNKNOWN = 0x0;         // The contents of this field are assumed to be applicable to any machine type
         private const ushort MACHINE_AM33 = 0x1d3;          // Matsushita AM33
         private const ushort MACHINE_AMD64 = (ushort) 0x8664;    // x64
-        private const ushort MACHINE_ARM = 0x01c0;          // ARM little endian
+        private const ushort MACHINE_ARM = 0x01c0;          // ARM little endian -- "Modern" Windows
         private const ushort MACHINE_ARM64 = 0xAA64;        // ARM64 little endian
-        private const ushort MACHINE_ARMNT = 0x01C4;        // ARM Thumb-2 little endian
+        private const ushort MACHINE_ARMNT = 0x01C4;        // ARM Thumb-2 little endian -- WinCE
         private const ushort MACHINE_EBC =  0x0ebc;         // EFI byte code
         private const ushort MACHINE_I386 = 0x014c;         // Intel 386 or later processors and compatible processors
         private const ushort MACHINE_IA64 = 0x0200;         // Intel Itanium processor family
@@ -167,12 +170,12 @@ namespace Reko.ImageLoaders.MzExe
                     ;
                 name = Encoding.ASCII.GetString(imgLoaded.Bytes, iNameMin, j - iNameMin);
             }
-            return new ImageSymbol(addrLoad + rvaAddr)
-            {
-                Name = name,
-                ProcessorState = arch.CreateProcessorState(),
-                Type = SymbolType.Procedure,
-            };
+            return ImageSymbol.Procedure(
+                arch,
+                addrLoad + rvaAddr,
+                name,
+                new FunctionType(),
+                state: arch.CreateProcessorState());
         }
 
 		public IProcessorArchitecture CreateArchitecture(ushort peMachineType)
@@ -182,6 +185,8 @@ namespace Reko.ImageLoaders.MzExe
 			switch (peMachineType)
 			{
             case MACHINE_ALPHA: arch = "alpha"; break;
+            case MACHINE_ARM: arch = "arm"; break;
+            case MACHINE_ARM64: arch = "arm-64"; break;
             case MACHINE_ARMNT: arch = "arm-thumb"; break;
             case MACHINE_I386: arch = "x86-protected-32"; break;
             case MACHINE_x86_64: arch = "x86-protected-64"; break;
@@ -201,6 +206,8 @@ namespace Reko.ImageLoaders.MzExe
             switch (peMachineType)
             {
             case MACHINE_ALPHA: env = "winAlpha"; break;
+            case MACHINE_ARM: env = "winArm"; break;
+            case MACHINE_ARM64: env = "winArm64"; break;
             case MACHINE_ARMNT: env= "winArm"; break;
             case MACHINE_I386: env = "win32"; break;
             case MACHINE_x86_64: env = "win64"; break;
@@ -221,6 +228,7 @@ namespace Reko.ImageLoaders.MzExe
             switch (peMachineType)
             {
             case MACHINE_ALPHA:
+            case MACHINE_ARM:
             case MACHINE_ARMNT:
             case MACHINE_I386:
             case MACHINE_m68k:
@@ -230,8 +238,9 @@ namespace Reko.ImageLoaders.MzExe
             case MACHINE_XBOX360:
                 return new Pe32Loader(this);
             case MACHINE_x86_64:
+            case MACHINE_ARM64:
                 return new Pe64Loader(this);
-            default: throw new ArgumentException(string.Format("Unsupported machine type 0x:{0:X4} in PE hader.", peMachineType));
+            default: throw new ArgumentException(string.Format("Unsupported machine type 0x:{0:X4} in PE header.", peMachineType));
             }
         }
 
@@ -240,6 +249,8 @@ namespace Reko.ImageLoaders.MzExe
             switch (peMachineType)
             {
             case MACHINE_ALPHA: return new AlphaRelocator(Services, program);
+            case MACHINE_ARM: return new ArmRelocator(program);
+            case MACHINE_ARM64: return new Arm64Relocator(Services, program);
             case MACHINE_ARMNT: return new ArmRelocator(program);
             case MACHINE_I386: return new i386Relocator(Services, program);
             case MACHINE_R4000: return new MipsRelocator(Services, program);
@@ -258,6 +269,7 @@ namespace Reko.ImageLoaders.MzExe
             switch (peMachineType)
             {
             case MACHINE_ALPHA:
+            case MACHINE_ARM:
             case MACHINE_ARMNT:
             case MACHINE_I386:
 			case MACHINE_m68k:
@@ -267,6 +279,7 @@ namespace Reko.ImageLoaders.MzExe
             case MACHINE_XBOX360:
                 return 0x010B;
             case MACHINE_x86_64:
+            case MACHINE_ARM64:
                 return 0x020B;
 			default: throw new ArgumentException(string.Format("Unsupported machine type 0x{0:X4} in PE header.", peMachineType));
 			}
@@ -288,7 +301,6 @@ namespace Reko.ImageLoaders.MzExe
             List<ProgramResource> items = rsrcLoader.Load();
             program.Resources.Resources.AddRange(items);
             program.Resources.Name = "PE resources";
-
             return program;
         }
 
@@ -581,13 +593,13 @@ namespace Reko.ImageLoaders.MzExe
                     ReturnValue = Arg(null, "DWORD")
                 };
             }
-            return new ImageSymbol(addrEp)
-            {
-                Name = name,
-                ProcessorState = arch.CreateProcessorState(),
-                Signature = ssig,
-                Type = SymbolType.Procedure
-            };
+            var entrySymbol = ImageSymbol.Procedure(
+                arch,
+                addrEp,
+                name,
+                state: arch.CreateProcessorState());
+            entrySymbol.Signature = ssig;
+            return entrySymbol;
         }
 
         public void AddSectionsToImageMap(Address addrLoad, SegmentMap imageMap)
@@ -736,6 +748,7 @@ void applyRelX86(uint8_t* Off, uint16_t Type, Defined* Sym,
 #endif
         public void ApplyRelocations(uint rvaReloc, uint size, Address baseOfImage, RelocationDictionary relocations)
 		{
+            DebugEx.Inform(trace, "PELdr: applying relocations {0:X8}", rvaReloc);
 			EndianImageReader rdr = new LeImageReader(RawImage, rvaReloc);
 			uint rvaStop = rvaReloc + size;
 			while (rdr.Offset < rvaStop)
@@ -803,21 +816,18 @@ void applyRelX86(uint8_t* Off, uint16_t Type, Defined* Sym,
                 var (impRef, bitSize) = innerLoader.ResolveImportDescriptorEntry(dllName, rdrIlt, rdrIat);
                 if (impRef == null)
                     break;
-                ImageSymbols[addrIat] = new ImageSymbol(addrIat)
-                {
-                    Name = "__imp__" + impRef.EntryName,
-                    Type = SymbolType.Data,
-                    DataType = new Pointer(new CodeType(), bitSize),
-                    Size = (uint) (bitSize + (DataType.BitsPerByte - 1)) / DataType.BitsPerByte
-                };
+                ImageSymbols[addrIat] = ImageSymbol.DataObject(
+                    arch,
+                    addrIat,
+                    "__imp__" + impRef.EntryName,
+                    new Pointer(new CodeType(), bitSize));
 
-                ImageSymbols[addrIlt] = new ImageSymbol(addrIlt)
-                {
-                    Type = SymbolType.Data,
-                    DataType = PrimitiveType.CreateWord(bitSize),
-                    Size = (uint) (bitSize + (DataType.BitsPerByte - 1)) / DataType.BitsPerByte
-                };
-            } 
+                ImageSymbols[addrIlt] = ImageSymbol.DataObject(
+                    arch,
+                    addrIlt,
+                    null,
+                    PrimitiveType.CreateWord(bitSize));
+            }
             return true;
         }
 
@@ -839,13 +849,13 @@ void applyRelX86(uint8_t* Off, uint16_t Type, Defined* Sym,
                 if (!ImportedFunctionNameSpecified(rvaEntry))
                 {
                     return new OrdinalImportReference(
-                        addrThunk, dllName, (int)rvaEntry & 0xFFFF);
+                        addrThunk, dllName, (int)rvaEntry & 0xFFFF, SymbolType.ExternalProcedure);
                 }
                 else
                 {
                     string fnName = outer.ReadUtf8String((uint)rvaEntry + 2, 0);
                     return new NamedImportReference(
-                        addrThunk, dllName, fnName);
+                        addrThunk, dllName, fnName, SymbolType.ExternalProcedure);
                 }
             }
 
@@ -1094,11 +1104,8 @@ void applyRelX86(uint8_t* Off, uint16_t Type, Defined* Sym,
 
         private void AddFunctionSymbol(Address addr, SortedList<Address, ImageSymbol> symbols)
         {
-            ImageSymbol symNew = new ImageSymbol(addr, null, new CodeType())
-            {
-                Type = SymbolType.Procedure,
-                ProcessorState = arch.CreateProcessorState()
-            };
+            var symNew = ImageSymbol.Procedure(arch, addr, null, new CodeType());
+            symNew.ProcessorState = arch.CreateProcessorState();
             if (!symbols.TryGetValue(addr, out var symOld))
             {
                 symbols.Add(addr, symNew);

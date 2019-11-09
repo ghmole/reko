@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +50,65 @@ namespace Reko.UnitTests.Core.Pascal
             Given_Parser(src);
             var decls = parser.ParseUnit();
             Assert.AreEqual("function foo(quux : integer^; var bar : integer) : boolean; inline $BADD, $FACE", decls[0].ToString());
+        }
+
+
+        [Test]
+        public void PParser_Variant_Record()
+        {
+            var src =
+@"RECORD
+    CASE INTEGER OF
+    1:
+        (top: INTEGER;
+         left: INTEGER;
+         bottom: INTEGER;
+         right: INTEGER);
+    2:
+       (topLeft: Point;
+        botRight: Point);
+END";
+            Given_Parser(src);
+            var record = parser.ParseType();
+            Assert.AreEqual(
+                "record case integer of " +
+                    "1 : (top : integer;left : integer;bottom : integer;right : integer); " +
+                    "2 : (topLeft : Point;botRight : Point) end",
+                record.ToString());
+        }
+
+        [Test]
+        public void PParser_Variant_EnumTag()
+        {
+            var src =
+@"RECORD
+case AEArrayType OF
+kAEDataArray: 
+    (AEDataArray: Array[0..0] OF Integer);
+END";
+            Given_Parser(src);
+            var record = parser.ParseType();
+            Assert.AreEqual(
+                "record case AEArrayType of " +
+                    "kAEDataArray : (AEDataArray : array[0..0]) " +
+                "end",
+                record.ToString());
+        }
+
+        [Test]
+        public void PParser_Record_FieldsWithSameType()
+        {
+            var src =
+@"RECORD
+    a,b : INTEGER
+END";
+            Given_Parser(src);
+            var record = parser.ParseType();
+            Assert.AreEqual(
+                "record " +
+                    "a, b : integer " +
+                "end",
+                record.ToString());
         }
     }
 }

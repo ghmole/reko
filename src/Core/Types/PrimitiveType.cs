@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,7 +67,11 @@ namespace Reko.Core.Types
 	/// </remarks>
 	public class PrimitiveType : DataType
 	{
-		private readonly int bitSize;
+        private static Dictionary<PrimitiveType, PrimitiveType> cache;
+        private static Dictionary<string, PrimitiveType> lookupByName;
+        private static Dictionary<int, Domain> mpBitWidthToAllowableDomain;
+
+        private readonly int bitSize;
         private readonly int byteSize;
 		
 		private PrimitiveType(Domain dom, int bitSize, string name)
@@ -77,6 +81,10 @@ namespace Reko.Core.Types
             this.byteSize = (bitSize + (BitsPerByte-1)) / BitsPerByte;
 			this.Name = name;
 		}
+
+        public Domain Domain { get; private set; }
+
+        public override bool IsPointer { get { return Domain == Domain.Pointer; } }
 
         public override void Accept(IDataTypeVisitor v)
         {
@@ -120,7 +128,7 @@ namespace Reko.Core.Types
         }
 
         private static PrimitiveType Create(Domain dom, int bitSize, string name)
-        {
+		{
             if (mpBitWidthToAllowableDomain.TryGetValue(bitSize, out var domainMask))
             {
                 dom &= domainMask;
@@ -137,38 +145,36 @@ namespace Reko.Core.Types
 		}
 
         public static PrimitiveType CreateWord(int bitSize)
-        {
+		{
             if (bitSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(bitSize));
-            string name;
+			string name;
             if (bitSize == 1)
-            {
+			{
                 name = "bool";
             }
             else if (bitSize == 8)
             {
-                name = "byte";
-            }
+				name = "byte";
+			}
             else
             { 
                 name = $"word{bitSize}";
             }
             if (!mpBitWidthToAllowableDomain.TryGetValue(bitSize, out var dom))
             {
-                dom = Domain.UnsignedInt | Domain.Integer | Domain.Pointer;
+                dom = Domain.Integer | Domain.Pointer;
             }
-			return Create(dom, (short) bitSize, name);
+			return Create(dom, bitSize, name);
 		}
 
         public static PrimitiveType CreateWord(uint bitSize)
             => CreateWord((int)bitSize);
 
-        public Domain Domain { get; private set; }
-
 		public override bool Equals(object obj)
 		{
             if (!(obj is PrimitiveType that))
-                return false;
+				return false;
             return that.Domain == this.Domain && that.bitSize == this.bitSize;
 		}
 	
@@ -248,7 +254,7 @@ namespace Reko.Core.Types
         /// <summary>
         /// True if the type can only be some kind of integral numeric type
         /// </summary>
-		public bool IsIntegral
+		public override bool IsIntegral
 		    => (Domain & Domain.Integer) != 0 && (Domain & ~Domain.Integer) == 0; 
 
         /// <summary>
@@ -266,38 +272,6 @@ namespace Reko.Core.Types
             return Create(dom, BitSize);
 		}
 
-		public override string Prefix
-		{
-			get
-			{
-				switch (Domain)
-				{
-				case Domain.None:
-					return "v";
-				case Domain.Boolean:
-					return "f";
-				case Domain.Real:
-					return "r";
-				case Domain.Pointer:
-                case Domain.SegPointer:
-					return "ptr";
-				case Domain.Selector:
-					return "pseg";
-				default:
-					switch (bitSize)
-					{
-					case 8: return "b";
-					case 16: return "w";
-					case 32: return "dw";
-                    case 64: return "qw";
-                    case 128: return "ow";
-                    case 256: return "hw";
-					default: return "n";
-					}
-				}
-			}
-		}
-
         public override int BitSize
             => this.bitSize;
 
@@ -310,9 +284,7 @@ namespace Reko.Core.Types
 			set => throw new InvalidOperationException("Size of a primitive type cannot be changed."); 
 		}
 
-		private static Dictionary<PrimitiveType,PrimitiveType> cache;
-        private static Dictionary<string, PrimitiveType> lookupByName;
-        private static Dictionary<int, Domain> mpBitWidthToAllowableDomain;
+        public static Dictionary<string, PrimitiveType> AllTypes => lookupByName;
 
         static PrimitiveType()
         {
@@ -346,6 +318,7 @@ namespace Reko.Core.Types
             SegmentSelector = Create(Domain.Selector, 16);
             WChar = Create(Domain.Character, 16);
             Offset16 = Create(Domain.Offset, 16);
+            Real16 = Create(Domain.Real, 16);
 
             Word32 = CreateWord(32);
             Int32 = Create(Domain.SignedInt, 32);
@@ -387,6 +360,7 @@ namespace Reko.Core.Types
 		public static PrimitiveType UInt16 { get; private set; }
         public static PrimitiveType Ptr16 { get; private set; }
         public static PrimitiveType Offset16 { get; private set; }
+        public static PrimitiveType Real16 { get; private set; }
 
 		public static PrimitiveType SegmentSelector  {get; private set; }
 

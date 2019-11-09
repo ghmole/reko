@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,8 +39,8 @@ namespace Reko.Core.Serialization
         {
         }
 
-        [XmlElement("alt", typeof(SerializedUnionAlternative))]
-        public SerializedUnionAlternative[] Alternatives;
+        [XmlElement("alt", typeof(UnionAlternative_v1))]
+        public UnionAlternative_v1[] Alternatives;
 
         public override T Accept<T>(ISerializedTypeVisitor<T> visitor)
         {
@@ -53,7 +53,7 @@ namespace Reko.Core.Serialization
             sb.AppendFormat("union({0}", ByteSize);
             if (Alternatives != null)
             {
-                foreach (SerializedUnionAlternative alt in Alternatives)
+                foreach (UnionAlternative_v1 alt in Alternatives)
                 {
                     sb.AppendFormat(", ({0}, {1})", alt.Name != null ? alt.Name : "?", alt.Type);
                 }
@@ -63,18 +63,18 @@ namespace Reko.Core.Serialization
         }
     }
 
-    public class SerializedUnionAlternative
+    public class UnionAlternative_v1
     {
         [XmlAttribute("name")]
         public string Name;
 
         public SerializedType Type;
 
-        public SerializedUnionAlternative()
+        public UnionAlternative_v1()
         {
         }
 
-        public SerializedUnionAlternative(string name, SerializedType type)
+        public UnionAlternative_v1(string name, SerializedType type)
         {
             this.Name = name;
             this.Type = type;

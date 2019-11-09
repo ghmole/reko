@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -100,12 +100,14 @@ namespace Reko.UnitTests.Typing
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void TtranFactorial()
         {
             RunTest16("Fragments/factorial.asm", "Typing/TtranFactorial.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void TtranFactorialReg()
         {
             RunTest16("Fragments/factorial_reg.asm", "Typing/TtranFactorialReg.txt");
@@ -124,6 +126,7 @@ namespace Reko.UnitTests.Typing
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void TtranReals()
         {
             RunTest16("Fragments/fpuops.asm", "Typing/TtranReals.txt");
@@ -169,34 +172,33 @@ namespace Reko.UnitTests.Typing
         [Ignore("Frames require escape and aliasing analysis.")]
         public void TtranFramePointer()
         {
-            ProgramBuilder prog = new ProgramBuilder();
-            prog.Add(new FramePointerFragment(factory));
-            RunTest(prog.BuildProgram(), "Typing/TtranFramePointer.txt");
+            ProgramBuilder pb = new ProgramBuilder();
+            pb.Add(new FramePointerFragment(factory));
+            RunTest(pb.BuildProgram(), "Typing/TtranFramePointer.txt");
         }
-
 
         [Test]
         public void TtranRepeatedLoads()
         {
-            ProgramBuilder prog = new ProgramBuilder();
-            prog.Add(new RepeatedLoadsFragment());
-            RunTest(prog.BuildProgram(), "Typing/TtranRepeatedLoads.txt");
+            ProgramBuilder pb = new ProgramBuilder();
+            pb.Add(new RepeatedLoadsFragment());
+            RunTest(pb.BuildProgram(), "Typing/TtranRepeatedLoads.txt");
         }
 
         [Test]
         public void TtranStaggeredArrays()
         {
-            ProgramBuilder prog = new ProgramBuilder();
-            prog.Add(new StaggeredArraysFragment());
-            RunTest(prog.BuildProgram(), "Typing/TtranStaggeredArrays.txt");
+            ProgramBuilder pb = new ProgramBuilder();
+            pb.Add(new StaggeredArraysFragment());
+            RunTest(pb.BuildProgram(), "Typing/TtranStaggeredArrays.txt");
         }
 
         [Test]
         public void TtranFnPointerMock()
         {
-            ProgramBuilder prog = new ProgramBuilder();
-            prog.Add(new FnPointerFragment());
-            RunTest(prog.BuildProgram(), "Typing/TtranFnPointerMock.txt");
+            ProgramBuilder pb = new ProgramBuilder();
+            pb.Add(new FnPointerFragment());
+            RunTest(pb.BuildProgram(), "Typing/TtranFnPointerMock.txt");
         }
 
         [Test]
@@ -481,7 +483,7 @@ namespace Reko.UnitTests.Typing
             {
                 var foo = Identifier.Global("foo", new UnknownType());
                 var r1 = m.Reg32("r1", 1);
-                m.Declare(r1, m.AddrOf(foo));
+                m.Declare(r1, m.AddrOf(PrimitiveType.Ptr32, foo));
                 m.MStore(r1, m.Word16(0x1234));
                 m.MStore(m.IAdd(r1, 4), m.Byte(0x0A));
                 m.Return();
@@ -504,7 +506,7 @@ namespace Reko.UnitTests.Typing
                 });
                 var foo = Identifier.Global("foo", str);
                 var r1 = m.Reg32("r1", 1);
-                m.Declare(r1, m.AddrOf(foo));
+                m.Declare(r1, m.AddrOf(PrimitiveType.Ptr32, foo));
                 m.MStore(r1, m.Word16(0x1234));
                 m.MStore(m.IAdd(r1, 4), m.Byte(0x0A));
                 m.Return();

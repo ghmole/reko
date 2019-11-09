@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using SortedList = System.Collections.SortedList;
 using Storage = Reko.Core.Storage;
 using StringWriter = System.IO.StringWriter;
 using TextWriter = System.IO.TextWriter;
+using System.IO;
 
 namespace Reko.Analysis
 {
@@ -43,17 +44,38 @@ namespace Reko.Analysis
 		/// <param name="sb">stream into which the data is written</param>
 		public abstract void Emit(IProcessorArchitecture arch, TextWriter sb);
 
-		public static void EmitRegisters(IProcessorArchitecture arch, string caption, uint grfFlags, HashSet<RegisterStorage> regs, TextWriter sb)
+		public static void EmitRegisters(IProcessorArchitecture arch, string caption, Dictionary<RegisterStorage,uint> grfFlags, IEnumerable<Storage> regs, TextWriter sb)
 		{
 			sb.Write(caption);
-			if (grfFlags != 0)
+            var sGrf = string.Join(" ", grfFlags
+                .Where(f => f.Value != 0)
+                .Select(f => arch.GetFlagGroup(f.Key, f.Value))
+                .OrderBy(f => f.Name));
+            if (sGrf.Length > 0)
 			{
-				sb.Write(" {0}", arch.GrfToString(grfFlags));
+                sb.Write(" {0}", sGrf);
 			}
 			EmitRegistersCore(arch, regs, sb);
 		}
 
-		public static void EmitRegisters(IProcessorArchitecture arch, string caption, HashSet<RegisterStorage> regs, TextWriter sb)
+        public static void EmitRegisters(IProcessorArchitecture arch, string caption, Dictionary<RegisterStorage, uint> grfFlags, IDictionary<Storage, BitRange> regRanges, TextWriter sb)
+        {
+            sb.Write(caption);
+            var sGrf = string.Join(" ", grfFlags
+                .Where(f => f.Value != 0)
+                .Select(f => arch.GetFlagGroup(f.Key, f.Value))
+                .OrderBy(f => f.Name));
+            if (sGrf.Length > 0)
+            {
+                sb.Write(" {0}", sGrf);
+            }
+            foreach (var de in regRanges.OrderBy(de => de.Key.Name))
+            {
+                sb.Write(" {0}:{1}", de.Key, de.Value);
+            }
+        }
+
+        public static void EmitRegisters(IProcessorArchitecture arch, string caption, HashSet<Storage> regs, TextWriter sb)
 		{
 			sb.Write(caption);
 			EmitRegistersCore(arch, regs, sb);
@@ -67,8 +89,8 @@ namespace Reko.Analysis
                 sb.Write(" {0}:{1}", de.Key, de.Value);
             }
         }
-        
-		private static void EmitRegistersCore(IProcessorArchitecture arch, HashSet<RegisterStorage> regs, TextWriter sb)
+
+        private static void EmitRegistersCore(IProcessorArchitecture arch, IEnumerable<Storage> regs, TextWriter sb)
 		{
             foreach (var reg in regs.Where(r => r!= null).OrderBy(r => r.Name))
             {
@@ -77,20 +99,25 @@ namespace Reko.Analysis
             }
 		}
 
-        public void EmitFlagGroup(IProcessorArchitecture arch, string caption, uint grfFlags, TextWriter sb)
+        public void EmitFlagGroup(IProcessorArchitecture arch, string caption, Dictionary<RegisterStorage,uint> flagRegs, TextWriter sb)
         {
             sb.Write(caption);
-            sb.Write(" {0}", arch.GrfToString(grfFlags));
+            foreach (var freg in flagRegs
+                .Select(f => arch.GetFlagGroup(f.Key, f.Value))
+                .OrderBy(f => f.Name))
+            {
+                sb.Write(" {0}", freg.Name);
+        }
         }
 
-		public string EmitRegisters(IProcessorArchitecture arch, string caption, HashSet<RegisterStorage> regs)
+		public string EmitRegisters(IProcessorArchitecture arch, string caption, HashSet<Storage> regs)
 		{
 			StringWriter sw = new StringWriter();
 			EmitRegisters(arch, caption, regs, sw);
 			return sw.ToString();
 		}
 
-		public string EmitFlagGroup(IProcessorArchitecture arch, string caption, uint grfFlags)
+		public string EmitFlagGroup(IProcessorArchitecture arch, string caption, Dictionary<RegisterStorage, uint> grfFlags)
 		{
 			StringWriter sw = new StringWriter();
 			EmitFlagGroup(arch, caption, grfFlags, sw);

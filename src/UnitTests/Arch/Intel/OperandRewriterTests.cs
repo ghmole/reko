@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,10 +45,7 @@ namespace Reko.UnitTests.Arch.Intel
 		{
 		}
 
-        // Once the project has been ported to use NUnit 3.0, remove this comment and uncomment the line containing "[OneTimeSetup]" and remove the line containing "[TestFixtureSetUp]".
-        // 
-        // [OneTimeSetUp]
-        [TestFixtureSetUp]
+        [OneTimeSetUp]
 		public void GlobalSetup()
 		{
 			arch = new X86ArchitectureFlat32("x86-protected-32");
@@ -65,7 +62,7 @@ namespace Reko.UnitTests.Arch.Intel
                     new ImageSegment(".text", mem, AccessMode.ReadExecute))
             };
             var procAddress = Address.Ptr32(0x10000000);
-            instr = new X86Instruction(Opcode.nop, PrimitiveType.Word32, PrimitiveType.Word32)
+            instr = new X86Instruction(Mnemonic.nop, InstrClass.Linear,  PrimitiveType.Word32, PrimitiveType.Word32)
             {
                 Address = procAddress,
             };
@@ -103,7 +100,7 @@ namespace Reko.UnitTests.Arch.Intel
 		public void X86Orw32_Fpu()
 		{
 			FpuOperand f = new FpuOperand(3);
-			Identifier id = (Identifier) orw.Transform(instr, f, PrimitiveType.Real64,  state);
+			var id = orw.Transform(instr, f, PrimitiveType.Real64,  state);
 			Assert.AreEqual(PrimitiveType.Real64, id.DataType);
 		}
 
@@ -115,7 +112,7 @@ namespace Reko.UnitTests.Arch.Intel
 			mem.Offset = Constant.Word32(4);
 			Expression expr = orw.Transform(instr, mem, PrimitiveType.Word32, state);
 			Assert.AreEqual("Mem0[ecx + 0x00000004:word32]", expr.ToString());
-		}	
+		}
 
 		[Test]
 		public void X86Orw32_IndexedAccess()
@@ -146,9 +143,9 @@ namespace Reko.UnitTests.Arch.Intel
 		private Dictionary<Address,FunctionType> callSignatures;
 		private Dictionary<Address,Procedure> procedures;
 
-		public FakeRewriterHost(Program prog)
+		public FakeRewriterHost(Program program)
 		{
-            this.program = prog;
+            this.program = program;
 			callSignatures = new Dictionary<Address,FunctionType>();
 			procedures = new Dictionary<Address,Procedure>();
 		}
@@ -173,6 +170,15 @@ namespace Reko.UnitTests.Arch.Intel
 		{
 			throw new NotImplementedException();
 		}
+
+        public Expression CallIntrinsic(string name, FunctionType fnType, params Expression[] args)
+        {
+            var ppp = program.EnsurePseudoProcedure(name, fnType);
+            return new Application(
+                new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                fnType.ReturnValue.DataType,
+                args);
+        }
 
         public Expression PseudoProcedure(string name , DataType returnType, params Expression[] args)
         {
@@ -217,7 +223,7 @@ namespace Reko.UnitTests.Arch.Intel
             return null;
         }
 
-        public ExternalProcedure GetImportedProcedure(Address addrTunk, Address addrInstruction)
+        public ExternalProcedure GetImportedProcedure(IProcessorArchitecture arch, Address addrTunk, Address addrInstruction)
 		{
 			return null;
 		}
@@ -253,9 +259,14 @@ namespace Reko.UnitTests.Arch.Intel
             Console.WriteLine(d.Message);
         }
 
-		#endregion
+        #endregion
 
-        public ExternalProcedure GetInterceptedCall(Address addrImportThunk)
+        public IProcessorArchitecture GetArchitecture(string archLabel)
+        {
+            throw new NotImplementedException();
+        }
+
+        public ExternalProcedure GetInterceptedCall(IProcessorArchitecture arch, Address addrImportThunk)
         {
             throw new NotImplementedException();
         }

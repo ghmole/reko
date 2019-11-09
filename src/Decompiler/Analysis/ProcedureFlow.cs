@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace Reko.Analysis
 {
@@ -37,46 +38,64 @@ namespace Reko.Analysis
 	/// </summary>
 	public class ProcedureFlow : DataFlow
 	{
-		private Procedure proc;
+        public Procedure Procedure { get; }
+        public FunctionType Signature;
 
-		public HashSet<RegisterStorage> PreservedRegisters;			// Registers explicitly preserved by the procedure.
-		public uint grfPreserved;
+        /// <summary>
+        /// A collection of all each storage that is live-in to the procedure,
+        /// and the bits that are live in.
+        /// </summary>
+        public Dictionary<Storage, BitRange> BitsUsed;
 
-		public uint grfTrashed;
-		public HashSet<RegisterStorage> TrashedRegisters;		// Registers globally trashed by procedure and/or callees.
-        public Dictionary<Storage, Constant> ConstantRegisters; // If present, indicates a register always has a constant value leaving the procedure.
+        /// <summary>
+        /// A collection of all storages that are live-out after the procedure 
+        /// is called.
+        /// </summary>
+        /// <remarks>
+        /// For instance, in the code fragment:
+        /// <code>
+        /// call foo
+        /// Mem0[0x00123400:word16] = r3
+        /// </code>
+        /// (at least) the 16 least significant bits of r3 will be 
+        /// live-out.
+        /// </remarks>
+        public Dictionary<Storage, BitRange> BitsLiveOut;
 
-		public HashSet<RegisterStorage> ByPass { get; set; }
-		public uint grfByPass;
-		public HashSet<RegisterStorage> MayUse;
-		public uint grfMayUse;
-		public HashSet<RegisterStorage> Summary;
-		public uint grfSummary;
+        public Dictionary<RegisterStorage, uint> grfLiveOut;
 
-		public Hashtable StackArguments;		//$REFACTOR: make this a strongly typed dictionary (Var -> PrimitiveType)
 
-		public HashSet<RegisterStorage> LiveOut;
-		public uint grfLiveOut;
+        public HashSet<Storage> Preserved;			// Registers explicitly preserved by the procedure.
+		public Dictionary<RegisterStorage, uint> grfPreserved;
 
-		public FunctionType Signature;
+		public Dictionary<RegisterStorage,uint> grfTrashed;
+		public HashSet<Storage> Trashed;        // Registers globally trashed by procedure and/or callees.
+        
+        /// <summary>
+        /// If present, indicates a register always has a constant value
+        /// leaving the procedure.
+        /// </summary>
+        public Dictionary<Storage, Constant> Constants; 
 
         // True if calling this procedure terminates the thread/process. This implies
         // that no code path reached the exit block without first terminating the process.
         public bool TerminatesProcess;
 
-        public ProcedureFlow(Procedure proc, IProcessorArchitecture arch)
+        public ProcedureFlow(Procedure proc)
         {
-            this.proc = proc;
+            this.Procedure = proc;
 
-            PreservedRegisters = new HashSet<RegisterStorage>();
-            TrashedRegisters = new HashSet<RegisterStorage>();
-            ConstantRegisters = new Dictionary<Storage, Constant>();
+            Preserved = new HashSet<Storage>();
+            Trashed = new HashSet<Storage>();
+            Constants = new Dictionary<Storage, Constant>();
 
-            ByPass = new HashSet<RegisterStorage>();
-            MayUse = new HashSet<RegisterStorage>();
-            LiveOut = new HashSet<RegisterStorage>();
+            grfTrashed = new Dictionary<RegisterStorage, uint>();
+            grfPreserved = new Dictionary<RegisterStorage, uint>();
+            grfLiveOut = new Dictionary<RegisterStorage, uint>();
 
-            StackArguments = new Hashtable();
+            BitsLiveOut = new Dictionary<Storage, BitRange>();
+
+            this.BitsUsed = new Dictionary<Storage, BitRange>();
         }
 
         [Conditional("DEBUG")]
@@ -89,58 +108,108 @@ namespace Reko.Analysis
 
 		public override void Emit(IProcessorArchitecture arch, TextWriter writer)
 		{
-			EmitRegisters(arch, "// MayUse: ", grfMayUse, MayUse, writer);
+			EmitRegisterValues("// MayUse: ", BitsUsed, writer);
 			writer.WriteLine();
-			EmitRegisters(arch, "// LiveOut:", grfLiveOut, LiveOut, writer);
+			EmitRegisters(arch, "// LiveOut:", grfLiveOut, BitsLiveOut.Keys, writer);
 			writer.WriteLine();
-			EmitRegisters(arch, "// Trashed:", grfTrashed, TrashedRegisters, writer);
+			EmitRegisters(arch, "// Trashed:", grfTrashed, Trashed, writer);
 			writer.WriteLine();
-			EmitRegisters(arch, "// Preserved:", grfPreserved, PreservedRegisters, writer);
+			EmitRegisters(arch, "// Preserved:", grfPreserved, Preserved, writer);
 			writer.WriteLine();
-			EmitStackArguments(StackArguments, writer);
             if (TerminatesProcess)
                 writer.WriteLine("// Terminates process");
 		}
 
-		public void EmitStackArguments(Hashtable args, TextWriter sb)
-		{
-			if (args.Count > 0)
-			{
-				sb.Write("// Stack args:");
-				SortedList sort = new SortedList();
-				foreach (DictionaryEntry de in args)
-				{
-					sort.Add(string.Format("{0}({1})", de.Key, de.Value), de.Key);
-				}
-
-				foreach (string s in sort.Keys)
-				{
-					sb.Write(' ');
-					sb.Write(s);
-				}
-				sb.WriteLine();
-			}
-		}
-
 		public bool IsLiveOut(Identifier id)
 		{
-			FlagGroupStorage flags = id.Storage as FlagGroupStorage;
-			if (flags != null)
+            if (id.Storage is FlagGroupStorage flags)
 			{
-				uint grf = flags.FlagGroupBits;
-				return ((grf & grfLiveOut) != 0);
+                if (!this.grfLiveOut.TryGetValue(flags.FlagRegister, out uint grf))
+                    return false;
+                return ((grf & flags.FlagGroupBits) != 0);
 			}
-			RegisterStorage reg = id.Storage as RegisterStorage;
-			if (reg != null)
+			if (id.Storage is RegisterStorage reg)
 			{
-                return LiveOut.Contains(reg);
+                return BitsLiveOut.ContainsKey(reg);
 			}
 			return false;
 		}
 
-		public Procedure Procedure
-		{
-			get { return proc; } 
-		}
+        /// <summary>
+        /// Returns the number of slots the FPU stack grew.
+        /// If the architecture doesn't support FPU stacks, 
+        /// returns 0.
+        /// </summary>
+        /// <param name="arch"></param>
+        /// <returns></returns>
+        public int GetFpuStackDelta(IProcessorArchitecture arch)
+        {
+            var fpuStackReg = arch.FpuStackRegister;
+            if (fpuStackReg == null ||
+                !Constants.TryGetValue(fpuStackReg, out var c))
+            {
+                return 0;
+            }
+            return c.ToInt32();
+        }
+
+        public static IEnumerable<CallBinding> IntersectCallBindingsWithUses(
+            IEnumerable<CallBinding> callBindings,
+            IDictionary<Storage, BitRange> uses)
+        {
+            //$TODO: this is an O(n^2) implementation, which will be teh suck performancewise.
+            // If it can be improved, do so.
+            foreach (var use in uses)
+            {
+                CallBinding callBinding = null;
+                switch (use.Key)
+                {
+                case RegisterStorage reg:
+                    callBinding = IntersectRegisterBinding(reg, callBindings);
+                    break;
+                case StackArgumentStorage stArg:
+                    callBinding = IntersectStackRegisterBinding(stArg, callBindings);
+                    break;
+                }
+                if (callBinding != null)
+                    yield return callBinding;
+            }
+        }
+
+        private static CallBinding IntersectStackRegisterBinding(StackArgumentStorage stArg, IEnumerable<CallBinding> callBindings)
+        {
+            var stRange = stArg.GetBitRange();
+            foreach (var binding in callBindings)
+            {
+                if (binding.Storage is StackArgumentStorage stBinding)
+                {
+                    if (binding.Storage.Equals(stArg))
+                        return binding;
+                }
+            }
+            return null;
+        }
+
+        private static CallBinding IntersectRegisterBinding(RegisterStorage regCallee, IEnumerable<CallBinding> callBindings)
+        {
+            var dom = regCallee.Domain;
+            var regRange = regCallee.GetBitRange();
+            foreach (var binding in callBindings)
+            {
+                if (binding.Storage.Domain == dom)
+                {
+                    var isect = binding.BitRange | regRange;
+                    if (binding.BitRange == regRange)
+                        return binding;
+                    if (binding.BitRange.Extent > regRange.Extent)
+                    {
+                        var dt = PrimitiveType.CreateWord(regCallee.DataType.BitSize);
+                        var exp = new Slice(dt, binding.Expression, regRange.Lsb);
+                        return new CallBinding(regCallee, exp);
+                    }
+                }
+            }
+            return null;
+        }
     }
 }

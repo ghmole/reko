@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,7 +62,27 @@ namespace Reko.Environments.Windows
 
         public override HashSet<RegisterStorage> CreateTrashedRegisters()
         {
-            return new HashSet<RegisterStorage>();
+            return new HashSet<RegisterStorage>
+            {
+                Architecture.GetRegister("r2"),
+                Architecture.GetRegister("r3"),
+                Architecture.GetRegister("r4"),
+                Architecture.GetRegister("r5"),
+                Architecture.GetRegister("r6"),
+                Architecture.GetRegister("r7"),
+                Architecture.GetRegister("r8"),
+                Architecture.GetRegister("r9"),
+                Architecture.GetRegister("r10"),
+                Architecture.GetRegister("r11"),
+                Architecture.GetRegister("r12"),
+                Architecture.GetRegister("r13"),
+                Architecture.GetRegister("r14"),
+                Architecture.GetRegister("r15"),
+
+                Architecture.GetRegister("r24"),
+                Architecture.GetRegister("r25"),
+            };
+
         }
 
         public override CallingConvention GetCallingConvention(string ccName)
@@ -94,7 +114,7 @@ namespace Reko.Environments.Windows
                         ExpressionMatcher.AnyConstant("lo")),
                     PrimitiveType.Word32))),
             new RtlInstructionMatcher(
-                new RtlGoto(ExpressionMatcher.AnyId("r2s"), RtlClass.Delay|RtlClass.Transfer))
+                new RtlGoto(ExpressionMatcher.AnyId("r2s"), InstrClass.Delay|InstrClass.Transfer))
         };
 
         /// <summary>
@@ -128,11 +148,11 @@ namespace Reko.Environments.Windows
             var hi = (Constant)trampPattern[0].CapturedExpressions("hi");
             var lo = (Constant)trampPattern[1].CapturedExpressions("lo");
             var c = Operator.IAdd.ApplyConstants(hi, lo);
-            var addrTarget= MakeAddressFromConstant(c);
-            ProcedureBase proc = host.GetImportedProcedure(addrTarget, addrFrom);
+            var addrTarget= MakeAddressFromConstant(c, false);
+            ProcedureBase proc = host.GetImportedProcedure(this.Architecture, addrTarget, addrFrom);
             if (proc != null)
                 return proc;
-            return host.GetInterceptedCall(addrTarget);
+            return host.GetInterceptedCall(this.Architecture, addrTarget);
         }
 
         public override int GetByteSizeFromCBasicType(CBasicType cb)

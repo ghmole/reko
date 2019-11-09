@@ -1,108 +1,115 @@
 void fn0C00_0000(Register selector ds)
-// MayUse:  ds
+// MayUse:  ds:[0..15]
 // LiveOut:
-// Trashed: SCZO ah al ax eax rax
+// Trashed: SCZO ax Top
 // Preserved: sp
 // fn0C00_0000
 // Return size: 0
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ax:ax
 // ds:ds
 // al:al
+// Top:Top
+// S:S
+// C:C
+// Z:Z
+// O:O
 // return address size: 2
 void fn0C00_0000(selector ds)
 fn0C00_0000_entry:
+	def ds
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
-	ax = 0x0003
-	al = fn0C00_0015(ax)
-	Mem0[ds:0x0300:byte] = al
-	ax = 0x0003
-	al = fn0C00_0020(ax)
-	Mem0[ds:0x0301:byte] = al
+	ax_5 = SEQ(0x00, fn0C00_0015(0x0003))
+	al_11 = SLICE(ax_5, byte, 0) (alias)
+	Mem13[ds:0x0300:byte] = al_11
+	ax_15 = SEQ(0x00, fn0C00_0020(0x0003))
+	al_21 = SLICE(ax_15, byte, 0) (alias)
+	Mem22[ds:0x0301:byte] = al_21
 	return
 	// succ:  fn0C00_0000_exit
 fn0C00_0000_exit:
 Register byte fn0C00_0015(Register word16 ax)
-// MayUse:  ax
-// LiveOut: al
-// Trashed: SCZO ah al ax eax rax
+// MayUse:  ax:[0..15]
+// LiveOut: ax
+// Trashed: SCZO ax Top
 // Preserved: sp
 // fn0C00_0015
 // Return size: 0
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ax:ax
-// SZO:Flags
-// C:Flags
-// Z:Flags
+// SZO:SZO
+// C:C
+// Z:Z
 // al:al
+// Top:Top
+// SCZO:SCZO
+// S:S
+// O:O
+// ah:ah
 // return address size: 2
 byte fn0C00_0015(word16 ax)
 fn0C00_0015_entry:
+	def ax
 	// succ:  l0C00_0015
 l0C00_0015:
-	sp = fp
-	ax = ax | ax
-	SZO = cond(ax)
-	C = false
-	branch Test(EQ,Z) l0C00_001D
+	ah_17 = SLICE(ax, byte, 8) (alias)
+	branch ax == 0x0000 l0C00_001D
 	// succ:  l0C00_0019 l0C00_001D
 l0C00_0019:
-	ax = ax - 0x0001
-	SZO = cond(ax)
 	// succ:  l0C00_001A_thunk_fn0C00_0020
 l0C00_001A_thunk_fn0C00_0020:
-	al = fn0C00_0020(ax)
-	return al
+	ax_13 = SEQ(0x00, fn0C00_0020(ax - 0x0001))
+	SCZO_15 = <invalid>
+	return SLICE(ax_13, byte, 0)
 	// succ:  fn0C00_0015_exit
 l0C00_001D:
-	al = 0x01
-	return al
+	ax_18 = SEQ(ah_17, 0x01) (alias)
+	return SLICE(ax_18, byte, 0)
 	// succ:  fn0C00_0015_exit
 fn0C00_0015_exit:
 Register byte fn0C00_0020(Register word16 ax)
-// MayUse:  ax
-// LiveOut: al
-// Trashed: SCZO ah al ax eax rax
+// MayUse:  ax:[0..15]
+// LiveOut: ax
+// Trashed: SCZO ax Top
 // Preserved: sp
 // fn0C00_0020
 // Return size: 0
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ax:ax
-// SZO:Flags
-// C:Flags
-// Z:Flags
+// SZO:SZO
+// C:C
+// Z:Z
 // al:al
+// Top:Top
+// SCZO:SCZO
+// S:S
+// O:O
+// ah:ah
 // return address size: 2
 byte fn0C00_0020(word16 ax)
 fn0C00_0020_entry:
+	def ax
 	// succ:  l0C00_0020
 l0C00_0020:
-	sp = fp
-	ax = ax | ax
-	SZO = cond(ax)
-	C = false
-	branch Test(EQ,Z) l0C00_0028
+	ah_19 = SLICE(ax, byte, 8) (alias)
+	branch ax == 0x0000 l0C00_0028
 	// succ:  l0C00_0024 l0C00_0028
 l0C00_0024:
-	ax = ax - 0x0001
-	SZO = cond(ax)
 	// succ:  l0C00_0025_thunk_fn0C00_0015
 l0C00_0025_thunk_fn0C00_0015:
-	al = fn0C00_0015(ax)
-	return al
+	ax_15 = SEQ(0x00, fn0C00_0015(ax - 0x0001))
+	SCZO_17 = <invalid>
+	return SLICE(ax_15, byte, 0)
 	// succ:  fn0C00_0020_exit
 l0C00_0028:
-	al = 0x00
-	SZO = cond(0x00)
-	C = false
-	return al
+	ax_20 = SEQ(ah_19, 0x00) (alias)
+	return SLICE(ax_20, byte, 0)
 	// succ:  fn0C00_0020_exit
 fn0C00_0020_exit:

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,17 +31,16 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 
-
 namespace Reko.CmdLine
 {
     public class CmdLineDriver
     {
-        private IServiceProvider services;
-        private ILoader ldr;
-        private IDecompiler decompiler;
-        private IConfigurationService config;
-        private IDiagnosticsService diagnosticSvc;
-        private CmdLineListener listener;
+        private readonly IServiceProvider services;
+        private readonly ILoader ldr;
+        private readonly IDecompiler decompiler;
+        private readonly IConfigurationService config;
+        private readonly IDiagnosticsService diagnosticSvc;
+        private readonly CmdLineListener listener;
         private Timer timer;
 
         public static void Main(string[] args)
@@ -50,12 +49,13 @@ namespace Reko.CmdLine
             var listener = new CmdLineListener();
             var config = RekoConfigurationService.Load();
             var diagnosticSvc = new CmdLineDiagnosticsService(Console.Out);
+            var fsSvc = new FileSystemServiceImpl();
             services.AddService<DecompilerEventListener>(listener);
             services.AddService<IConfigurationService>(config);
             services.AddService<ITypeLibraryLoaderService>(new TypeLibraryLoaderServiceImpl(services));
             services.AddService<IDiagnosticsService>(diagnosticSvc);
-            services.AddService<IFileSystemService>(new FileSystemServiceImpl());
-            services.AddService<DecompilerHost>(new CmdLineHost());
+            services.AddService<IFileSystemService>(fsSvc);
+            services.AddService<IDecompiledFileService>(new DecompiledFileService(fsSvc));
             var ldr = new Loader(services);
             var decompiler = new DecompilerDriver(ldr, services);
             var driver = new CmdLineDriver(services, ldr, decompiler, listener);
@@ -146,11 +146,18 @@ namespace Reko.CmdLine
 
         private void Decompile(Dictionary<string, object> pArgs)
         {
-
             pArgs.TryGetValue("--loader", out object loader);
             try
             {
-                decompiler.Load((string)pArgs["filename"], (string)loader);
+                var fileName = (string) pArgs["filename"];
+                var filePath = Path.GetFullPath(fileName);
+                if (!decompiler.Load(filePath, (string) loader))
+                    return;
+
+                decompiler.Project.Programs[0].User.ExtractResources =
+                   !pArgs.TryGetValue("extract-resources", out var oExtractResources) ||
+                   ((string) oExtractResources != "no" && (string) oExtractResources != "false");
+
                 if (pArgs.TryGetValue("heuristics", out var oHeur))
                 {
                     decompiler.Project.Programs[0].User.Heuristics = ((string[])oHeur).ToSortedSet();
@@ -162,11 +169,23 @@ namespace Reko.CmdLine
                         Filename = (string)oMetadata
                     });
                 }
+                if (pArgs.ContainsKey("dasm-address"))
+                {
+                    decompiler.Project.Programs[0].User.ShowAddressesInDisassembly = true;
+                }
+                if (pArgs.ContainsKey("dasm-bytes"))
+                {
+                    decompiler.Project.Programs[0].User.ShowBytesInDisassembly = true;
+                }
+                decompiler.ExtractResources();
                 decompiler.ScanPrograms();
-                decompiler.AnalyzeDataFlow();
-                decompiler.ReconstructTypes();
-                decompiler.StructureProgram();
-                decompiler.WriteDecompilerProducts();
+                if (!pArgs.ContainsKey("scan-only"))
+                {
+                    decompiler.AnalyzeDataFlow();
+                    decompiler.ReconstructTypes();
+                    decompiler.StructureProgram();
+                    decompiler.WriteDecompilerProducts();
+                }
             }
             catch (Exception ex)
             {
@@ -200,7 +219,7 @@ namespace Reko.CmdLine
                     ArchitectureOptions = null, //$TODO: How do we handle options for command line?
                     PlatformName = (string)sEnv,
                     LoadAddress = (string)pArgs["--base"],
-                    EntryPoint = new EntryPointElement { Address = (string)oAddrEntry }
+                    EntryPoint = new EntryPointDefinition { Address = (string)oAddrEntry }
                 });
                 var state = CreateInitialState(arch, program.SegmentMap, pArgs);
                 if (pArgs.TryGetValue("heuristics", out object oHeur))
@@ -338,6 +357,29 @@ namespace Reko.CmdLine
                     parsedArgs["time-limit"] = timeLimit;
                     ++i;
                 }
+                else if (args[i] == "--dasm-address")
+                {
+                    parsedArgs["dasm-address"] = true;
+                }
+                else if (args[i] == "--dasm-bytes")
+                {
+                    parsedArgs["dasm-bytes"] = true;
+                }
+                else if (args[i] == "--scan-only")
+                {
+                    parsedArgs["scan-only"] = true;
+                }
+                else if (args[i] == "--extract-resources")
+                {
+                    if (i < args.Length - 1)
+                    {
+                        parsedArgs["extract-resources"] = args[++i];
+                    }
+                    else
+                    {
+                        parsedArgs["extract-resources"] = "yes";
+                    }
+                }
                 else if (arg.StartsWith("-"))
                 {
                     w.WriteLine("error: unrecognized option {0}", arg);
@@ -407,16 +449,21 @@ namespace Reko.CmdLine
             w.WriteLine(" --env <environment>      Use an operating environment from the following:");
             DumpEnvironments(config, w, "    {0,-25} {1}");
             w.WriteLine(" --base <address>         Use <address> as the base address of the program.");
+            w.WriteLine(" --dasm-address           Display addresses in disassembled machine code.");
             w.WriteLine(" --default-to <format>    If no executable format can be recognized, default");
             w.WriteLine("                          to one of the following formats:");
             DumpRawFiles(config, w, "    {0,-25} {1}");
             w.WriteLine(" --entry <address>        Use <address> as an entry point to the program.");
+            w.WriteLine(" --extract-resources <flag>  If <flag> is true, extract any embedded");
+            w.WriteLine("                          resources (defaults to true).");
             w.WriteLine(" --reg <regInit>          Set register to value, where regInit is formatted as");
             w.WriteLine("                          reg_name:value, e.g. sp:FF00");
-            w.WriteLine(" --heuristic <h1>[,<h2>...] Use one of the following heuristics to examine");
+            w.WriteLine(" --heuristic <h1>[,<h2>...]  Use one of the following heuristics to examine");
             w.WriteLine("                          the binary:");
             w.WriteLine("    shingle               Use shingle assembler to discard data ");
             w.WriteLine(" --metadata <filename>    Use the file <filename> as a source of metadata");
+            w.WriteLine(" --scan-only              Only scans the binary to find instructions, forgoing");
+            w.WriteLine("                          full decompilation.");
             w.WriteLine(" --time-limit <s>         Limit execution time to s seconds");
             //           01234567890123456789012345678901234567890123456789012345678901234567890123456789
         }
@@ -424,7 +471,7 @@ namespace Reko.CmdLine
         private static void DumpArchitectures(IConfigurationService config, TextWriter w, string fmtString)
         {
             foreach (var arch in config.GetArchitectures()
-                .OfType<ArchitectureElement>()
+                .OfType<ArchitectureDefinition>()
                 .OrderBy(a => a.Name))
             {
                 w.WriteLine(fmtString, arch.Name, arch.Description);
@@ -434,7 +481,7 @@ namespace Reko.CmdLine
         private static void DumpEnvironments(IConfigurationService config, TextWriter w, string fmtString)
         {
             foreach (var arch in config.GetEnvironments()
-                .OfType<OperatingEnvironmentElement>()
+                .OfType<PlatformDefinition>()
                 .OrderBy(a => a.Name))
             {
                 w.WriteLine(fmtString, arch.Name, arch.Description);
@@ -444,7 +491,7 @@ namespace Reko.CmdLine
         private static void DumpRawFiles(IConfigurationService config, TextWriter w, string fmtString)
         {
             foreach (var raw in config.GetRawFiles()
-                .OfType<RawFileElement>()
+                .OfType<RawFileDefinition>()
                 .OrderBy(a => a.Name))
             {
                 w.WriteLine(fmtString, raw.Name, raw.Description);

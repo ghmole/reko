@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Analysis;
 using Reko.Core;
@@ -27,20 +28,19 @@ using Reko.Core.Expressions;
 using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using CommonMockFactory = Reko.UnitTests.Mocks.CommonMockFactory;
 
 namespace Reko.UnitTests.Analysis
 {
     [TestFixture]
     public class UserSignatureBuilderTests
     {
-        private MockRepository mr;
-        private MockFactory mockFactory;
+        private CommonMockFactory mockFactory;
         private Program program;
         private Procedure proc;
         private IPlatform platform;
@@ -48,9 +48,8 @@ namespace Reko.UnitTests.Analysis
         [SetUp]
         public void Setup()
         {
-            this.mr = new MockRepository();
-            this.mockFactory = new MockFactory(mr);
-            this.platform = mockFactory.CreatePlatform();
+            this.mockFactory = new CommonMockFactory();
+            this.platform = mockFactory.CreateMockPlatform().Object;
             this.program = mockFactory.CreateProgram();
         }
 
@@ -103,25 +102,6 @@ namespace Reko.UnitTests.Analysis
             Assert.AreEqual(
                 "fn(arg(prim(SignedInt,4)),(arg(ptr(prim(Character,1)))))",
                 sProc.Signature.ToString());
-        }
-
-        [Test(Description = "Verifies that data type of register was not overwritten.")]
-        public void Usb_BuildSignature_KeepRegisterType()
-        {
-            Given_Procedure(0x1000);
-            Given_UserSignature(0x01000, "void test([[reko::arg(register,\"ecx\")]] float f)");
-
-            var usb = new UserSignatureBuilder(program);
-            usb.BuildSignature(Address.Ptr32(0x1000), proc);
-
-            var ass = proc.Statements
-                .Select(stm => stm.Instruction as Assignment)
-                .Where(instr => instr != null)
-                .Single();
-            Assert.AreEqual("ecx = f", ass.ToString());
-            // verify that data type of register was not overwritten
-            Assert.AreEqual("word32", ass.Dst.DataType.ToString());
-            Assert.AreEqual("real32", ass.Src.DataType.ToString());
         }
 
         [Test(Description = "Verifies stack delta of stdcall function.")]
@@ -217,45 +197,6 @@ namespace Reko.UnitTests.Analysis
             Assert.AreEqual("int16", (proc.Signature.Parameters[1].DataType as TypeReference).Referent.ToString());
         }
 
-        [Test(Description ="Verifies that the user can override register names.")]
-        public void Usb_ParseFunctionDeclaration_WithRegisterArgs()
-        {
-            var arch = new FakeArchitecture();
-            var m = new ProcedureBuilder(arch, "test");
-            var r1 = m.Reg32("r1", 1);
-            var r2 = m.Reg32("r2", 2);
-            m.MStore(m.Word32(0x123400), m.Cast(PrimitiveType.Byte, r1));
-            m.MStore(m.Word32(0x123404), m.Cast(PrimitiveType.Real32, r2));
-            m.Return();
-
-            var usb = new UserSignatureBuilder(program);
-            usb.ApplySignatureToProcedure(
-                Address.Create(PrimitiveType.Ptr32, 0x1000),
-                FunctionType.Action(
-                    new Identifier[] {
-                        new Identifier("r2", PrimitiveType.Char, r1.Storage),  // perverse but legal.
-                        new Identifier("r1", PrimitiveType.Real32, r2.Storage)
-                    }),
-                m.Procedure);
-            var sExp = @"// test
-// Return size: 0
-void test(char r2, real32 r1)
-test_entry:
-	// succ:  l1
-l1:
-	r1 = r2
-	r2 = r1
-	Mem0[0x00123400:byte] = (byte) r1
-	Mem0[0x00123404:real32] = (real32) r2
-	return
-	// succ:  test_exit
-test_exit:
-";
-            var sb = new StringWriter();
-            m.Procedure.Write(false, sb);
-            Assert.AreEqual(sExp, sb.ToString());
-        }
-
         [Test]
         public void Usb_ParseGlobalDeclaration_Int()
         {
@@ -292,6 +233,17 @@ test_exit:
 
             var usb = new UserSignatureBuilder(program);
             usb.BuildSignature(Address.Ptr32(0x1000), proc);
+        }
+
+        [Test]
+        public void Usb_Word32()
+        {
+            Given_Procedure(0x1000);
+            Given_UserSignature(0x1000, "void test(word32 foo)");
+            var usb = new UserSignatureBuilder(program);
+            usb.BuildSignature(Address.Ptr32(0x1000), proc);
+            Assert.AreEqual("(fn void (word32))", proc.Signature.ToString());
+            Assert.AreSame(PrimitiveType.Word32, proc.Signature.Parameters[0].DataType);
         }
     }
 }

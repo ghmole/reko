@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,51 +19,21 @@
 #endregion
 
 using System;
+using Reko.Core;
 using Reko.Core.Machine;
 
 namespace Reko.Arch.Alpha
 {
     public class AlphaInstruction : MachineInstruction
     {
-        public override InstructionClass InstructionClass {  get { return InstructionClass.Invalid; } }
+        public Mnemonic Mnemonic;
 
-        public Opcode Opcode;
-        public MachineOperand op1;
-        public MachineOperand op2;
-        public MachineOperand op3;
-
-        public override bool IsValid {  get { return Opcode != Opcode.invalid;  } }
-
-        public override int OpcodeAsInteger {  get { return (int)Opcode;  } }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            if (i == 0) return op1;
-            if (i == 1) return op2;
-            if (i == 2) return op3;
-            return null;
-        }
+        public override int OpcodeAsInteger => (int)Mnemonic;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteOpcode(this.Opcode.ToString());
-            if (op1 == null)
-                return;
-            writer.Tab();
-            op1.Write(writer, options);
-            if (op2 == null)
-                return;
-            writer.WriteChar(',');
-            op2.Write(writer, options);
-            if (op3 == null)
-                return;
-            writer.WriteChar(',');
-            op3.Write(writer, options);
-        }
-
-        private void Render(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
-        {
-            throw new NotImplementedException();
+            writer.WriteOpcode(this.Mnemonic.ToString());
+            RenderOperands(writer, options);
         }
     }
 }

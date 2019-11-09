@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -128,7 +128,7 @@ Arguments of varargs functions are passed on the stack. This applies even to the
 */
             ccr.LowLevelDetails(1, 2);
 
-            if (dtRet != null || dtRet == VoidType.Instance)
+            if (dtRet != null && dtRet != VoidType.Instance)
             {
                 GenerateReturnValue(dtRet, ccr);
             }
@@ -158,11 +158,11 @@ Arguments of varargs functions are passed on the stack. This applies even to the
                         var regNext = argRegs[r - 8];
                         if (seq != null)
                         {
-                            seq = new SequenceStorage(regNext, seq, PrimitiveType.CreateWord(regNext.DataType.BitSize + seq.DataType.BitSize));
+                            seq = new SequenceStorage(PrimitiveType.CreateWord(regNext.DataType.BitSize + seq.DataType.BitSize), regNext, seq);
                         }
                         else
                         {
-                            seq = new SequenceStorage(regNext, reg, PrimitiveType.CreateWord(regNext.DataType.BitSize + reg.DataType.BitSize));
+                            seq = new SequenceStorage(PrimitiveType.CreateWord(regNext.DataType.BitSize + reg.DataType.BitSize), regNext, reg);
                         }
                     }
                     ccr.SequenceParam(seq);
@@ -194,25 +194,39 @@ Arguments of varargs functions are passed on the stack. This applies even to the
                     return;
                 }
 
-                SequenceStorage seq = null;
+                var retRegs = new List<RegisterStorage> { reg };
                 for (int r = iReg + 1, i = 1; i < dtRet.Size; ++i, ++r)
                 {
                     var regNext = argRegs[r - 8];
-                    if (seq != null)
-                    {
-                        seq = new SequenceStorage(regNext, seq, PrimitiveType.Word32);
-                    }
-                    else
-                    {
-                        seq = new SequenceStorage(regNext, reg, PrimitiveType.Word32);
-                    }
+                    retRegs.Insert(0, regNext);
                 }
+                var seq = new SequenceStorage(retRegs.ToArray());
                 ccr.SequenceReturn(seq);
             }
             else
             {
                 throw new NotImplementedException("Large AVR8 return values not implemented yet.");
             }
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return argRegs.Contains(reg);
+            }
+            //$TODO: stack vars?
+            return false;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                var n = reg.Number;
+                return 18 <= n && n <= 25;
+            }
+            return false;
         }
     }
 }

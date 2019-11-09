@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,5 +38,6 @@ namespace Reko.Core.Serialization
         T VisitProject_v2(Project_v2 sProject);
         T VisitProject_v3(Project_v3 sProject);
         T VisitProject_v4(Project_v4 sProject);
+        T VisitProject_v5(Project_v5 sProject);
     }
 }

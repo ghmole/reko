@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,9 +52,10 @@ namespace Reko.Core.Expressions
 
         public DataType VisitAddress(Address addr)
         {
-            return RecordDataType(
-                PrimitiveType.Create(Domain.Pointer, addr.DataType.BitSize),
-                addr);
+            var c = addr.ToConstant();
+            c.DataType = PrimitiveType.Create(Domain.Pointer, addr.DataType.BitSize);
+            var dt = ExistingGlobalField(c) ?? addr.DataType;
+            return RecordDataType(dt, addr);
         }
 
         public DataType VisitApplication(Application appl)
@@ -64,9 +65,20 @@ namespace Reko.Core.Expressions
                 RecordDataType(a.Accept(this), a);
             }
             RecordDataType(appl.Procedure.Accept(this), appl.Procedure);
-            return RecordDataType(appl.DataType, appl);
+            var dt = RecordApplicationReturnType(appl.Procedure, appl);
+            return dt;
         }
 
+        private DataType RecordApplicationReturnType(Expression pfn, Application appl)
+        {
+            var dt = RecordDataType(appl.DataType, appl);
+            if (pfn is ProcedureConstant pc && 
+                pc.Procedure.Signature.ParametersValid)
+            {
+                dt = RecordDataType(pc.Procedure.Signature.ReturnValue.DataType, appl);
+            }
+            return dt;
+        }
         public DataType VisitArrayAccess(ArrayAccess acc)
         {
             acc.Array.Accept(this);
@@ -132,7 +144,7 @@ namespace Reko.Core.Expressions
                 binExp.Operator == Operator.FMul ||
                 binExp.Operator == Operator.FDiv)
             {
-                dt = PrimitiveType.Create(Domain.Real, dtLeft.BitSize);
+                dt = PrimitiveType.Create(Domain.Real, binExp.DataType.BitSize);
             }
             else if (binExp.Operator == Operator.Shr)
             {
@@ -435,7 +447,7 @@ namespace Reko.Core.Expressions
         public DataType VisitSlice(Slice slice)
         {
             slice.Expression.Accept(this);
-            return slice.DataType;
+            return RecordDataType(slice.DataType, slice);
         }
 
         public DataType VisitTestCondition(TestCondition tc)

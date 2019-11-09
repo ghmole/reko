@@ -103,13 +103,8 @@
     <Reference Include="System.Configuration" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Analysis\Aliases.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Analysis\AliasState.cs" />
-    <Compile Include="Analysis\BlockFlow.cs">
-      <SubType>Code</SubType>
-    </Compile>
+    <Compile Include="Analysis\AdjacentBranchCollector.cs" />
+    <Compile Include="Analysis\CallApplicationBuilder.cs" />
     <Compile Include="Analysis\Coalescer.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -129,31 +124,33 @@
     <Compile Include="Analysis\DeclarationInserter.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Analysis\DefinedIdentifierFinder.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="Analysis\InstructionUseAdder.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Analysis\ExpressionUseRemover.cs" />
-    <Compile Include="Analysis\GlobalCallRewriter.cs">
+    <Compile Include="Analysis\CallRewriter.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Analysis\GrfDefinitionFinder.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Analysis\IdentifierReplacer.cs" />
     <Compile Include="Analysis\IndirectCallRewriter.cs" />
     <Compile Include="Analysis\InstructionUseCollector.cs" />
     <Compile Include="Analysis\InstructionUseVisitorBase.cs" />
-    <Compile Include="Analysis\ProcedureFlow2.cs" />
+    <Compile Include="Analysis\PhiGraph.cs" />
     <Compile Include="Analysis\ProcedureGraph.cs" />
-    <Compile Include="Analysis\RegisterPreservation.cs" />
+    <Compile Include="Analysis\ProjectionPropagator.cs" />
+    <Compile Include="Analysis\SparseValuePropagation.cs" />
     <Compile Include="Analysis\SsaDefinitionsCollector.cs" />
+    <Compile Include="Analysis\SequenceIdentifierGenerator.cs" />
     <Compile Include="Analysis\SsaMutator.cs" />
-    <Compile Include="Analysis\TrashedRegisterFinder2.cs" />
+    <Compile Include="Analysis\SsaTransform.IdentifierTransformer.cs" />
+    <Compile Include="Analysis\StackPointerBackpropagator.cs" />
+    <Compile Include="Analysis\TrashedRegisterFinder.cs" />
     <Compile Include="Analysis\UnalignedMemoryAccessFuser.cs" />
-    <Compile Include="Analysis\UsedIdentifierFinder.cs" />
-    <Compile Include="Analysis\IdentifierLiveness.cs" />
+    <Compile Include="Analysis\UnusedOutValuesRemover.cs" />
+    <Compile Include="Analysis\ExpressionIdentifierUseFinder.cs" />
     <Compile Include="Analysis\Interference.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -169,20 +166,10 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Analysis\LongAddRewriter.cs" />
-    <Compile Include="Analysis\MemReplacer.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Analysis\OutParameterTransformer.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="Analysis\ProcedureFlow.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Analysis\ProgramDataFlow.cs" />
-    <Compile Include="Analysis\ExpressionPropagator.cs" />
-    <Compile Include="Analysis\RegisterLiveness.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="Analysis\SegmentedAccessClassifier.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -205,14 +192,8 @@
     <Compile Include="Analysis\SsaTransform.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Analysis\TerminationAnalysis.cs" />
-    <Compile Include="Analysis\TrashedRegisterFinder.cs" />
-    <Compile Include="Analysis\TrashedRegisterSummarizer.cs" />
-    <Compile Include="Analysis\TrashedStorageHelper.cs" />
+    <Compile Include="Analysis\UsedRegisterFinder.cs" />
     <Compile Include="Analysis\UserSignatureBuilder.cs" />
-    <Compile Include="Analysis\ValueNumbering.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="Analysis\ValuePropagator.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -222,20 +203,22 @@
     <Compile Include="Analysis\WebBuilder.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DecompilerDriver.cs" />
+    <Compile Include="Evaluation\ComparisonConstOnLeft.cs" />
     <Compile Include="Evaluation\DistributedCastRule.cs" />
+    <Compile Include="Evaluation\DistributedSliceRule.cs" />
+    <Compile Include="Evaluation\SliceSequence.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Evaluation\CastCastRule.cs" />
     <Compile Include="Evaluation\IdProcConstRule.cs" />
+    <Compile Include="Evaluation\MkSeqFromSlices_Rule.cs" />
     <Compile Include="Evaluation\SelfDpbRule.cs" />
     <Compile Include="Evaluation\Shl_add_Rule.cs" />
     <Compile Include="Evaluation\SliceSegmentedPointer_Rule.cs" />
     <Compile Include="Loading\DccSignatureLoader.cs" />
-    <Compile Include="Decompiler.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="DecompilerHost.cs">
+    <Compile Include="IDecompiledFileService.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Evaluation\AddTwoIdsRule.cs" />
@@ -259,8 +242,6 @@
     <Compile Include="Evaluation\SliceShift.cs" />
     <Compile Include="Evaluation\BinOpWithSelf_Rule.cs" />
     <Compile Include="Evaluation\Substitutor.cs" />
-    <Compile Include="Evaluation\SymbolicEvaluationContext.cs" />
-    <Compile Include="Evaluation\SymbolicEvaluator.cs" />
     <Compile Include="Loading\FlirtoidSignatureLoader.cs" />
     <Compile Include="Loading\ImageSignature.cs" />
     <Compile Include="Loading\NullImageLoader.cs" />
@@ -285,11 +266,13 @@
     <Compile Include="Scanning\IcfgBuilder.cs" />
     <Compile Include="Scanning\IScanner.cs" />
     <Compile Include="Scanning\IScannerQueue.cs" />
+    <Compile Include="Scanning\LinearScanner.cs" />
+    <Compile Include="Scanning\ProcedurePaddingFinder.cs" />
     <Compile Include="Scanning\RtlBlock.cs" />
     <Compile Include="Scanning\HeuristicDisassembler.cs" />
     <Compile Include="Scanning\HeuristicProcedure.cs" />
-    <Compile Include="Scanning\HeuristicProcedureScanner.cs" />
-    <Compile Include="Scanning\IdentifierReplacer.cs" />
+    <Compile Include="Scanning\BlockConflictResolver.cs" />
+    <Compile Include="Scanning\IdentifierRelocator.cs" />
     <Compile Include="Scanning\BlockWorkitem.cs" />
     <Compile Include="Scanning\ImageSymbolWorkItem.cs" />
     <Compile Include="Scanning\PromoteBlockWorkItem.cs" />
@@ -336,6 +319,7 @@
     </Compile>
     <Compile Include="Analysis\StrengthReduction.cs" />
     <Compile Include="Structure\AbsynStatementEmitter.cs" />
+    <Compile Include="Structure\ForLoopRewriter.cs" />
     <Compile Include="Structure\IStructureAnalysis.cs" />
     <Compile Include="Structure\CompoundConditionCoalescer.cs">
       <SubType>Code</SubType>

@@ -1,6 +1,7 @@
-﻿#region License
+
+#region License
 /* 
- * Copyright (C) 1999-2017 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -96,7 +97,10 @@ namespace Reko.Core.Expressions
 
         public Expression VisitConditionOf(ConditionOf cof)
         {
-            throw new NotImplementedException();
+            if (cmp.Equals(cof, original))
+                return replacement;
+            var expr = cof.Expression.Accept(this);
+            return new ConditionOf(expr);
         }
 
         public Expression VisitConstant(Constant c)
@@ -196,7 +200,10 @@ namespace Reko.Core.Expressions
 
         public Expression VisitSlice(Slice slice)
         {
-            throw new NotImplementedException();
+            if (cmp.Equals(slice, original))
+                return replacement;
+            var exp = slice.Expression.Accept(this);
+            return new Slice(slice.DataType, exp, slice.Offset);
         }
 
         public Expression VisitTestCondition(TestCondition tc)

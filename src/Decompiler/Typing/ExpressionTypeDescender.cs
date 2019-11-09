@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -119,7 +119,7 @@ namespace Reko.Typing
                     appl.Procedure, appl.Arguments.Length, sig.Parameters.Length));
             for (int i = 0; i < appl.Arguments.Length; ++i)
             {
-                MeetDataType(appl.Arguments[i], sig.Parameters[i].DataType);
+                 MeetDataType(appl.Arguments[i], sig.Parameters[i].DataType);
                 sig.Parameters[i].Accept(this, sig.Parameters[i].TypeVariable);
             }
         }
@@ -268,8 +268,9 @@ namespace Reko.Typing
                     binExp.Operator == Operator.FMul ||
                     binExp.Operator == Operator.FDiv)
             {
-                var dt = PrimitiveType.Create(Domain.Real, tv.DataType.BitSize);
+                var dt = PrimitiveType.Create(Domain.Real, eLeft.DataType.BitSize);
                 MeetDataType(eLeft, dt);
+                dt = PrimitiveType.Create(Domain.Real, eRight.DataType.BitSize);
                 MeetDataType(eRight, dt);
             }
             else if (binExp.Operator is SignedIntOperator)
@@ -320,7 +321,7 @@ namespace Reko.Typing
                 dt = PrimitiveType.Create(Domain.Integer, DataTypeOf(eRight).BitSize);
             }
             else
-                throw new NotImplementedException(string.Format("Unhandled binary operator {0} in expression {1}.", binExp.Operator, binExp));
+                throw new TypeInferenceException($"Unhandled binary operator {binExp.Operator} in expression {binExp}.");
             eLeft.Accept(this, eLeft.TypeVariable);
             eRight.Accept(this, eRight.TypeVariable);
             return false;
@@ -371,13 +372,13 @@ namespace Reko.Typing
             {
                 if (ptSub != null && (ptSub.Domain & Domain.Integer) != 0)
                     return PrimitiveType.Create(Domain.Pointer, dtDiff.BitSize);
-                throw new NotImplementedException(string.Format("Not handling {0} and {1} yet", dtDiff, dtSub));
+                throw new TypeInferenceException($"Not handling {dtDiff} and {dtSub} yet.");
             }
             if (dtDiff is MemberPointer || ptDiff != null && ptDiff.Domain == Domain.Offset)
             {
                 if (ptSub != null && (ptSub.Domain & Domain.Integer) != 0)
                     return dtDiff;
-                throw new NotImplementedException(string.Format("Not handling {0} and {1} yet", dtDiff, dtSub));
+                throw new TypeInferenceException($"Not handling {dtDiff} and {dtSub} yet.");
             }
             return dtDiff;
         }
@@ -520,7 +521,17 @@ namespace Reko.Typing
                 var c = effectiveAddress as Constant;
                 p = effectiveAddress;
                 offset = 0;
+                //$BUG: offsets should be long for 64-bit architectures.
                 MemoryAccessCommon(null, globals, OffsetOf(c), tvAccess, eaBitSize);
+            }
+            else if (effectiveAddress is Address addr && !addr.Selector.HasValue)
+            {
+                // Mem[addr]
+                //$TODO: what to do about segmented addresses?
+                p = effectiveAddress;
+                offset = 0;
+                //$BUG: offsets should be long for 64-bit architectures.
+                MemoryAccessCommon(null, globals, (int) addr.ToLinear(), tvAccess, eaBitSize);
             }
             else if (IsArrayAccess(effectiveAddress))
             {
@@ -567,9 +578,10 @@ namespace Reko.Typing
 
         public LinearInductionVariable GetInductionVariable(Expression e)
 		{
-			var id = e as Identifier;
-			if (id == null) return null;
-            if (!ivs.TryGetValue(id, out var iv)) return null;
+			if (!(e is Identifier id))
+                return null;
+            if (!ivs.TryGetValue(id, out var iv))
+                return null;
             return iv;
 		}
 
@@ -672,16 +684,10 @@ namespace Reko.Typing
                 pt.Domain == Domain.Selector;
         }
 
-        private bool IsPointer(DataType dt)
-        {
-            if (dt is Pointer)
-                return true;
-            return dt is PrimitiveType pt && pt.Domain == Domain.Pointer;
-        }
 
         public bool VisitMkSequence(MkSequence seq, TypeVariable tv)
         {
-            if (seq.Expressions.Length == 2 && IsPointer(tv.DataType))
+            if (seq.Expressions.Length == 2 && tv.DataType.IsPointer)
             {
                 if (IsSelector(seq.Expressions[0]) || DataTypeOf(seq.Expressions[0]) is Pointer)
                 {

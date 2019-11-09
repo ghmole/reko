@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,8 @@ namespace Reko.UnitTests.Typing
 		protected override void BuildBody()
 		{
 			Identifier ptr = Local32("ptr");
-			Declare(ptr, Word32(0x10000004));
+            Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
+            Declare(ptr, Word32(0x10000004));
 			MStore(ptr, Constant.Real32(0.75F));
 			MStore(Word32(0x10000000), Constant.Real32(0.5F));
 		}

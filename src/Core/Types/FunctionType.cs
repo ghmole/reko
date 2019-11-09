@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,16 +54,24 @@ namespace Reko.Core.Types
             Identifier returnValue,
             params Identifier [] parameters)
         {
-            if (parameters == null)
-                throw new ArgumentNullException("parameters");
+            this.Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
             this.ParametersValid = true;
             this.FpuStackArgumentMax = -1;
             if (returnValue == null)
                 returnValue = new Identifier("", VoidType.Instance, null);
             this.ReturnValue = returnValue;
-            this.Parameters = parameters;
         }
 
+        public static FunctionType Func(Identifier returnId, params Identifier[] formals)
+        {
+            return new FunctionType(returnId, formals);
+        }
+
+        /// <summary>
+        /// Create a function type with a void return type.
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <returns>A function type.</returns>
         public static FunctionType Action(params Identifier [] parameters)
         {
             return new FunctionType(new Identifier("", VoidType.Instance, null), parameters);
@@ -91,6 +99,7 @@ namespace Reko.Core.Types
                 .Select(p => new Identifier(p.Name, p.DataType.Clone(clonedTypes), p.Storage))
                 .ToArray();
             var ft = new FunctionType(ret, parameters);
+            ft.Qualifier = Qualifier;
             ft.ParametersValid = ParametersValid;
             ft.IsInstanceMetod = IsInstanceMetod;
             ft.ReturnAddressOnStack = ReturnAddressOnStack;
@@ -103,7 +112,7 @@ namespace Reko.Core.Types
 
         public bool IsVarargs()
         {
-            var last = Parameters != null ? Parameters.LastOrDefault() : null;
+            var last = Parameters?.LastOrDefault();
             return last != null && last.Name == "...";
         }
 
@@ -183,51 +192,61 @@ namespace Reko.Core.Types
 
         public void Emit(string fnName, EmitFlags f, Formatter fmt)
         {
-            Emit(fnName, f, fmt, new CodeFormatter(fmt), new TypeFormatter(fmt));
+            Emit(fnName, f, fmt, new CodeFormatter(fmt), new TypeReferenceFormatter(fmt));
         }
 
-        public void Emit(string fnName, EmitFlags f, Formatter fmt, CodeFormatter w, TypeFormatter t)
+        public void Emit(string fnName, EmitFlags f, Formatter fmt, CodeFormatter w, TypeReferenceFormatter t)
         {
             bool emitStorage = (f & EmitFlags.ArgumentKind) == EmitFlags.ArgumentKind;
-            if (emitStorage)
+           
+            if (ParametersValid)
             {
-                if (HasVoidReturn)
+                if (emitStorage)
                 {
-                    fmt.Write("void ");
+                    if (HasVoidReturn)
+                    {
+                        fmt.Write("void ");
+                    }
+                    else
+                    {
+                        w.WriteFormalArgumentType(ReturnValue, emitStorage);
+                        fmt.Write(" ");
+                    }
+                    fmt.Write("{0}(", fnName);
                 }
                 else
                 {
-                    w.WriteFormalArgumentType(ReturnValue, emitStorage);
-                    fmt.Write(" ");
+                    if (HasVoidReturn)
+                    {
+                        fmt.Write("void {0}", fnName);
+                    }
+                    else
+                    {
+                        t.WriteDeclaration(ReturnValue.DataType, fnName);           //$TODO: won't work with fn's that return pointers to functions or arrays.
+                    }
+                    fmt.Write("(");
                 }
-                fmt.Write("{0}(", fnName);
+                var sep = "";
+                if (Parameters != null)
+                {
+                    IEnumerable<Identifier> parms = this.IsInstanceMetod
+                        ? Parameters.Skip(1)
+                        : Parameters;
+                    foreach (var p in parms)
+                    {
+                        fmt.Write(sep);
+                        sep = ", ";
+                        w.WriteFormalArgument(p, emitStorage, t);
+                    }
+                }
+                fmt.Write(")");
             }
             else
             {
-                if (HasVoidReturn)
-                {
-                    fmt.Write("void {0}", fnName);
-                }
-                else
-                {
-                    t.Write(ReturnValue.DataType, fnName);           //$TODO: won't work with fn's that return pointers to functions or arrays.
-                }
-                fmt.Write("(");
+                fmt.WriteKeyword("define");
+                fmt.Write(" ");
+                fmt.Write(fnName);
             }
-            var sep = "";
-            if (Parameters != null)
-            {
-                IEnumerable<Identifier> parms = this.IsInstanceMetod
-                    ? Parameters.Skip(1)
-                    : Parameters;
-                foreach (var p in parms)
-                {
-                    fmt.Write(sep);
-                    sep = ", ";
-                    w.WriteFormalArgument(p, emitStorage, t);
-                }
-            }
-            fmt.Write(")");
 
             if ((f & EmitFlags.LowLevelInfo) == EmitFlags.LowLevelInfo)
             {
@@ -239,10 +258,10 @@ namespace Reko.Core.Types
 
         public string ToString(string name, EmitFlags flags = EmitFlags.ArgumentKind)
         {
-            StringWriter sw = new StringWriter();
-            TextFormatter f = new TextFormatter(sw);
-            CodeFormatter cf = new CodeFormatter(f);
-            TypeFormatter tf = new TypeFormatter(f);
+            var sw = new StringWriter();
+            var f = new TextFormatter(sw);
+            var cf = new CodeFormatter(f);
+            var tf = new TypeReferenceFormatter(f);
             Emit(name, flags, f, cf, tf);
             return sw.ToString();
         }

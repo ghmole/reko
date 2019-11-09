@@ -1,6 +1,6 @@
 // fn0C00_0000
 // Return size: 2
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ss:ss
@@ -9,20 +9,22 @@
 // bx:bx
 // cx:cx
 // ax:ax
-// SZO:Flags
-// C:Flags
-// SO:Flags
+// SZO:SZO
+// C:C
+// SO:SO
 // al:al
+// Top:Top
 // return address size: 2
-void fn0C00_0000()
+define fn0C00_0000
 fn0C00_0000_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
-	sp = sp - 0x0002
+	sp = sp - 2
 	Mem0[ss:sp:word16] = 0x0D00
 	ds = Mem0[ss:sp:selector]
-	sp = sp + 0x0002
+	sp = sp + 2
 	dx = 0x3000
 	bx = Mem0[ds:0x0300:word16]
 	cx = 0x0100
@@ -43,39 +45,43 @@ l0C00_001A:
 fn0C00_0000_exit:
 // fn0C00_001F
 // Return size: 0
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ah:ah
 // al:al
+// Top:Top
 // return address size: 0
-void fn0C00_001F()
+define fn0C00_001F
 fn0C00_001F_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_001F
 l0C00_001F:
-	sp = fp
 	ah = 0x4C
 	msdos_terminate(al)
 fn0C00_001F_exit:
 // fn0C00_0023
 // Return size: 2
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // ah:ah
+// C:C
 // bx:bx
 // cx:cx
 // ds:ds
 // dx:dx
 // ds_dx:Sequence ds:dx
 // ax:ax
-// C:Flags
+// Top:Top
 // return address size: 2
-void fn0C00_0023()
+define fn0C00_0023
 fn0C00_0023_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_0023
 l0C00_0023:
-	sp = fp
 	ah = 0x3F
 	C = msdos_read_file(bx, cx, ds_dx, out ax)
 	branch Test(UGE,C) l0C00_002C

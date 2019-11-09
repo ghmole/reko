@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
 
         private void RewriteEi()
         {
-            var ppp = host.PseudoProcedure("__ei", VoidType.Instance, RewriteSrc(instr.op1));
+            var ppp = host.PseudoProcedure("__ei", VoidType.Instance, RewriteSrc(instr.Operands[0]));
             m.SideEffect(ppp);
         }
 
@@ -64,16 +64,16 @@ namespace Reko.Arch.Tlcs.Tlcs900
         private void RewriteLdf()
         {
             //$TODO: model this as an explicit bank switch?
-            m.SideEffect(host.PseudoProcedure("__ldf", VoidType.Instance, RewriteSrc(instr.op1)));
+            m.SideEffect(host.PseudoProcedure("__ldf", VoidType.Instance, RewriteSrc(instr.Operands[0])));
         }
 
         private void RewriteSwi()
         {
-            rtlc = RtlClass.Transfer | RtlClass.Call;
+            rtlc = InstrClass.Transfer | InstrClass.Call;
             var xsp = binder.EnsureRegister(Registers.xsp);
             var sr = binder.EnsureRegister(Registers.sr);
-            var dst = Address.Ptr32(0xFFFF00u + ((ImmediateOperand)instr.op1).Value.ToUInt32() * 4);
-            m.Assign(xsp, m.ISub(xsp, m.Int32(2)));
+            var dst = Address.Ptr32(0xFFFF00u + ((ImmediateOperand)instr.Operands[0]).Value.ToUInt32() * 4);
+            m.Assign(xsp, m.ISubS(xsp, 2));
             m.Assign(m.Mem16(xsp), sr);
             m.Call(dst, 4);
         }

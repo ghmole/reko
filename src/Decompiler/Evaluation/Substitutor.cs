@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -173,7 +173,15 @@ namespace Reko.Evaluation
 
         public Expression VisitPhiFunction(PhiFunction phi)
         {
-            throw new NotImplementedException();
+            var args = new PhiArgument[phi.Arguments.Length];
+            for (int i = 0; i < args.Length; ++i)
+            {
+                var exp = phi.Arguments[i].Value.Accept(this);
+                if (exp == Constant.Invalid)
+                    return exp;
+                args[i] = new PhiArgument(phi.Arguments[i].Block, exp);
+            }
+            return new PhiFunction(phi.DataType, args);
         }
 
         public Expression VisitPointerAddition(PointerAddition pa)

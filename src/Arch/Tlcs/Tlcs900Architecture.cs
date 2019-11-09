@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ namespace Reko.Arch.Tlcs
     {
         public Tlcs900Architecture(string archId) : base(archId)
         {
+            this.Endianness = EndianServices.Little;
             this.InstructionBitSize = 8;        // Instruction alignment, really.
             this.FramePointerType = PrimitiveType.Ptr32;
             this.PointerType = PrimitiveType.Ptr32;
@@ -51,31 +52,6 @@ namespace Reko.Arch.Tlcs
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
         {
             return new Tlcs900.Tlcs900Disassembler(this, rdr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, ulong off)
-        {
-            return new LeImageReader(img, off);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            return new LeImageReader(img, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(img, addrBegin, addrEnd);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            throw new NotImplementedException();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea img, Address addr)
-        {
-            throw new NotImplementedException();
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -113,10 +89,10 @@ namespace Reko.Arch.Tlcs
                 case 'C': grf |= Registers.C.FlagGroupBits; break;
                 }
             }
-            return GetFlagGroup(grf);
+            return GetFlagGroup(Registers.f, grf);
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
             foreach (FlagGroupStorage f in Registers.flagBits)
             {
@@ -125,7 +101,7 @@ namespace Reko.Arch.Tlcs
             }
 
             PrimitiveType dt = Bits.IsSingleBitSet(grf) ? PrimitiveType.Bool : PrimitiveType.Byte;
-            var fl = new FlagGroupStorage(Registers.f, grf, GrfToString(grf), dt);
+            var fl = new FlagGroupStorage(Registers.f, grf, GrfToString(flagRegister, "", grf), dt);
             return fl;
         }
 
@@ -144,9 +120,14 @@ namespace Reko.Arch.Tlcs
             throw new NotImplementedException();
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain regDomain, BitRange range)
         {
-            throw new NotImplementedException();
+            if (!Registers.Subregisters.TryGetValue(regDomain, out var subs))
+                return null;
+            int key = (range.Extent << 4) | range.Lsb;
+            if (!subs.TryGetValue(key, out var subreg))
+                return null;
+            return subreg;
         }
 
         public override RegisterStorage[] GetRegisters()
@@ -154,9 +135,20 @@ namespace Reko.Arch.Tlcs
             return Registers.regs.ToArray();
         }
 
+        public override IEnumerable<FlagGroupStorage> GetSubFlags(FlagGroupStorage flags)
+        {
+            uint grf = flags.FlagGroupBits;
+            if ((grf & Registers.S.FlagGroupBits) != 0) yield return Registers.S;
+            if ((grf & Registers.Z.FlagGroupBits) != 0) yield return Registers.Z;
+            if ((grf & Registers.H.FlagGroupBits) != 0) yield return Registers.H;
+            if ((grf & Registers.V.FlagGroupBits) != 0) yield return Registers.V;
+            if ((grf & Registers.N.FlagGroupBits) != 0) yield return Registers.N;
+            if ((grf & Registers.C.FlagGroupBits) != 0) yield return Registers.C;
+        }
+
         public override RegisterStorage GetSubregister(RegisterStorage reg, int offset, int width)
         {
-            if (!Registers.Subregisters.TryGetValue(reg, out var subs))
+            if (!Registers.Subregisters.TryGetValue(reg.Domain, out var subs))
                 return null;
             int key = (width << 4) | offset;
             if (!subs.TryGetValue(key, out var subreg))
@@ -164,7 +156,7 @@ namespace Reko.Arch.Tlcs
             return subreg;
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagRegister, string prefix, uint grf)
         {
             StringBuilder s = new StringBuilder();
             foreach (var freg in Registers.flagBits)
@@ -175,7 +167,7 @@ namespace Reko.Arch.Tlcs
             return s.ToString();
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
             return Address.Ptr32(c.ToUInt32());
         }
@@ -193,11 +185,6 @@ namespace Reko.Arch.Tlcs
         public override bool TryParseAddress(string txtAddr, out Address addr)
         {
             return Address.TryParse32(txtAddr, out addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
         }
     }
 }

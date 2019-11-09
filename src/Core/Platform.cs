@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -149,8 +149,8 @@ namespace Reko.Core
         Expression ResolveImportByName(string moduleName, string globalName);
         Expression ResolveImportByOrdinal(string moduleName, int ordinal);
         ProcedureCharacteristics LookupCharacteristicsByName(string procName);
-        Address MakeAddressFromConstant(Constant c);
-        Address MakeAddressFromLinear(ulong uAddr);
+        Address MakeAddressFromConstant(Constant c, bool codeAlign);
+        Address MakeAddressFromLinear(ulong uAddr, bool codeAlign);
 
         /// <summary>
         /// Given an indirect call, attempt to resolve it into an address.
@@ -193,7 +193,7 @@ namespace Reko.Core
         public string Description { get; set; }
         public PlatformHeuristics Heuristics { get; set; }
         public string Name { get; set; }
-        public MemoryMap_v1 MemoryMap { get; set; }
+        public virtual MemoryMap_v1 MemoryMap { get; set; }
         public virtual PrimitiveType FramePointerType { get { return Architecture.FramePointerType; } }
         public virtual PrimitiveType PointerType { get { return Architecture.PointerType; } }
 
@@ -234,7 +234,13 @@ namespace Reko.Core
         /// Some architectures define global registers that are preserved 
         /// across calls; these should also be present in this set.
         /// </remarks>
-        public abstract HashSet<RegisterStorage> CreateImplicitArgumentRegisters();
+        public virtual HashSet<RegisterStorage> CreateImplicitArgumentRegisters()
+        {
+            return new HashSet<RegisterStorage>()
+            {
+                Architecture.StackRegister,
+            };
+        }
 
         /// <summary>
         /// Creates a set of registers that the "standard" ABI cannot 
@@ -279,8 +285,7 @@ namespace Reko.Core
         /// <returns></returns>
         public virtual SegmentMap CreateAbsoluteMemoryMap()
         {
-            if (this.MemoryMap == null ||
-                  this.MemoryMap.Segments == null)
+            if (this.MemoryMap == null || this.MemoryMap.Segments == null)
                 return null;
             var diagSvc = Services.RequireService<IDiagnosticsService>();
             var segs = MemoryMap.Segments.Select(s => MemoryMap_v1.LoadSegment(s, this, diagSvc))
@@ -318,7 +323,7 @@ namespace Reko.Core
                 foreach (var tl in envCfg.TypeLibraries
                     .Where(t => t.Architecture == null ||
                                 t.Architecture.Contains(Architecture.Name))
-                    .OfType<ITypeLibraryElement>())
+                    .OfType<TypeLibraryDefinition>())
                 {
                     Metadata = tlSvc.LoadMetadataIntoLibrary(this, tl, Metadata); 
                 }
@@ -402,9 +407,9 @@ namespace Reko.Core
             return null;
         }
 
-        public virtual Address MakeAddressFromConstant(Constant c)
+        public virtual Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Architecture.MakeAddressFromConstant(c);
+            return Architecture.MakeAddressFromConstant(c, codeAlign);
         }
 
         public virtual void InjectProcedureEntryStatements(Procedure proc, Address addr, CodeEmitter emitter)
@@ -422,7 +427,7 @@ namespace Reko.Core
         /// </remarks>
         /// <param name="uAddr"></param>
         /// <returns></returns>
-        public virtual Address MakeAddressFromLinear(ulong uAddr)
+        public virtual Address MakeAddressFromLinear(ulong uAddr, bool codeAlign)
         {
             return Address.Create(Architecture.PointerType, uAddr);
         }
@@ -539,11 +544,6 @@ namespace Reko.Core
             get { return ""; }
         }
 
-        public override HashSet<RegisterStorage> CreateImplicitArgumentRegisters()
-        {
-            return new HashSet<RegisterStorage>();
-        }
-
         public override HashSet<RegisterStorage> CreateTrashedRegisters()
         {
             return new HashSet<RegisterStorage>();
@@ -551,7 +551,9 @@ namespace Reko.Core
 
         public override CallingConvention GetCallingConvention(string ccName)
         {
-            throw new NotImplementedException();
+            // The default platform has no idea, so let the architecture decide.
+            // Some architectures define a standard calling procedure.
+            return this.Architecture.GetCallingConvention(ccName);
         }
 
         public override SystemService FindService(int vector, ProcessorState state)

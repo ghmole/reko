@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
-* Copyright (C) 1999-2018 John Källén.
+* Copyright (C) 1999-2019 John Källén.
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -61,5 +61,8 @@ namespace Reko.Gui
         IViewImportsService CreateViewImportService();
         ISymbolLoadingService CreateSymbolLoadingService();
         ISelectionService CreateSelectionService();
+        IProcedureListService CreateProcedureListService();
+        ICallHierarchyService CreateCallHierarchyService();
+        IDecompiledFileService CreateDecompiledFileService();
     }
 }

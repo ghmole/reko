@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ using Reko.Environments.Msdos;
 using Reko.Loading;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
+using Moq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -48,6 +48,7 @@ namespace Reko.UnitTests.Analysis
 	public abstract class AnalysisTestBase
 	{
         protected IPlatform platform;
+        protected Mock<IPlatform> platformMock;
         private ServiceContainer sc;
 
         public AnalysisTestBase()
@@ -57,41 +58,28 @@ namespace Reko.UnitTests.Analysis
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
         }
 
-        protected void DumpProcedureFlows(Program program, DataFlowAnalysis dfa, RegisterLiveness live, TextWriter w)
+        protected void DumpProcedureFlows(Program program, DataFlowAnalysis dfa, TextWriter w)
 		{
 			foreach (Procedure proc in program.Procedures.Values)
 			{
 				w.WriteLine("// {0} /////////////////////", proc.Name);
 				ProcedureFlow flow = dfa.ProgramDataFlow[proc];
-				DataFlow.EmitRegisters(program.Architecture, "\tLiveOut:  ", flow.grfLiveOut, flow.LiveOut, w);
+				DataFlow.EmitRegisters(program.Architecture, "\tLiveOut:  ", flow.grfLiveOut, flow.BitsLiveOut, w);
 				w.WriteLine();
-				DataFlow.EmitRegisters(program.Architecture, "\tMayUseIn: ", flow.grfMayUse, flow.MayUse, w);
+				DataFlow.EmitRegisterValues("\tBitsUsed: ", flow.BitsUsed, w);
 				w.WriteLine();
-				DataFlow.EmitRegisters(program.Architecture, "\tBypassIn: ", flow.grfMayUse, flow.ByPass, w);
+				DataFlow.EmitRegisters(program.Architecture, "\tTrashed:  ", flow.grfTrashed, flow.Trashed, w);
 				w.WriteLine();
-				DataFlow.EmitRegisters(program.Architecture, "\tTrashed:  ", flow.grfTrashed, flow.TrashedRegisters, w);
-				w.WriteLine();
-				DataFlow.EmitRegisters(program.Architecture, "\tPreserved:", flow.grfPreserved, flow.PreservedRegisters, w);
+				DataFlow.EmitRegisters(program.Architecture, "\tPreserved:", flow.grfPreserved, flow.Preserved, w);
 				w.WriteLine();
 
 				w.WriteLine("// {0}", proc.Name);
 				proc.Signature.Emit(proc.Name, FunctionType.EmitFlags.None, new TextFormatter(w));
 				w.WriteLine();
-				foreach (Block block in proc.SortBlocksByName())
-				{
-                    if (live != null)
-                    {
-                        var bFlow = dfa.ProgramDataFlow[block];
-                        bFlow.WriteBefore(program.Architecture, w);
-                        block.Write(w);
-                        bFlow.WriteAfter(program.Architecture, w);
-                        w.WriteLine();
-                    }
-                    else
-                    {
-                        block.Write(w);
-                    }
-				}
+                foreach (Block block in proc.SortBlocksByName())
+                {
+                    block.Write(w);
+                }
 			}
 		}
 
@@ -108,12 +96,36 @@ namespace Reko.UnitTests.Analysis
             }
         }
 
-        protected Program BuildProgramMock(ProcedureBuilder mock)
+        protected Program BuildProgram(ProcedureBuilder mock)
         {
             var m = new ProgramBuilder();
             m.Add(mock);
             var program = m.BuildProgram();
             program.CallGraph.AddProcedure(mock.Procedure);
+            return program;
+        }
+
+        protected Program BuildProgram(Action<ProcedureBuilder> buildProc)
+        {
+            var m = new ProgramBuilder();
+            var pb = new ProcedureBuilder();
+            pb.ProgramMock = m;
+            buildProc(pb);
+            m.Add(pb);
+            var program = m.BuildProgram();
+            program.CallGraph.AddProcedure(pb.Procedure);
+            return program;
+        }
+
+        protected Program BuildProgram(IProcessorArchitecture arch, Action<ProcedureBuilder> buildProc)
+        {
+            var m = new ProgramBuilder(arch);
+            var pb = new ProcedureBuilder(arch);
+            pb.ProgramMock = m;
+            buildProc(pb);
+            m.Add(pb);
+            var program = m.BuildProgram();
+            program.CallGraph.AddProcedure(pb.Procedure);
             return program;
         }
 
@@ -126,18 +138,15 @@ namespace Reko.UnitTests.Analysis
         {
             var arch = new X86ArchitectureReal("x86-real-16");
             var sc = new ServiceContainer();
-            var cfgSvc = MockRepository.GenerateStub<IConfigurationService>();
-            var env = MockRepository.GenerateStub<OperatingEnvironment>();
-            var tlSvc = MockRepository.GenerateStub<ITypeLibraryLoaderService>();
-            cfgSvc.Stub(c => c.GetEnvironment("ms-dos")).Return(env);
-            cfgSvc.Replay();
-            env.Stub(e => e.TypeLibraries).Return(new List<ITypeLibraryElement>());
-            env.Stub(e => e.CharacteristicsLibraries).Return(new List<ITypeLibraryElement>());
-            env.Replay();
-            tlSvc.Replay();
+            var cfgSvcMock = new Mock<IConfigurationService>();
+            var envMock = new Mock<PlatformDefinition>();
+            var tlSvcMock = new Mock<ITypeLibraryLoaderService>();
+            cfgSvcMock.Setup(c => c.GetEnvironment("ms-dos")).Returns(envMock.Object);
+            envMock.Setup(e => e.TypeLibraries).Returns(new List<TypeLibraryDefinition>());
+            envMock.Setup(e => e.CharacteristicsLibraries).Returns(new List<TypeLibraryDefinition>());
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
-            sc.AddService<IConfigurationService>(cfgSvc);
-            sc.AddService<ITypeLibraryLoaderService>(tlSvc);
+            sc.AddService<IConfigurationService>(cfgSvcMock.Object);
+            sc.AddService<ITypeLibraryLoaderService>(tlSvcMock.Object);
             Program program;
             Assembler asm = new X86TextAssembler(sc, arch);
             using (var rdr = new StreamReader(FileUnitTester.MapTestPath(relativePath)))
@@ -149,6 +158,30 @@ namespace Reko.UnitTests.Analysis
             return program;
         }
 
+        protected static Program RewriteMsdosAssembler(string relativePath, Action<Program> postLoad)
+        {
+            var arch = new X86ArchitectureReal("x86-real-16");
+            var sc = new ServiceContainer();
+            var cfgSvc = new Mock<IConfigurationService>();
+            var env = new Mock<PlatformDefinition>();
+            var tlSvc = new Mock<ITypeLibraryLoaderService>();
+            cfgSvc.Setup(c => c.GetEnvironment("ms-dos")).Returns(env.Object);
+            env.Setup(e => e.TypeLibraries).Returns(new List<TypeLibraryDefinition>());
+            env.Setup(e => e.CharacteristicsLibraries).Returns(new List<TypeLibraryDefinition>());
+            sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
+            sc.AddService<IConfigurationService>(cfgSvc.Object);
+            sc.AddService<ITypeLibraryLoaderService>(tlSvc.Object);
+            Program program;
+            Assembler asm = new X86TextAssembler(sc, arch);
+            using (var rdr = new StreamReader(FileUnitTester.MapTestPath(relativePath)))
+            {
+                program = asm.Assemble(Address.SegPtr(0xC00, 0), rdr);
+                program.Platform = new MsdosPlatform(sc, program.Architecture);
+            }
+            Rewrite(program, asm, postLoad);
+            return program;
+        }
+
         protected Program RewriteFile32(string sourceFile)
         {
             return RewriteFile32(sourceFile, null);
@@ -157,12 +190,13 @@ namespace Reko.UnitTests.Analysis
         private Program RewriteFile32(string relativePath, string configFile)
         {
             Program program;
-            var asm = new X86TextAssembler(sc, new X86ArchitectureReal("x86-real-16"));
+            var arch = new X86ArchitectureFlat32("x86-protected-32");
+            var asm = new X86TextAssembler(sc, arch);
             using (var rdr = new StreamReader(FileUnitTester.MapTestPath(relativePath)))
             {
                 if (this.platform == null)
                 {
-                    this.platform = new Reko.Environments.Windows.Win32Platform(sc, new X86ArchitectureFlat32("x86-protected-32"));
+                    this.platform = new Reko.Environments.Windows.Win32Platform(sc, arch);
                 }
                 asm.Platform = this.platform;
                 program = asm.Assemble(Address.Ptr32(0x10000000), rdr);
@@ -179,18 +213,17 @@ namespace Reko.UnitTests.Analysis
         {
             Assembler asm = new X86TextAssembler(sc, new X86ArchitectureReal("x86-real-16"));
             var program = asm.AssembleFragment(Address.SegPtr(0xC00, 0), s);
-            program.Platform = new DefaultPlatform(null, program.Architecture);
-            Rewrite(program, asm, null);
+            program.Platform = new MsdosPlatform(null, program.Architecture);
+            Rewrite(program, asm, (string)null);
             return program;
         }
-
 
         protected Program RewriteCodeFragment32(string s)
         {
             Assembler asm = new X86TextAssembler(sc, new X86ArchitectureFlat32("x86-protected-32"));
             var program = asm.AssembleFragment(Address.Ptr32(0x00400000), s);
             program.Platform = new DefaultPlatform(null, program.Architecture);
-            Rewrite(program, asm, null);
+            Rewrite(program, asm, (string)null);
             return program;
         }
 
@@ -200,10 +233,11 @@ namespace Reko.UnitTests.Analysis
             var fakeConfigService = new FakeDecompilerConfiguration();
             var eventListener = new FakeDecompilerEventListener();
             var sc = new ServiceContainer();
-            sc.AddService(typeof(IDiagnosticsService), fakeDiagnosticsService);
-            sc.AddService(typeof(IConfigurationService), fakeConfigService);
+            sc.AddService<IDiagnosticsService>(fakeDiagnosticsService);
+            sc.AddService<IConfigurationService>(fakeConfigService);
             sc.AddService<DecompilerEventListener>(eventListener);
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
+            sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
             var loader = new Loader(sc);
             var project = string.IsNullOrEmpty(configFile)
                 ? new Project()
@@ -213,75 +247,142 @@ namespace Reko.UnitTests.Analysis
                 new ImportResolver(project, program, eventListener),
                 sc);
 
-            scan.EnqueueImageSymbol(new ImageSymbol(asm.StartAddress), true);
+            scan.EnqueueImageSymbol(ImageSymbol.Procedure(program.Architecture, asm.StartAddress), true);
             foreach (var f in project.Programs)
             {
                 foreach (var sp in f.User.Procedures.Values)
                 {
-                    scan.EnqueueUserProcedure(sp);
+                    scan.EnqueueUserProcedure(program.Architecture, sp);
                 }
             }
             scan.ScanImage();
         }
 
-        public static void RunTest(string sourceFile, Action<Program, TextWriter> test, string outputFile)
+        private static void Rewrite(Program program, Assembler asm, Action<Program> postLoad)
         {
-            Program prog = RewriteMsdosAssembler(sourceFile, null);
-            SaveRunOutput(prog, test, outputFile);
+            var fakeDiagnosticsService = new FakeDiagnosticsService();
+            var fakeConfigService = new FakeDecompilerConfiguration();
+            var eventListener = new FakeDecompilerEventListener();
+            var sc = new ServiceContainer();
+            sc.AddService<IDiagnosticsService>(fakeDiagnosticsService);
+            sc.AddService<IConfigurationService>(fakeConfigService);
+            sc.AddService<DecompilerEventListener>(eventListener);
+            //sc.AddService<IDecompiledFileService>(new FakeDecompilerHost());
+            sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
+            var loader = new Loader(sc);
+            var project = new Project
+            {
+                Programs = { program }
+            };
+            postLoad(program);
+            var scan = new Scanner(
+                program,
+                new ImportResolver(project, program, eventListener),
+                sc);
+
+            scan.EnqueueImageSymbol(ImageSymbol.Location(program.Architecture, asm.StartAddress), true);
+            foreach (var f in project.Programs)
+            {
+                foreach (var sp in f.User.Procedures.Values)
+                {
+                    scan.EnqueueUserProcedure(program.Architecture, sp);
+                }
+            }
+            scan.ScanImage();
         }
 
-		protected void RunFileTest(string sourceFile, string outputFile)
+        #region X86-specific
+        // Run x86-specific test (deprecated for unit testing as they require a specific architecture --
+        // try not to use these)
+        public static void RunTest_x86_real(string sourceFile, Action<Program, TextWriter> test, string outputFile)
+        {
+            Program program = RewriteMsdosAssembler(sourceFile, (string)null);
+            SaveRunOutput(program, test, outputFile);
+        }
+
+		protected void RunFileTest_x86_real(string sourceFile, string outputFile)
 		{
-			Program prog = RewriteMsdosAssembler(sourceFile, null);
-            SaveRunOutput(prog, RunTest, outputFile);
+			Program program = RewriteMsdosAssembler(sourceFile, (string)null);
+            SaveRunOutput(program, RunTest, outputFile);
 		}
 
-		protected void RunFileTest(ProcedureBuilder mock, string outputFile)
-		{
-			Program prog = BuildProgramMock(mock);
-            SaveRunOutput(prog, RunTest, outputFile);
+        protected void RunFileTest_x86_real(string sourceFile, string configFile, string outputFile)
+        {
+            Program program = RewriteMsdosAssembler(sourceFile, configFile);
+            SaveRunOutput(program, RunTest, outputFile);
+        }
+
+        protected void RunFileTest_x86_32(string sourceFile, string outputFile)
+        {
+            Program program = RewriteFile32(sourceFile);
+            SaveRunOutput(program, RunTest, outputFile);
+        }
+
+        protected void RunFileTest_x86_32(string sourceFile, string configFile, string outputFile)
+        {
+            Program program = RewriteFile32(sourceFile, configFile);
+            SaveRunOutput(program, RunTest, outputFile);
+        }
+
+        #endregion
+
+        protected void RunFileTest(ProcedureBuilder mock, string outputFile)
+        {
+			Program program = BuildProgram(mock);
+            SaveRunOutput(program, RunTest, outputFile);
 		}
 
         protected void RunStringTest(string sExp, Action<ProcedureBuilder> m)
         {
-            var pb = new ProcedureBuilder();
-            m(pb);
-            var program = BuildProgramMock(pb);
+            var program = BuildProgram(m);
             AssertRunOutput(program, RunTest, sExp);
         }
 
-		protected void RunFileTest(string sourceFile, string configFile, string outputFile)
+        protected void RunStringTest(string sExp, IProcessorArchitecture arch, Action<ProcedureBuilder> m)
+        {
+            var program = BuildProgram(arch, m);
+            AssertRunOutput(program, RunTest, sExp);
+        }
+
+
+        protected void RunStringTest(string sExp, ProcedureBuilder pb)
+        {
+            var program = BuildProgram(pb);
+            AssertRunOutput(program, RunTest, sExp);
+        }
+
+        protected void RunFileTest(string sourceFile, string configFile, string outputFile)
 		{
 			Program prog = RewriteMsdosAssembler(sourceFile, configFile);
             SaveRunOutput(prog, RunTest, outputFile);
 		}
 
-        protected void RunFileTest(Program prog, string outputFile)
+        protected void RunStringTest(string sExp, Program program)
         {
-            SaveRunOutput(prog, RunTest, outputFile);
+            AssertRunOutput(program, RunTest, sExp);
         }
 
-		protected void RunFileTest32(string sourceFile, string outputFile)
-		{
-			Program prog = RewriteFile32(sourceFile);
-            SaveRunOutput(prog, RunTest, outputFile);
-		}
+        protected void RunFileTest(string outputFile, Action<ProcedureBuilder> m)
+        {
+            var program = BuildProgram(m);
+            SaveRunOutput(program, RunTest, outputFile);
+        }
 
-		protected void RunFileTest32(string sourceFile, string configFile, string outputFile)
-		{
-			Program prog = RewriteFile32(sourceFile, configFile);
-			SaveRunOutput(prog, RunTest, outputFile);
-		}
+        protected void RunFileTest(Program program, string outputFile)
+        {
+            SaveRunOutput(program, RunTest, outputFile);
+        }
 
-        protected virtual void RunTest(Program prog, TextWriter writer)
+        // Override this to do the analysis.
+        protected virtual void RunTest(Program program, TextWriter writer)
         {
         }
 
-		protected static void SaveRunOutput(Program prog, Action<Program, TextWriter> test, string outputFile)
+		protected static void SaveRunOutput(Program program, Action<Program, TextWriter> test, string outputFile)
 		{
 			using (FileUnitTester fut = new FileUnitTester(outputFile))
 			{
-				test(prog, fut.TextWriter);
+				test(program, fut.TextWriter);
                 fut.AssertFilesEqual();
 			}
 		}
@@ -293,7 +394,7 @@ namespace Reko.UnitTests.Analysis
             var sActual = sw.ToString();
             if (sExp != sActual)
             {
-                Debug.Print(sActual);
+                Console.WriteLine(sActual);
                 Assert.AreEqual(sExp, sActual);
             }
         }
@@ -303,16 +404,17 @@ namespace Reko.UnitTests.Analysis
             this.platform = platform;
         }
 
-        protected void Given_FakeWin32Platform(MockRepository mr)
+        protected void Given_FakeWin32Platform()
         {
-            var platform = mr.StrictMock<IPlatform>();
+            this.platformMock = new Mock<IPlatform>();
             var tHglobal = new TypeReference("HGLOBAL", PrimitiveType.Ptr32);
             var tLpvoid = new TypeReference("LPVOID", PrimitiveType.Ptr32);
             var tBool = new TypeReference("BOOL", PrimitiveType.Int32);
-            platform.Stub(p => p.LookupProcedureByName(
-                Arg<string>.Is.Anything,
-                Arg<string>.Is.Equal("GlobalHandle")))
-                .Return(
+            //platformMock.Setup(p => p.Architecture).Returns(arch.Object);
+            platformMock.Setup(p => p.LookupProcedureByName(
+                It.IsAny<string>(),
+                "GlobalHandle"))
+                .Returns(
                     new ExternalProcedure(
                         "GlobalHandle",
                         new FunctionType(
@@ -323,10 +425,10 @@ namespace Reko.UnitTests.Analysis
                         {
                             StackDelta = 4,
                         }));
-            platform.Stub(p => p.LookupProcedureByName(
-                Arg<string>.Is.Anything,
-                Arg<string>.Is.Equal("GlobalUnlock")))
-                .Return(new ExternalProcedure(
+            platformMock.Setup(p => p.LookupProcedureByName(
+                It.IsAny<string>(),
+                "GlobalUnlock"))
+                .Returns(new ExternalProcedure(
                     "GlobalUnlock",
                     new FunctionType(
                         new Identifier("eax",  tBool, Reko.Arch.X86.Registers.eax),
@@ -337,10 +439,10 @@ namespace Reko.UnitTests.Analysis
                         StackDelta = 4,
                     }));
 
-            platform.Stub(p => p.LookupProcedureByName(
-             Arg<string>.Is.Anything,
-             Arg<string>.Is.Equal("GlobalFree")))
-             .Return(new ExternalProcedure(
+            platformMock.Setup(p => p.LookupProcedureByName(
+                It.IsAny<string>(),
+                "GlobalFree"))
+             .Returns(new ExternalProcedure(
                  "GlobalFree",
                  new FunctionType(
                      new Identifier("eax",  tBool, Reko.Arch.X86.Registers.eax),
@@ -350,20 +452,19 @@ namespace Reko.UnitTests.Analysis
                      {
                          StackDelta = 4,
                      }));
-            platform.Stub(p => p.GetTrampolineDestination(
-                Arg<IEnumerable<RtlInstructionCluster>>.Is.NotNull,
-                Arg<IRewriterHost>.Is.NotNull))
-                .Return(null);
+            platformMock.Setup(p => p.GetTrampolineDestination(
+                It.IsNotNull<IEnumerable<RtlInstructionCluster>>(),
+                It.IsNotNull<IRewriterHost>()))
+                .Returns((ProcedureBase)null);
 
-            platform.Stub(p => p.PointerType).Return(PrimitiveType.Ptr32);
-            platform.Stub(p => p.CreateImplicitArgumentRegisters()).Return(
+            platformMock.Setup(p => p.PointerType).Returns(PrimitiveType.Ptr32);
+            platformMock.Setup(p => p.CreateImplicitArgumentRegisters()).Returns(
                 new HashSet<RegisterStorage>());
-            platform.Stub(p => p.MakeAddressFromLinear(0ul))
-                .IgnoreArguments()
-                .Do(new Func<ulong, Address>(ul => Address.Ptr32((uint) ul)));
-            platform.Stub(p => p.CreateTrashedRegisters())
-                .Return(new HashSet<RegisterStorage>());
-            Given_Platform(platform);
+            platformMock.Setup(p => p.MakeAddressFromLinear(It.IsAny<ulong>(), It.IsAny<bool>()))
+                .Returns((ulong ul, bool b) => Address.Ptr32((uint) ul));
+            platformMock.Setup(p => p.CreateTrashedRegisters())
+                .Returns(new HashSet<RegisterStorage>());
+            Given_Platform(platformMock.Object);
         }
 	}
 }

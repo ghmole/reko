@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,9 @@
 
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Expressions;
 using Reko.Core.Services;
+using Reko.Core.Types;
 using Reko.Environments.Windows;
 using System;
 using System.Collections.Generic;
@@ -31,8 +33,16 @@ using System.Text;
 
 namespace Reko.ImageLoaders.MzExe
 {
+    /// <summary>
+    /// Loades New Executable files.
+    /// </summary>
+    /// <remarks>
+    /// https://bytepointer.com/resources/win16_ne_exe_format_win3.0.htm
+    /// </remarks>
     public class NeImageLoader : ImageLoader
     {
+        private static readonly TraceSwitch trace = new TraceSwitch(nameof(NeImageLoader), "NE Image loader tracing", "Verbose");
+
         // Relocation address types
         [Flags]
         public enum NE_RADDR : byte
@@ -57,7 +67,18 @@ namespace Reko.ImageLoaders.MzExe
         }
 
         // Segment table flags
-        const ushort NE_STFLAGS_RELOCATIONS       =0x0100;
+        const ushort NE_STFLAGS_DATA = 0x0001;
+        const ushort NE_STFLAGS_REALMODE = 0x0004;
+        const ushort NE_STFLAGS_ITERATED = 0x0008;
+        const ushort NE_STFLAGS_MOVEABLE = 0x0010;
+        const ushort NE_STFLAGS_SHAREABLE = 0x0020;
+        const ushort NE_STFLAGS_PRELOAD = 0x0040;
+        const ushort NE_STFLAGS_EXECUTE = 0x00080;
+        const ushort NE_STFLAGS_RELOCATIONS = 0x0100;
+        const ushort NE_STFLAGS_DEBUG_INFO = 0x0200;
+        const ushort NE_STFLAGS_DPL = 0x0C00;
+        const ushort NE_STFLAGS_DISCARDABLE = 0x1000;
+        const ushort NE_STFLAGS_DISCARD_PRIORITY = 0xE000;
 
         // Resource types
         const ushort NE_RSCTYPE_CURSOR            =0x8001;
@@ -89,6 +110,7 @@ namespace Reko.ImageLoaders.MzExe
         private ushort offImportedNamesTable;
         private ushort offEntryTable;
         private ushort offResidentNameTable;
+        private uint offNonResidentNameTable;
         private ushort offRsrcTable;
         private Address addrImportStubs;
         private Dictionary<uint, Tuple<Address, ImportReference>> importStubs;
@@ -100,13 +122,10 @@ namespace Reko.ImageLoaders.MzExe
         public NeImageLoader(IServiceProvider services, string filename, byte[] rawBytes, uint e_lfanew)
             : base(services, filename, rawBytes)
         {
-            EndianImageReader rdr = new LeImageReader(RawImage, e_lfanew);
             diags = Services.RequireService<IDiagnosticsService>();
             this.lfaNew = e_lfanew;
             this.importStubs = new Dictionary<uint, Tuple<Address, ImportReference>>();
             this.imageSymbols = new SortedList<Address, ImageSymbol>();
-            if (!LoadNeHeader(rdr))
-                throw new BadImageFormatException("Unable to read NE header.");
         }
 
         public override Address PreferredBaseAddress
@@ -120,93 +139,70 @@ namespace Reko.ImageLoaders.MzExe
 
         private bool LoadNeHeader(EndianImageReader rdr)
         {
-            ushort magic;
-            if (!rdr.TryReadLeUInt16(out magic) || magic != 0x454E)
+            if (!rdr.TryReadLeUInt16(out ushort magic) || magic != 0x454E)
                 throw new BadImageFormatException("Not a valid NE header.");
-            ushort linker;
-            if (!rdr.TryReadLeUInt16(out linker))
+            if (!rdr.TryReadLeUInt16(out ushort linker))
                 return false;
             if (!rdr.TryReadLeUInt16(out offEntryTable))
                 return false;
-            ushort cbEntryTable;
-            if (!rdr.TryReadLeUInt16(out cbEntryTable))
+            if (!rdr.TryReadLeUInt16(out ushort cbEntryTable))
                 return false;
-            uint crc;
-            if (!rdr.TryReadLeUInt32(out crc))
+            if (!rdr.TryReadLeUInt32(out uint crc))
                 return false;
-            byte bProgramFlags;
-            if (!rdr.TryReadByte(out bProgramFlags))
+            if (!rdr.TryReadByte(out byte bProgramFlags))
                 return false;
-            byte bAppFlags;
-            if (!rdr.TryReadByte(out bAppFlags))
+            if (!rdr.TryReadByte(out byte bAppFlags))
                 return false;
-            ushort iSegAutoData;
-            if (!rdr.TryReadUInt16(out iSegAutoData))
+            if (!rdr.TryReadUInt16(out ushort iSegAutoData))
                 return false;
-            ushort cbHeapSize;
-            if (!rdr.TryReadUInt16(out cbHeapSize))
+            if (!rdr.TryReadUInt16(out ushort cbHeapSize))
                 return false;
-            ushort cbStackSize;
-            if (!rdr.TryReadUInt16(out cbStackSize))
+            if (!rdr.TryReadUInt16(out ushort cbStackSize))
                 return false;
-            ushort cs, ip;
-            if (!rdr.TryReadUInt16(out ip) || !rdr.TryReadUInt16(out cs))
+            if (!rdr.TryReadUInt16(out ushort ip) || !rdr.TryReadUInt16(out ushort cs))
                 return false;
-            ushort ss, sp;
-            if (!rdr.TryReadUInt16(out sp) || !rdr.TryReadUInt16(out ss))
+            if (!rdr.TryReadUInt16(out ushort sp) || !rdr.TryReadUInt16(out ushort ss))
                 return false;
             if (!rdr.TryReadUInt16(out cSeg))
                 return false;
-            ushort cModules;
-            if (!rdr.TryReadUInt16(out cModules))
+            if (!rdr.TryReadUInt16(out ushort cModules))
                 return false;
-            ushort cbNonResidentNames;
-            if (!rdr.TryReadUInt16(out cbNonResidentNames))
+            if (!rdr.TryReadUInt16(out ushort cbNonResidentNames))
                 return false;
-            ushort offSegTable;
-            if (!rdr.TryReadUInt16(out offSegTable))
+            if (!rdr.TryReadUInt16(out ushort offSegTable))
                 return false;
             if (!rdr.TryReadUInt16(out offRsrcTable))
                 return false;
             if (!rdr.TryReadUInt16(out offResidentNameTable))
                 return false;
-            ushort offModuleReferenceTable;
-            if (!rdr.TryReadUInt16(out offModuleReferenceTable))
+            if (!rdr.TryReadUInt16(out ushort offModuleReferenceTable))
                 return false;
             if (!rdr.TryReadUInt16(out offImportedNamesTable))
                 return false;
-            uint offNonResidentNameTable;
-            if (!rdr.TryReadUInt32(out offNonResidentNameTable))
+            if (!rdr.TryReadUInt32(out this.offNonResidentNameTable))
                 return false;
-            ushort cMoveableEntryPoints;
-            if (!rdr.TryReadUInt16(out cMoveableEntryPoints))
+            if (!rdr.TryReadUInt16(out ushort cMoveableEntryPoints))
                 return false;
             if (!rdr.TryReadUInt16(out cbFileAlignmentShift))
                 return false;
-            ushort cResourceTableEntries;
-            if (!rdr.TryReadUInt16(out cResourceTableEntries))
+            if (!rdr.TryReadUInt16(out ushort cResourceTableEntries))
                 return false;
-            byte bTargetOs;
-            if (!rdr.TryReadByte(out bTargetOs))
+            if (!rdr.TryReadByte(out byte bTargetOs))
                 return false;
-            byte bOsExeFlags;
-            if (!rdr.TryReadByte(out bOsExeFlags))
+            if (!rdr.TryReadByte(out byte bOsExeFlags))
                 return false;
-            ushort offGanglands;
-            if (!rdr.TryReadUInt16(out offGanglands))
+            if (!rdr.TryReadUInt16(out ushort offGanglands))
                 return false;
-            ushort cbGanglands;
-            if (!rdr.TryReadUInt16(out cbGanglands))
+            if (!rdr.TryReadUInt16(out ushort cbGanglands))
                 return false;
-            ushort cbMinCodeSwapArea;
-            if (!rdr.TryReadUInt16(out cbMinCodeSwapArea))
+            if (!rdr.TryReadUInt16(out ushort cbMinCodeSwapArea))
                 return false;
-            ushort wWindowsVersion;
-            if (!rdr.TryReadUInt16(out wWindowsVersion))
+            if (!rdr.TryReadUInt16(out ushort wWindowsVersion))
                 return false;
 
             LoadModuleTable(this.lfaNew + offModuleReferenceTable, cModules);
-            LoadSegments(this.lfaNew + offSegTable);
+            this.segments = ReadSegmentTable(this.lfaNew + offSegTable, cSeg);
+            LoadSegments(segments);
             this.addrEntry = segments[cs - 1].Address + ip;
             return true;
         }
@@ -407,6 +403,9 @@ namespace Reko.ImageLoaders.MzExe
             var cfgSvc = Services.RequireService<IConfigurationService>();
             this.arch = cfgSvc.GetArchitecture("x86-protected-16");
             this.platform = cfgSvc.GetEnvironment("win16").Load(Services, arch);
+            var rdr = new LeImageReader(RawImage, this.lfaNew);
+            if (!LoadNeHeader(rdr))
+                throw new BadImageFormatException("Unable to read NE header.");
 
             var program = new Program(
                 this.segmentMap,
@@ -423,18 +422,35 @@ namespace Reko.ImageLoaders.MzExe
 
         public override RelocationResults Relocate(Program program, Address addrLoad)
         {
-            var entryNames = LoadEntryNames();
-            var entryPoints = LoadEntryPoints(entryNames);
-            entryPoints.Add(new ImageSymbol(addrEntry));
+            var names = new Dictionary<int, string>();
+            LoadEntryNames(this.lfaNew + this.offResidentNameTable, names);
+            LoadNonresidentNames(this.offNonResidentNameTable, names);
+            var entryPoints = LoadEntryPoints(this.lfaNew + this.offEntryTable, names);
+            entryPoints.Add(ImageSymbol.Procedure(program.Architecture, addrEntry));
             return new RelocationResults(
                 entryPoints,
                 imageSymbols);
         }
 
-        public Dictionary<int, string> LoadEntryNames()
+        private Dictionary<int,string> LoadNonresidentNames(uint offNonResidentNameTable, Dictionary<int,string> dict)
         {
-            var rdr = new LeImageReader(RawImage, this.lfaNew + this.offResidentNameTable);
-            var dict = new Dictionary<int, string>();
+            var rdr = new LeImageReader(RawImage, offNonResidentNameTable);
+            while (rdr.TryReadByte(out byte nameLen))
+            {
+                if (nameLen == 0)
+                    break;
+                var abName = rdr.ReadBytes(nameLen);
+                var name = Encoding.ASCII.GetString(abName);
+                if (!rdr.TryReadLeInt16(out short ordinal))
+                    break;
+                dict[ordinal] = name;
+            }
+            return dict;
+        }
+
+        public Dictionary<int, string> LoadEntryNames(uint offset, Dictionary<int, string> dict)
+        {
+            var rdr = new LeImageReader(RawImage, offset);
             for (;;)
             {
                 var cChar = rdr.ReadByte();
@@ -448,38 +464,83 @@ namespace Reko.ImageLoaders.MzExe
             return dict;
         }
 
-        public List<ImageSymbol> LoadEntryPoints(Dictionary<int, string> names)
+        public List<ImageSymbol> LoadEntryPoints(uint offEntryTable, Dictionary<int, string> names)
         {
-            var rdr = new LeImageReader(RawImage, this.lfaNew + this.offEntryTable);
+            return LoadEntryPoints(offEntryTable, this.segments, names, this.arch);
+        }
+
+        public List<ImageSymbol> LoadEntryPoints(
+            uint offEntryTable, 
+            NeSegment [] segments, 
+            Dictionary<int, string> names,
+            IProcessorArchitecture arch)
+        {
+            DebugEx.Inform(trace, "== Loading entry points from offset {0:X}", offEntryTable);
+            var rdr = new LeImageReader(RawImage, offEntryTable);
+
             var entries = new List<ImageSymbol>();
-            for (;;)
+            int bundleOrdinal = 1;
+            int nextbundleOrdinal = 1;
+            for (; ; )
             {
                 var cBundleEntries = rdr.ReadByte();
                 if (cBundleEntries == 0)
                     break;
+                nextbundleOrdinal = bundleOrdinal + cBundleEntries;
                 var segNum = rdr.ReadByte();
-                var seg = this.segments[segNum - 1];
-                for (int i = 0; i < cBundleEntries; ++i)
+                if (segNum != 0)
                 {
-                    var flags = rdr.ReadByte();
-                    var offset = rdr.ReadUInt16();
-                    string name;
-                    var addr = seg.Address + offset;
-                    var state = arch.CreateProcessorState();
-
-                    ImageSymbol ep = new ImageSymbol(addr);
-                    if (names.TryGetValue(entries.Count + 1, out name))
+                    // If segNum had been 0, it would have 
+                    // meant that all we want to do is allocate 
+                    // (skip) some ordinal numbers. Since it wasn't 0,
+                    // we proceed to generate entry points.
+                    for (int i = 0; i < cBundleEntries; ++i)
                     {
-                        ep.Name = name;
+                        byte flags = rdr.ReadByte();
+                        if (flags == 0)
+                            break;
+                        (byte iSeg, ushort offset) entry;
+                        if (segNum == 0xFF)
+                        {
+                            entry = ReadMovableSegmentEntry(rdr);
+                        }
+                        else
+                        {
+                            entry = ReadFixedSegmentEntry(rdr, segNum);
+                        }
+                        var seg = segments[entry.iSeg - 1];
+                        var addr = seg.Address + entry.offset;
+                        var ep = ImageSymbol.Procedure(arch, addr);
+                        if (names.TryGetValue(bundleOrdinal + i, out string name))
+                        {
+                            ep.Name = name;
+                        }
+                        ep.Type = SymbolType.Procedure;
+                        ep.ProcessorState = arch.CreateProcessorState();
+                        imageSymbols[ep.Address] = ep;
+                        entries.Add(ep);
+                        DebugEx.Verbose(trace, "   {0:X2} {1} {2} - {3}", segNum, ep.Address, ep.Name, bundleOrdinal + i);
                     }
-                    ep.Type = SymbolType.Procedure;
-                    ep.ProcessorState = state;
-                    imageSymbols[ep.Address] = ep;
-                    entries.Add(ep);
                 }
+                bundleOrdinal = nextbundleOrdinal;
             }
             return entries; 
         }
+
+        private (byte, ushort) ReadFixedSegmentEntry(LeImageReader rdr, byte iSeg)
+        {
+            var offset = rdr.ReadUInt16();
+            return (iSeg, offset);
+        }
+
+        private (byte, ushort) ReadMovableSegmentEntry(LeImageReader rdr)
+        {
+            var int3f = rdr.ReadLeUInt16();
+            var iSeg = rdr.ReadByte();
+            var offset = rdr.ReadLeUInt16();
+            return (iSeg, offset);
+        }
+
 
         public class NeSegment
         {
@@ -510,9 +571,8 @@ namespace Reko.ImageLoaders.MzExe
             }
         }
 
-        void LoadSegments(uint offset)
+        void LoadSegments(NeSegment[] segments)
         {
-            this.segments = ReadSegmentTable(offset, cSeg);
             var segFirst = segments[0];
             var segLast = segments[segments.Length - 1];
             this.segmentMap = new SegmentMap(segFirst.Address);
@@ -566,31 +626,35 @@ namespace Reko.ImageLoaders.MzExe
             return segs.ToArray();
         }
 
-        bool LoadSegment(NeSegment seg, MemoryArea mem, SegmentMap imageMap)
+        bool LoadSegment(NeSegment neSeg, MemoryArea mem, SegmentMap imageMap)
         {
             Array.Copy(
                 RawImage,
-                (uint)seg.DataOffset << this.cbFileAlignmentShift,
+                (uint) neSeg.DataOffset << this.cbFileAlignmentShift,
                 mem.Bytes,
-                seg.LinearAddress - (int)mem.BaseAddress.ToLinear(),
-                seg.DataLength);
-            var x = seg.Address.ToLinear();
+                neSeg.LinearAddress - (int)mem.BaseAddress.ToLinear(),
+                neSeg.DataLength);
 
             AccessMode access =
-                (seg.Flags & 1) != 0
+                (neSeg.Flags & 1) != 0
                     ? AccessMode.ReadWrite
                     : AccessMode.ReadExecute;
-            this.segmentMap.AddSegment(
+            var seg = this.segmentMap.AddSegment(
                 mem,
-                seg.Address.Selector.Value.ToString("X4"),
+                neSeg.Address.Selector.Value.ToString("X4"),
                 access);
-            if ((seg.Flags & NE_STFLAGS_RELOCATIONS) == 0)
+            var stg = new TemporaryStorage(
+                string.Format("seg{0:X4}", seg.Address.Selector.Value),
+                0,
+                PrimitiveType.SegmentSelector);
+            seg.Identifier = new Identifier(seg.Name, stg.DataType, stg);
+            if ((neSeg.Flags & NE_STFLAGS_RELOCATIONS) == 0)
                 return true;
             var rdr = new LeImageReader(
                 RawImage,
-                seg.DataLength + ((uint)seg.DataOffset << this.cbFileAlignmentShift));
+                neSeg.DataLength + ((uint)neSeg.DataOffset << this.cbFileAlignmentShift));
             int count = rdr.ReadLeInt16();
-            return ApplyRelocations(rdr, count, seg);
+            return ApplyRelocations(rdr, count, neSeg);
         }
 
 #if NE_
@@ -675,12 +739,14 @@ namespace Reko.ImageLoaders.MzExe
             public ushort target2;              // Target specification
         }
 
-        // Apply relocations to a segment.
+        /// <summary>
+        /// Apply relocations to a segment.
+        /// </summary>
         bool ApplyRelocations(EndianImageReader rdr, int cRelocations, NeSegment seg)
         {
             Address address = null;
             NeRelocationEntry rep = null;
-            Debug.Print("Relocating segment {0}", seg.Address);
+            Debug.Print("== Relocating segment {0}", seg.Address);
             for (int i = 0; i < cRelocations; i++)
             {
                 rep = new NeRelocationEntry
@@ -716,7 +782,7 @@ namespace Reko.ImageLoaders.MzExe
                         address = addrImportStubs;
                         importStubs.Add(lp, new Tuple<Address, ImportReference>(
                             address,
-                            new OrdinalImportReference(address, module, rep.target2)));
+                            new OrdinalImportReference(address, module, rep.target2, SymbolType.ExternalProcedure)));
                         addrImportStubs += 8;
                     }
                     break;
@@ -739,7 +805,7 @@ namespace Reko.ImageLoaders.MzExe
                         string fnName = Encoding.ASCII.GetString(abFnName);
                         importStubs.Add(lp, new Tuple<Address, ImportReference>(
                             address,
-                            new NamedImportReference(address, module, fnName)));
+                            new NamedImportReference(address, module, fnName, SymbolType.ExternalProcedure)));
                     }
                     break;
                 case NE_RELTYPE.INTERNAL:
@@ -883,9 +949,7 @@ namespace Reko.ImageLoaders.MzExe
                     re.offset,
                     re.target1,
                     re.target2);
-
             }
-
         }
     }
 }

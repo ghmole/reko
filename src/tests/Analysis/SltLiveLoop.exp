@@ -1,5 +1,5 @@
 // LiveLoopMock
-void LiveLoopMock()
+define LiveLoopMock
 	// liveIn: 
 LiveLoopMock_entry:
 	def i
@@ -12,7 +12,7 @@ l1:
 	// liveOut: 
 	// liveIn: Mem0
 loop:
-	i_1 = PHI(i, i_3)
+	i_1 = PHI((i, LiveLoopMock_entry), (i_3, loop))
 	i_3 = i_1 + 1
 	branch Mem0[i_3:byte] != 0 loop
 	goto l1

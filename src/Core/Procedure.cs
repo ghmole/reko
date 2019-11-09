@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,19 +40,31 @@ namespace Reko.Core
 	{
         private List<Block> blocks;
 
-		public Procedure(IProcessorArchitecture arch, string name, Frame frame) : base(name)
+		public Procedure(IProcessorArchitecture arch, string name, Address addrEntry, Frame frame) : base(name)
 		{
+            this.EntryAddress = addrEntry;
+            this.Architecture = arch ?? throw new ArgumentNullException(nameof(arch));
             //$REVIEW consider removing Body completely and use
             // AbsynProcedure instead.
-            this.Architecture = arch;
             this.Body = null;
             this.blocks = new List<Block>();
             this.ControlGraph = new BlockGraph(blocks);
 			this.Frame = frame;
 			this.Signature = new FunctionType();
-            this.EntryBlock = AddBlock(Name + "_entry");
-			this.ExitBlock = AddBlock(Name + "_exit");
-		}
+            this.EntryBlock = AddBlock(addrEntry, Name + "_entry");
+            this.ExitBlock = AddBlock(addrEntry, Name + "_exit");
+        }
+
+        /// <summary>
+        /// The effects of this procedure on registers, stack, and FPU stack.
+        /// </summary>
+        public override FunctionType Signature { get; set; }
+
+        /// <summary>
+        /// True if the user specified this procedure by adding it to the project
+        /// file or by marking it in the user interface.
+        /// </summary>
+        public bool UserSpecified { get; set; }
 
         public IProcessorArchitecture Architecture { get; }
         public List<AbsynStatement> Body { get; set; }
@@ -60,9 +72,11 @@ namespace Reko.Core
         public Block EntryBlock { get; private set; }
         public Block ExitBlock { get; private set; }
         public Frame Frame { get; private set; }
+        public Address EntryAddress { get; }
+
 
         /// <summary>
-        /// Returns the statements of the procedure, in no particular order.
+        /// Returns all the statements of the procedure, in no particular order.
         /// </summary>
         public IEnumerable<Statement> Statements
         {
@@ -81,14 +95,14 @@ namespace Reko.Core
 		{
 			if (name == null)
 			{
-				name = GenerateName(addr);     //$TODO: should be a user option, move out of here.
+				name = NamingPolicy.Instance.ProcedureName(addr);
 			}
-			return new Procedure(arch, name, f);
+			return new Procedure(arch, name, addr, f);
 		}
 
 		public static Procedure Create(IProcessorArchitecture arch, Address addr, Frame f)
 		{
-			return new Procedure(arch, GenerateName(addr), f);
+			return new Procedure(arch, NamingPolicy.Instance.ProcedureName(addr), addr, f);
 		}
 
         [Conditional("DEBUG")]
@@ -107,11 +121,6 @@ namespace Reko.Core
             return new BlockDominatorGraph(new BlockGraph(blocks), EntryBlock);
         }
 
-        public static string GenerateName(Address addr)
-        {
-            return addr.GenerateName("fn", "");
-        }
-
         /// <summary>
         /// Used to order blocks within a procedure for display.
         /// </summary>
@@ -121,12 +130,14 @@ namespace Reko.Core
             {
                 if (x == y) 
                     return 0;
+                // Entry block is always displayed first.
                 var eb = x.Procedure.EntryBlock;
                 if (x == eb)
                     return -1;
                 else if (y == eb) 
                     return 1;
 
+                // Exit block is always displayed last.
                 var ex = x.Procedure.ExitBlock;
                 if (x == ex)
                     return 1;
@@ -145,8 +156,7 @@ namespace Reko.Core
         {
             if (EnclosingType == null)
                 return Name;
-            var str = EnclosingType as StructType_v1;
-            if (str != null)
+            if (EnclosingType is StructType_v1 str)
                 return string.Format("{0}::{1}", str.Name, Name);
             return Name;
         }
@@ -211,21 +221,17 @@ namespace Reko.Core
             return blocks.OrderBy((x => x), new BlockComparer());
         }
 
-		/// <summary>
-		/// The effects of this procedure on registers, stack, and FPU stack.
-		/// </summary>
-		public override FunctionType Signature { get; set; }
-
-        /// <summary>
-        /// True if the user specified this procedure by adding it to the project
-        /// file or by marking it in the user interface.
-        /// </summary>
-        public bool UserSpecified { get; set; }
-
         public Block AddBlock(Address addr, string name)
         {
             Block block = new Block(this, name) { Address = addr };
             blocks.Add(block);
+            return block;
+        }
+
+        public Block AddSyntheticBlock(Address addr, string name)
+        {
+            var block = AddBlock(addr, name);
+            block.IsSynthesized = true;
             return block;
         }
 
@@ -235,7 +241,6 @@ namespace Reko.Core
             blocks.Add(block);
             return block;
         }
-
 
         public void AddBlock(Block block)
         {

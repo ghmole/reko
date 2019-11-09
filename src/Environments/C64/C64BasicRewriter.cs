@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Arch.Mos6502;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Operators;
@@ -38,13 +39,13 @@ namespace Reko.Environments.C64
     /// </summary>
     public class C64BasicRewriter : IEnumerable<RtlInstructionCluster> 
     {
-        private C64Basic arch;
-        private Address address;
-        private SortedList<ushort, C64BasicInstruction> program;
-        private IRewriterHost host;
+        private readonly C64Basic arch;
+        private readonly Address address;
+        private readonly SortedList<ushort, C64BasicInstruction> program;
+        private readonly IRewriterHost host;
+        private readonly StringType strType;
         private RtlEmitter m;
-        private StringType strType;
-        private RtlClass rtlc;
+        private InstrClass rtlc;
         private List<RtlInstruction> rtlInstructions;
         private byte[] line;
         private int i;
@@ -78,7 +79,7 @@ namespace Reko.Environments.C64
         private RtlInstructionCluster GetRtl(C64BasicInstruction line)
         {
             this.rtlInstructions = new List<RtlInstruction>();
-            this.rtlc = RtlClass.Linear;
+            this.rtlc = InstrClass.Linear;
             this.m = new RtlEmitter(rtlInstructions);
             Debug.Print("{0}", line);
             this.line = line.Line;
@@ -193,8 +194,7 @@ namespace Reko.Environments.C64
 
         private Expression ExpectLValue()
         {
-            Identifier id;
-            if (!GetIdentifier(out id))
+            if (!GetIdentifier(out Identifier id))
                 SyntaxError();
             Expression e = id;
             if (PeekAndDiscard((byte)'('))
@@ -352,14 +352,12 @@ namespace Reko.Environments.C64
                 --i;
                 if (IsDigit(line[i]))
                 {
-                    int n;
-                    if (GetInteger(out n))
+                    if (GetInteger(out int n))
                         return Constant.Int16((short)n);
                 } 
                 else if (IsLetter(line[i]))
                 {
-                    Identifier id;
-                    if (GetIdentifier(out id))
+                    if (GetIdentifier(out Identifier id))
                     {
                         if (PeekAndDiscard((byte)'('))
                         {
@@ -426,7 +424,7 @@ namespace Reko.Environments.C64
                     ExpectExpr(); //$TODO == what is this for?
                 }
             }
-            rtlc = RtlClass.Linear;
+            rtlc = InstrClass.Linear;
             m.SideEffect(
                 host.PseudoProcedure("__Close", VoidType.Instance,
                 handle));
@@ -440,8 +438,7 @@ namespace Reko.Environments.C64
 
         private void RewriteFor()
         {
-            Identifier id;
-            if (!GetIdentifier(out id))
+            if (!GetIdentifier(out Identifier id))
                 SyntaxError();
             Expect((byte)Token.eq);
             var start = ExpectExpr();
@@ -456,7 +453,7 @@ namespace Reko.Environments.C64
             {
                 step = Constant.Int32(1);
             }
-            rtlc = RtlClass.Linear;
+            rtlc = InstrClass.Linear;
             m.SideEffect(host.PseudoProcedure("__For", VoidType.Instance,
                 m.Out(PrimitiveType.Ptr16, id),
                 start,
@@ -474,10 +471,9 @@ namespace Reko.Environments.C64
 
         private void RewriteGet()
         {
-            Identifier id;
-            if (!GetIdentifier(out id))
+            if (!GetIdentifier(out Identifier id))
                 SyntaxError();
-            rtlc = RtlClass.Linear;
+            rtlc = InstrClass.Linear;
             m.SideEffect(
                 host.PseudoProcedure("__Get",
                 VoidType.Instance,
@@ -490,7 +486,7 @@ namespace Reko.Environments.C64
             if (!EatSpaces() ||
                 !GetInteger(out lineNumber))
                 SyntaxError();
-            rtlc = RtlClass.Transfer | RtlClass.Call;
+            rtlc = InstrClass.Transfer | InstrClass.Call;
             m.Call(Address.Ptr16((ushort)lineNumber), 2);
         }
 
@@ -500,7 +496,7 @@ namespace Reko.Environments.C64
             if (!EatSpaces() ||
                 !GetInteger(out lineNumber))
                 SyntaxError();
-            rtlc = RtlClass.Transfer;
+            rtlc = InstrClass.Transfer;
             m.Goto(Address.Ptr16((ushort)lineNumber));
         }
 
@@ -514,13 +510,12 @@ namespace Reko.Environments.C64
                 if (!EatSpaces())
                     SyntaxError();
                 byte b = line[i];
-                int lineNumber;
                 if (IsDigit(b))
                 {
-                    if (!GetInteger(out lineNumber))
+                    if (!GetInteger(out int lineNumber))
                         SyntaxError();
-                    rtlc = RtlClass.ConditionalTransfer;
-                    m.Branch(expr, Address.Ptr16((ushort)lineNumber), RtlClass.ConditionalTransfer);
+                    rtlc = InstrClass.ConditionalTransfer;
+                    m.Branch(expr, Address.Ptr16((ushort)lineNumber), InstrClass.ConditionalTransfer);
                     return;
                 }
                 var cl = rtlInstructions;
@@ -535,11 +530,10 @@ namespace Reko.Environments.C64
             }
             else if (PeekAndDiscard((byte)Token.GOTO))
             {
-                int lineNumber;
-                if (!GetInteger(out lineNumber))
+                if (!GetInteger(out int lineNumber))
                     SyntaxError();
-                rtlc = RtlClass.ConditionalTransfer;
-                m.Branch(expr, Address.Ptr16((ushort)lineNumber), RtlClass.ConditionalTransfer);
+                rtlc = InstrClass.ConditionalTransfer;
+                m.Branch(expr, Address.Ptr16((ushort)lineNumber), InstrClass.ConditionalTransfer);
                 return;
             }
             throw new NotImplementedException();
@@ -565,7 +559,7 @@ namespace Reko.Environments.C64
                 m.SideEffect(host.PseudoProcedure(fnName, VoidType.Instance, str));
             }
             Expression lValue = ExpectLValue();
-            rtlc = RtlClass.Linear;
+            rtlc = InstrClass.Linear;
             m.SideEffect(host.PseudoProcedure("__Input", VoidType.Instance,
                 m.Out(PrimitiveType.Ptr16, lValue)));
         }
@@ -576,7 +570,7 @@ namespace Reko.Environments.C64
             EatSpaces();
             Expect((byte)',');
             Expression lValue = ExpectLValue();
-            rtlc = RtlClass.Linear;
+            rtlc = InstrClass.Linear;
             m.SideEffect(host.PseudoProcedure("__InputStm", VoidType.Instance,
                 logFileNo,
                 m.Out(PrimitiveType.Ptr16, lValue)));
@@ -591,8 +585,7 @@ namespace Reko.Environments.C64
 
         private void RewriteNext()
         {
-            Identifier id;
-            GetIdentifier(out id); // The variable name is redundant.
+            GetIdentifier(out Identifier id); // The variable name is redundant.
             m.SideEffect(host.PseudoProcedure("__Next", VoidType.Instance));
         }
 
@@ -728,21 +721,19 @@ namespace Reko.Environments.C64
         
         private void RewriteReturn()
         {
-            rtlc = RtlClass.Transfer;
+            rtlc = InstrClass.Transfer;
             m.Return(2, 0);
         }
 
         private void RewriteSys()
         {
-            int addr;
             if (!EatSpaces() ||
-                !GetInteger(out addr))
+                !GetInteger(out int addr))
                 throw new InvalidOperationException("Expected address after SYS.");
-            m.SideEffect(
-                host.PseudoProcedure("__Sys", VoidType.Instance,
-                    new ProcedureConstant(arch.PointerType, new ExternalProcedure(
-                        string.Format("fn{0:X4}", addr),
-                        new FunctionType()))));
+            var addrMachineCode = Address.Ptr16((ushort) addr);
+            IProcessorArchitecture arch6502 = host.GetArchitecture("m6502");
+            rtlc = InstrClass.Transfer | InstrClass.Call;
+            m.CallX(addrMachineCode, 2, arch6502);
         }
 
         private bool GetInteger(out int number)

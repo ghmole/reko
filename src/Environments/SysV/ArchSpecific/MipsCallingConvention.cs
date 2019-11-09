@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ namespace Reko.Environments.SysV.ArchSpecific
             this.fregs = new[] { "f12", "f13", "f14", "f15" }
                 .Select(r => arch.GetRegister(r))
                 .ToArray();
-            this.iret = arch.GetRegister("r3");
+            this.iret = arch.GetRegister("r2");
             this.fret = arch.GetRegister("f1");
         }
 
@@ -99,7 +99,7 @@ namespace Reko.Environments.SysV.ArchSpecific
                 {
                     if (ir == 0)
                         firstArgIntegral = true;
-                    if (dtParam.Size <= 4)
+                    if (dtParam.Size <= arch.WordWidth.Size)
                     {
                         if (ir >= 4)
                         {
@@ -111,7 +111,7 @@ namespace Reko.Environments.SysV.ArchSpecific
                             ++ir;
                         }
                     }
-                    else if (dtParam.Size <= 8)
+                    else if (dtParam.Size <= arch.WordWidth.Size * 2)
                     {
                         if ((ir & 1) != 0)
                             ++ir;
@@ -143,6 +143,21 @@ namespace Reko.Environments.SysV.ArchSpecific
             {
                 ccr.RegReturn(iret);
             }
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return iregs.Contains(reg);
+            }
+            //$TODO: handle stack args.
+            return false;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            return iret == stg && fret == stg;
         }
     }
 }

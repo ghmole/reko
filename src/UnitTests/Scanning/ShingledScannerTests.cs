@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,19 +18,18 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.Mips;
 using Reko.Arch.X86;
 using Reko.Assemblers.x86;
 using Reko.Core;
+using Reko.Core.Expressions;
 using Reko.Core.Lib;
-using Reko.Core.Machine;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using Reko.Scanning;
-using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -43,19 +42,17 @@ namespace Reko.UnitTests.Scanning
     [TestFixture]
     public class ShingledScannerTests
     {
-        private MockRepository mr;
         private Program program;
         private ShingledScanner sh;
         private RelocationDictionary rd;
         private DiGraph<Address> graph;
         private static readonly string nl = Environment.NewLine;
         private ScanResults sr;
-        private IRewriterHost host;
+        private Mock<IRewriterHost> host;
 
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
             rd = null;
             this.graph = new DiGraph<Address>();
         }
@@ -129,8 +126,8 @@ namespace Reko.UnitTests.Scanning
         private void Given_x86_Image(Action<X86Assembler> asm)
         {
             var addrBase = Address.Ptr32(0x100000);
-            var entry = new ImageSymbol(addrBase) { Type = SymbolType.Procedure };
             var arch = new X86ArchitectureFlat32("x86-protected-32");
+            var entry = ImageSymbol.Procedure(arch, addrBase);
             var m = new X86Assembler(null, new DefaultPlatform(null, arch), addrBase, new List<ImageSymbol> { entry });
             asm(m);
             this.program = m.GetImage();
@@ -173,23 +170,29 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_Scanner()
         {
-            this.host = mr.Stub<IRewriterHost>();
-            var dev = mr.Stub<DecompilerEventListener>();
-            //host.Stub(h => h.EnsurePseudoProcedure(null, null, 0))
+            this.host = new Mock<IRewriterHost>();
+            var dev = new Mock<DecompilerEventListener>();
+            //host.Setup(h => h.EnsurePseudoProcedure(null, null, 0))
             //    .IgnoreArguments()
             //    .Return(new PseudoProcedure("<>", PrimitiveType.Word32, 2));
-            host.Stub(h => h.PseudoProcedure("", VoidType.Instance, null)).IgnoreArguments().Return(null);
-            host.Stub(h => h.GetImport(null, null)).IgnoreArguments().Return(null);
-            host.Stub(h => h.GetImportedProcedure(null, null)).IgnoreArguments().Return(null);
-            host.Replay();
-            dev.Replay();
+            host.Setup(h => h.PseudoProcedure(
+                It.IsAny<string>(),
+                It.IsAny<DataType>(),
+                It.IsAny<Expression[]>())).Returns((Expression)null);
+            host.Setup(h => h.GetImport(
+                It.IsAny<Address>(),
+                It.IsAny<Address>())).Returns((Expression)null);
+            host.Setup(h => h.GetImportedProcedure(
+                It.IsAny<IProcessorArchitecture>(),
+                It.IsAny<Address>(),
+                It.IsAny<Address>())).Returns((ExternalProcedure)null);
             var frame = program.Architecture.CreateFrame();
             this.sr = new ScanResults
             {
-                Instructions = new SortedList<Address, RtlInstructionCluster>(),
+                Instructions = new Dictionary<Address, RtlInstructionCluster>(),
                 KnownProcedures = new HashSet<Address>(),
             };
-            this.sh = new ShingledScanner(program, host, frame, sr, dev);
+            this.sh = new ShingledScanner(program, host.Object, frame, sr, dev.Object);
         }
 
         [Test]
@@ -198,33 +201,35 @@ namespace Reko.UnitTests.Scanning
             Given_Mips_Image(0x00001403);
             Given_Scanner();
             var seg = program.SegmentMap.Segments.Values.First();
-            var scseg = sh.ScanRange(seg.MemoryArea, seg.Address, seg.EndAddress, 0);
+            var scseg = sh.ScanRange(program.Architecture, seg.MemoryArea, seg.Address, seg.Size, 0);
             Assert.AreEqual(new byte[] { 0 }, TakeEach(scseg, 4));
         }
 
         [Test]
         public void Shsc_Return_DelaySlot()
         {
-            Given_Mips_Image(0x03E00008, 0);
+            Given_Mips_Image(
+                0x03E00008,     // jr ra
+                0,              // nop is in the delay slot, so it's safe
+                0);             // this nop falls off the end of the segment, it's unsafe.
             Given_Scanner();
             var seg = program.SegmentMap.Segments.Values.First();
-            var scseg = sh.ScanRange(seg.MemoryArea, seg.Address, seg.EndAddress, 0);
-            Assert.AreEqual(new byte[] { 1, 0 }, TakeEach(scseg, 4));
+            var scseg = sh.ScanRange(program.Architecture, seg.MemoryArea, seg.Address, seg.Size, 0);
+            Assert.AreEqual(new byte[] { 1, 1, 0 }, TakeEach(scseg, 4));
         }
 
         [Test]
         public void Shsc_CondJump()
         {
             Given_Mips_Image(
-                0x1C60FFFF,     // 
-                0,
+                0x1C60FFFF,     // branch
+                0,              // nop
                 0x03e00008,     // jr ra
-                0);             // nop
+                0);             // nop is in delay slot, so it's safe.
             Given_Scanner();
             var seg = program.SegmentMap.Segments.Values.First();
-            var scseg = sh.ScanRange(seg.MemoryArea, seg.Address, seg.EndAddress, 0);
-            sh.RemoveBadInstructionsFromGraph();
-            Assert.AreEqual(new byte[] { 1, 1, 1, 0, }, TakeEach(scseg, 4));
+            var scseg = sh.ScanRange(program.Architecture, seg.MemoryArea, seg.Address, seg.Size, 0);
+            Assert.AreEqual(new byte[] { 1, 1, 1, 1, }, TakeEach(scseg, 4));
         }
 
         [Test]
@@ -313,7 +318,7 @@ namespace Reko.UnitTests.Scanning
             Given_Scanner();
 
             var seg = program.SegmentMap.Segments.Values.First();
-            var scseg = this.sh.ScanRange(seg.MemoryArea, seg.Address, seg.EndAddress, 0);
+            var scseg = this.sh.ScanRange(program.Architecture, seg.MemoryArea, seg.Address, seg.Size, 0);
             Assert.AreEqual(new byte[]
                 {
                     0, 0, 0, 0, 0
@@ -335,7 +340,7 @@ namespace Reko.UnitTests.Scanning
             var instr = new RtlInstructionCluster(
                 Address.Ptr32(addr), length, new RtlInstruction[1])
             {
-                Class = RtlClass.Linear
+                Class = InstrClass.Linear
             };
             return instr;
         }

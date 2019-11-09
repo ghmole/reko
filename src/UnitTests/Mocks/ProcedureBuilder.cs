@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,36 +43,41 @@ namespace Reko.UnitTests.Mocks
 
         public ProcedureBuilder()
         {
-            Init(new FakeArchitecture(), this.GetType().Name, null);
+            Init(new FakeArchitecture(), this.GetType().Name, Address.Ptr32(0x00123400), null);
         }
 
         public ProcedureBuilder(string name)
         {
-            Init(new FakeArchitecture(), name, null);
+            Init(new FakeArchitecture(), name, Address.Ptr32(0x00123400), null);
         }
 
         public ProcedureBuilder(IProcessorArchitecture arch)
         {
-            Init(arch, this.GetType().Name, null);
+            Init(arch, this.GetType().Name, Address.Ptr32(0x00123400), null);
         }
 
         public ProcedureBuilder(IProcessorArchitecture arch, string name)
         {
-            Init(arch,name,null);
+            Init(arch,name, Address.Ptr32(0x00123400), null);
+        }
+
+        public ProcedureBuilder(IProcessorArchitecture arch, string name, Address addr)
+        {
+            Init(arch, name, addr, null);
         }
 
         public ProcedureBuilder(IProcessorArchitecture arch, string name, Dictionary<string, Block> blocks)
         {
-            Init(arch, name, blocks);
+            Init(arch, name, Address.Ptr32(0x00123400), blocks);
         }
 
-        private void Init(IProcessorArchitecture arch, string name, Dictionary<string, Block> blocks)
+        private void Init(IProcessorArchitecture arch, string name, Address addr, Dictionary<string, Block> blocks)
         {
             if (arch == null)
                 throw new ArgumentNullException("arch");
             this.InstructionSize = 1;
             this.Architecture = arch;
-            this.Procedure = new Procedure(arch, name, arch.CreateFrame());
+            this.Procedure = new Procedure(arch, name, addr, arch.CreateFrame());
             this.blocks = blocks ?? new Dictionary<string, Block>();
             this.unresolvedProcedures = new List<ProcUpdater>();
             BuildBody();
@@ -87,10 +92,9 @@ namespace Reko.UnitTests.Mocks
         public IProcessorArchitecture Architecture { get; private set; }
         public int InstructionSize { get; set; }
 
-        private Block BlockOf(string label)
+        protected Block BlockOf(string label)
         {
-            Block b;
-            if (!blocks.TryGetValue(label, out b))
+            if (!blocks.TryGetValue(label, out Block b))
             {
                 b = Procedure.AddBlock(label);
                 blocks.Add(label, b);
@@ -116,9 +120,9 @@ namespace Reko.UnitTests.Mocks
         {
             Block b = EnsureBlock(null);
             branchBlock = BlockOf(label);
-            TerminateBlock();
 
-            b.Statements.Add(LinearAddress++, new Branch(expr, branchBlock));
+            Emit(new Branch(expr, branchBlock));
+            TerminateBlock();
             return b.Statements.Last;
         }
 
@@ -126,24 +130,27 @@ namespace Reko.UnitTests.Mocks
         {
         }
 
-        public Statement Call(string procedureName, int retSizeOnStack)
+        public CallInstruction Call(string procedureName, int retSizeOnStack)
         {
             var ci = new CallInstruction(Constant.Invalid, new CallSite(retSizeOnStack, 0)); 
             unresolvedProcedures.Add(new ProcedureConstantUpdater(procedureName, ci));
-            return Emit(ci);
+            Emit(ci);
+            return ci;
         }
 
-        public Statement Call(ProcedureBase callee, int retSizeOnStack)
+        public CallInstruction Call(ProcedureBase callee, int retSizeOnStack)
         {
             var c = new ProcedureConstant(PrimitiveType.Ptr32, callee);
             var ci = new CallInstruction(c, new CallSite(retSizeOnStack, 0));  
-            return Emit(ci);
+            Emit(ci);
+            return ci;
         }
 
-        public Statement Call(Expression e, int retSizeOnstack)
+        public CallInstruction Call(Expression e, int retSizeOnstack)
         {
             var ci = new CallInstruction(e, new CallSite(retSizeOnstack, 0));
-            return Emit(ci);
+            Emit(ci);
+            return ci;
         }
 
         public Statement Call(
@@ -153,8 +160,8 @@ namespace Reko.UnitTests.Mocks
             IEnumerable<Identifier> definitions)
         {
             var ci = new CallInstruction(e, new CallSite(retSizeOnstack, 0));
-            ci.Uses.UnionWith(uses.Select(u => new UseInstruction(u)));
-            ci.Definitions.UnionWith(definitions.Select(d => new DefInstruction(d)));
+            ci.Uses.UnionWith(uses.Select(u => new CallBinding(u.Storage, u)));
+            ci.Definitions.UnionWith(definitions.Select(d => new CallBinding(d.Storage, d)));
             return Emit(ci);
         }
 
@@ -165,8 +172,21 @@ namespace Reko.UnitTests.Mocks
                IEnumerable<Identifier> definitions)
         {
             var ci = new CallInstruction(Constant.Invalid, new CallSite(retSizeOnStack, 0));
-            ci.Uses.UnionWith(uses.Select(u => new UseInstruction(u)));
-            ci.Definitions.UnionWith(definitions.Select(d => new DefInstruction(d)));
+            ci.Uses.UnionWith(uses.Select(u => new CallBinding(u.Storage, u)));
+            ci.Definitions.UnionWith(definitions.Select(d => new CallBinding(d.Storage, d)));
+            unresolvedProcedures.Add(new ProcedureConstantUpdater(procedureName, ci));
+            return Emit(ci);
+        }
+
+        public Statement Call(
+            string procedureName,
+            int retSizeOnStack,
+            IEnumerable<(Storage stg, Expression e)> uses,
+            IEnumerable<(Storage stg, Identifier e)> definitions)
+        {
+            var ci = new CallInstruction(Constant.Invalid, new CallSite(retSizeOnStack, 0));
+            ci.Uses.UnionWith(uses.Select(u => new CallBinding(u.stg, u.e)));
+            ci.Definitions.UnionWith(definitions.Select(d => new CallBinding(d.stg, d.e)));
             unresolvedProcedures.Add(new ProcedureConstantUpdater(procedureName, ci));
             return Emit(ci);
         }
@@ -207,16 +227,9 @@ namespace Reko.UnitTests.Mocks
             return Block.Statements.Last;
         }
 
-        public void AddUseToExitBlock(Identifier id)
-        {
-            Procedure.ExitBlock.Statements.Add(0, new UseInstruction(id));
-        }
-
         public Identifier Flags(string s)
         {
             return Frame.EnsureFlagGroup(Architecture.GetFlagGroup(s));
-        
-            //return base.Flags(Architecture.GetFlagGroup(s).FlagRegister, grf, s);
         }
 
         public Application Fn(string name, params Expression[] exps)
@@ -252,6 +265,7 @@ namespace Reko.UnitTests.Mocks
                 name = string.Format("l{0}", ++numBlock);
             }
             Block = BlockOf(name);
+            Block.Address = Address.Ptr32(LinearAddress);
             if (Procedure.EntryBlock.Succ.Count == 0)
             {
                 Procedure.ControlGraph.AddEdge(Procedure.EntryBlock, Block);
@@ -290,9 +304,15 @@ namespace Reko.UnitTests.Mocks
             get { return Procedure.Frame; }
         }
 
-        public override Identifier Register(int i)
+        public Statement Phi(Identifier idDst, params (Expression, string)[] exprs)
         {
-            return Frame.EnsureRegister(Architecture.GetRegister(i));
+            var phi = new PhiFunction(
+                idDst.DataType,
+                exprs.Select(de => new PhiArgument(
+                    BlockOf(de.Item2),
+                    de.Item1))
+                .ToArray());
+            return Emit(new PhiAssignment(idDst, phi));
         }
 
         public Identifier Register(string name)
@@ -338,7 +358,7 @@ namespace Reko.UnitTests.Mocks
             Block = null;
         }
 
-        private void TerminateBlock()
+        public void TerminateBlock()
         {
             if (Block != null)
             {
@@ -347,14 +367,28 @@ namespace Reko.UnitTests.Mocks
             }
         }
 
+        /// <summary>
+        /// Call this method right after a terminating function.
+        /// </summary>
+        public void ExitThread()
+        {
+            lastBlock = null;
+            Block = null;
+        }
+
         public Identifier Reg64(string name, int number)
         {
             return Frame.EnsureRegister(new RegisterStorage(name, number, 0, PrimitiveType.Word64));
         }
 
-        public Identifier Reg32(string name, int number)
+        public virtual Identifier Reg32(string name, int number)
         {
             return Frame.EnsureRegister(new RegisterStorage(name, number, 0, PrimitiveType.Word32));
+        }
+
+        public Identifier Reg32(string name)
+        {
+            return Frame.EnsureRegister(Architecture.GetRegister(name));
         }
 
         public Identifier Reg16(string name, int number)
@@ -365,6 +399,13 @@ namespace Reko.UnitTests.Mocks
         public Identifier Reg8(string name, int number)
         {
             return Frame.EnsureRegister(new RegisterStorage(name, number, 0, PrimitiveType.Byte));
+        }
+
+        // Use this method to model the x86 "ah" or the z80 "h" registers which are 
+        // offset from the start of their word registers.
+        public Identifier Reg8(string name, int number, uint bitOffset)
+        {
+            return Frame.EnsureRegister(new RegisterStorage(name, number, bitOffset, PrimitiveType.Byte));
         }
     }
 }

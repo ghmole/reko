@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,9 +55,9 @@ r31         zero        reads as zero       N/A         Writes are ignored.
                 .Select(r => arch.GetRegister(r))
                 .ToArray();
             this.iRet = arch.GetRegister("r0");
-            //this.fregs = new[] { "f12", "f13", "f14", "f15" }
-            //    .Select(r => arch.GetRegister(r))
-            //    .ToArray();
+            this.fRegs = new[] { "f12", "f13", "f14", "f15" }
+                .Select(r => arch.GetRegister(r))
+                .ToArray();
 
         }
 
@@ -81,6 +81,25 @@ r31         zero        reads as zero       N/A         Writes are ignored.
                     ccr.StackParam(PrimitiveType.Word64);
                 }
             }
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return iRegs.Contains(reg) || fRegs.Contains(reg);
+            }
+            //$TODO: handle stack args.
+            return false;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return iRet.Equals(reg);
+            }
+            return false;
         }
     }
 }

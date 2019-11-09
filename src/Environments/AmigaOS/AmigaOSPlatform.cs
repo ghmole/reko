@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,7 +59,7 @@ namespace Reko.Environments.AmigaOS
                         ExpressionMatcher.AnyId("addrReg"),
                         ExpressionMatcher.AnyConstant("offset")),
                     4,
-                    RtlClass.Transfer));
+                    InstrClass.Transfer));
         }
 
         public Dictionary<string, object> MapKickstartToListOfLibraries
@@ -77,7 +77,11 @@ namespace Reko.Environments.AmigaOS
 
             var cfgSvc = Services.RequireService<IConfigurationService>();
             var env = cfgSvc.GetEnvironment(this.PlatformIdentifier);
-            mapKickstartToListOfLibraries = (Dictionary<string,object>)env.Options["versionDependentLibraries"];
+            object option;
+            if (env.Options.TryGetValue("versionDependentLibraries", out option))
+            {
+                mapKickstartToListOfLibraries = (Dictionary<string, object>)option;
+            }
             return mapKickstartToListOfLibraries;
         }
 
@@ -233,9 +237,12 @@ namespace Reko.Environments.AmigaOS
             throw new NotImplementedException();
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr32(c.ToUInt32());
+            var uAddr = c.ToUInt32();
+            if (codeAlign)
+                uAddr &= ~1u;
+            return Address.Ptr32(uAddr);
         }
 
         private Dictionary<int, SystemService> LoadLibraryDef(string lib_name, int version, TypeLibrary libDst)

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,10 +33,12 @@ using BindingFlags = System.Reflection.BindingFlags;
 namespace Reko.Arch.SuperH
 {
     // NetBSD for dreamcast? http://ftp.netbsd.org/pub/pkgsrc/packages/NetBSD/dreamcast/7.0/All/
+    // RaymondC says: https://devblogs.microsoft.com/oldnewthing/20190820-00/?p=102792
     public abstract class SuperHArchitecture : ProcessorArchitecture
     {
-        public SuperHArchitecture(string archId) : base(archId)
+        public SuperHArchitecture(string archId, EndianServices endianness) : base(archId)
         {
+            this.Endianness = endianness;
             this.FramePointerType = PrimitiveType.Ptr32;
             this.InstructionBitSize = 16;
             this.PointerType = PrimitiveType.Ptr32;
@@ -69,12 +71,16 @@ namespace Reko.Arch.SuperH
             return new SuperHRewriter(this, rdr, (SuperHState)state, binder, host);
         }
 
+        // SuperH uses a link register
+        public override int ReturnAddressOnStack => 0;
+
+
         public override FlagGroupStorage GetFlagGroup(string name)
         {
             throw new NotImplementedException();
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
             throw new NotImplementedException();
         }
@@ -95,7 +101,7 @@ namespace Reko.Arch.SuperH
             return (RegisterStorage)regField.GetValue(null);
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
             throw new NotImplementedException();
         }
@@ -105,14 +111,17 @@ namespace Reko.Arch.SuperH
             return Registers.gpregs;
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagRegister, string prefix, uint grf)
         {
             return "T";
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr32(c.ToUInt32());
+            var uAddr = c.ToUInt32();
+            if (codeAlign)
+                uAddr &= ~1u;
+            return Address.Ptr32(uAddr);
         }
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
@@ -133,75 +142,15 @@ namespace Reko.Arch.SuperH
 
     public class SuperHLeArchitecture : SuperHArchitecture
     {
-        public SuperHLeArchitecture(string archId) : base(archId)
+        public SuperHLeArchitecture(string archId) : base(archId, EndianServices.Little)
         {
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, ulong off)
-        {
-            return new LeImageReader(img, off);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            return new LeImageReader(img, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(img, addrBegin, addrEnd);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new LeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea img, Address addr)
-        {
-            return new LeImageWriter(img, addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
         }
     }
 
     public class SuperHBeArchitecture : SuperHArchitecture
     {
-        public SuperHBeArchitecture(string arch) : base(arch)
+        public SuperHBeArchitecture(string arch) : base(arch, EndianServices.Big)
         {
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, ulong off)
-        {
-            return new BeImageReader(img, off);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            return new BeImageReader(img, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addrBegin, Address addrEnd)
-        {
-            return new BeImageReader(img, addrBegin, addrEnd);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new BeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea img, Address addr)
-        {
-            return new BeImageWriter(img, addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadBe(addr, dt, out value);
         }
     }
 }

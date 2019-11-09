@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,6 +78,7 @@ namespace Reko.Environments.Windows
             return new HashSet<RegisterStorage>
             {
                 Registers.rsp,
+                Registers.Top,
             };
         }
 
@@ -103,6 +104,8 @@ namespace Reko.Environments.Windows
 
         public override ImageSymbol FindMainProcedure(Program program, Address addrStart)
         {
+            Services.RequireService<DecompilerEventListener>().Warn(new NullCodeLocation(program.Name),
+                           "Win32 X86-64 main procedure finder not implemented yet.");
             return null;
         }
 
@@ -155,12 +158,12 @@ namespace Reko.Environments.Windows
                 {
                     return null;
                 }
-                addrTarget = MakeAddressFromConstant(wAddr);
+                addrTarget = MakeAddressFromConstant(wAddr, false);
             }
-            ProcedureBase proc = host.GetImportedProcedure(addrTarget, rtlc.Address);
+            ProcedureBase proc = host.GetImportedProcedure(this.Architecture, addrTarget, rtlc.Address);
             if (proc != null)
                 return proc;
-            return host.GetInterceptedCall(addrTarget);
+            return host.GetInterceptedCall(this.Architecture, addrTarget);
         }
 
         public override ExternalProcedure LookupProcedureByName(string moduleName, string procName)

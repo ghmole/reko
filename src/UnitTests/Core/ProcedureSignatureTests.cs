@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@ using System;
 
 namespace Reko.UnitTests.Core
 {
-	[TestFixture]
+	[TestFixture] //$TODO: rename to FunctionTypeTests
 	public class ProcedureSignatureTests
 	{
 		[Test]
@@ -37,7 +37,7 @@ namespace Reko.UnitTests.Core
 			{
 				IntelArchitecture arch = new X86ArchitectureReal("x86-real-16");
 				uint f = (uint)(FlagM.CF|FlagM.ZF);
-				Identifier argF = new Identifier(arch.GrfToString(f), PrimitiveType.Bool, new FlagGroupStorage(Registers.eflags, f, "CZ", PrimitiveType.Byte));
+				Identifier argF = new Identifier(arch.GetFlagGroup("CZ").ToString(), PrimitiveType.Bool, new FlagGroupStorage(Registers.eflags, f, "CZ", PrimitiveType.Byte));
 				Identifier argR = new Identifier(Registers.ax.Name, Registers.ax.DataType, Registers.ax);
 				
 				argF.Write(true, fut.TextWriter);
@@ -63,7 +63,7 @@ namespace Reko.UnitTests.Core
 		public void PsigValidArguments()
 		{
 			Identifier arg = new Identifier(Registers.eax.Name, Registers.eax.DataType, Registers.eax);
-			FunctionType sig = FunctionType.Action(new Identifier[] { arg });
+			FunctionType sig = FunctionType.Action(arg);
 			Assert.IsTrue(sig.ParametersValid);
 
 			sig = new FunctionType(arg, new Identifier[0]);

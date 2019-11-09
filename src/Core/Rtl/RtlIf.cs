@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,20 +46,20 @@ namespace Reko.Core.Rtl
         {
             this.Condition = condition;
             this.Instruction = instr;
-            this.Class = instr.Class | RtlClass.Conditional;
+            this.Class = instr.Class | InstrClass.Conditional;
         }
+
+        public Expression Condition { get; }
+
+        /// <summary>
+        /// The conditionally executed RTL instruction.
+        /// </summary>
+        public RtlInstruction Instruction { get; }
 
         public override T Accept<T>(RtlInstructionVisitor<T> visitor)
         {
             return visitor.VisitIf(this);
         }
-
-        public Expression Condition { get; private set; }
-
-        /// <summary>
-        /// The conditionally executed RTL instruction.
-        /// </summary>
-        public RtlInstruction Instruction { get; private set; }
 
         protected override void WriteInner(TextWriter writer)
         {

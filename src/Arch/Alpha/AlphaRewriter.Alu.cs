@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,15 +18,11 @@
  */
 #endregion
 
+using Reko.Core;
 using Reko.Core.Expressions;
-using Reko.Core.Rtl;
 using Reko.Core.Serialization;
 using Reko.Core.Types;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Reko.Arch.Alpha
 {
@@ -34,9 +30,9 @@ namespace Reko.Arch.Alpha
     {
         private void RewriteCmp(Func<Expression, Expression, Expression> cmp)
         {
-            var op1 = Rewrite(instr.op1);
-            var op2 = Rewrite(instr.op2);
-            var dst = Rewrite(instr.op3);
+            var op1 = Rewrite(instr.Operands[0]);
+            var op2 = Rewrite(instr.Operands[1]);
+            var dst = Rewrite(instr.Operands[2]);
             var e = cmp(op1, op2);
             if (e.DataType == PrimitiveType.Bool)
             {
@@ -47,9 +43,9 @@ namespace Reko.Arch.Alpha
 
         private void RewriteBin(Func<Expression,Expression,Expression> fn)
         {
-            var op1 = Rewrite(instr.op1);
-            var op2 = Rewrite(instr.op2);
-            var dst = Rewrite(instr.op3);
+            var op1 = Rewrite(instr.Operands[0]);
+            var op2 = Rewrite(instr.Operands[1]);
+            var dst = Rewrite(instr.Operands[2]);
             var e = fn(op1, op2);
             m.Assign(dst, e);
         }
@@ -57,20 +53,22 @@ namespace Reko.Arch.Alpha
         private void RewriteBinOv(Func<Expression, Expression, Expression> fn)
         {
             RewriteBin(fn);
-            var dst = Rewrite(instr.op3);
+            var dst = Rewrite(instr.Operands[2]);
             m.BranchInMiddleOfInstruction(
                 m.Not(host.PseudoProcedure("OV", PrimitiveType.Bool, dst)),
                 instr.Address + instr.Length, 
-                RtlClass.ConditionalTransfer);
+                InstrClass.ConditionalTransfer);
             var ch = new ProcedureCharacteristics { Terminates = true };
-            m.SideEffect(host.PseudoProcedure("__trap_overflow", ch, VoidType.Instance));
+            m.SideEffect(
+                host.PseudoProcedure("__trap_overflow", ch, VoidType.Instance),
+                InstrClass.Transfer|InstrClass.Call);
         }
 
         private void RewriteInstrinsic(string instrinic)
         {
-            var op1 = Rewrite(instr.op1);
-            var op2 = Rewrite(instr.op2);
-            var dst = Rewrite(instr.op3);
+            var op1 = Rewrite(instr.Operands[0]);
+            var op2 = Rewrite(instr.Operands[1]);
+            var dst = Rewrite(instr.Operands[2]);
             if (dst.IsZero)
             {
                 m.SideEffect(host.PseudoProcedure(instrinic, dst.DataType, op1, op2));
@@ -83,8 +81,8 @@ namespace Reko.Arch.Alpha
 
         private void RewriteLoadInstrinsic(string intrinsic, DataType dt)
         {
-            var op1 = Rewrite(instr.op1);
-            var op2 = Rewrite(instr.op2);
+            var op1 = Rewrite(instr.Operands[0]);
+            var op2 = Rewrite(instr.Operands[1]);
             op2.DataType = dt;
             if (op1.IsZero)
             {
@@ -99,27 +97,27 @@ namespace Reko.Arch.Alpha
 
         private void RewriteStoreInstrinsic(string intrinsic, DataType dt)
         {
-            var op1 = Rewrite(instr.op1);
-            var op2 = Rewrite(instr.op2);
+            var op1 = Rewrite(instr.Operands[0]);
+            var op2 = Rewrite(instr.Operands[1]);
             op2.DataType = dt;
             m.SideEffect(host.PseudoProcedure(intrinsic, dt, op2, op1));
         }
 
         private void RewriteLd(PrimitiveType dtSrc, PrimitiveType dtDst)
         {
-            var src = Rewrite(instr.op2);
+            var src = Rewrite(instr.Operands[1]);
             src.DataType = dtSrc;
             if (dtSrc != dtDst)
             {
                 src = m.Cast(dtDst, src);
             }
-            var dst = Rewrite(instr.op1);
+            var dst = Rewrite(instr.Operands[0]);
             m.Assign(dst, src);
         }
 
 		private void RewriteLda(int shift)
         {
-            var mop = (MemoryOperand)instr.op2;
+            var mop = (MemoryOperand)instr.Operands[1];
             int offset = mop.Offset << shift;
             Expression src;
             if (mop.Base.Number == ZeroRegister)
@@ -138,25 +136,27 @@ namespace Reko.Arch.Alpha
                     src = m.IAdd(src, offset);
                 }
             }
-            var dst = Rewrite(instr.op1);
+            var dst = Rewrite(instr.Operands[0]);
             m.Assign(dst, src);
         }
 
         private void RewriteSt(PrimitiveType dtDst)
         {
-            var src = Rewrite(instr.op1);
+            var src = Rewrite(instr.Operands[0]);
             if (src.DataType != dtDst)
             {
                 src = m.Cast(dtDst, src);
             }
-            var dst = Rewrite(instr.op2);
+            var dst = Rewrite(instr.Operands[1]);
             dst.DataType = dtDst;
             m.Assign(dst, src);
         }
 
         private void RewriteTrapb()
         {
-            m.SideEffect(host.PseudoProcedure("__trap_barrier", VoidType.Instance));
+            m.SideEffect(
+                host.PseudoProcedure("__trap_barrier", VoidType.Instance),
+                InstrClass.Transfer|InstrClass.Call);
         }
 
         private Expression addl(Expression a, Expression b)

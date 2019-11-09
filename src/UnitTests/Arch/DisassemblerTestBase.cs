@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,7 +49,7 @@ namespace Reko.UnitTests.Arch
         protected TInstruction DisassembleBits(string bitPattern)
         {
             var img = new MemoryArea(LoadAddress, new byte[256]);
-            uint instr = ParseBitPattern(bitPattern);
+            uint instr = BitStringToUInt32(bitPattern);
             CreateImageWriter(img.Bytes).WriteUInt32(0, instr);
             return Disassemble(img);
         }
@@ -57,14 +57,19 @@ namespace Reko.UnitTests.Arch
         protected TInstruction DisassembleHexBytes(string hexBytes)
         {
             var img = new MemoryArea(LoadAddress, new byte[256]);
-            byte[] instr = ParseHexPattern(hexBytes);
+            byte[] instr = HexStringToBytes(hexBytes);
             return DisassembleBytes(instr);
         }
 
         public TInstruction Disassemble(MemoryArea img)
         {
-            var dasm = Architecture.CreateDisassembler(Architecture.CreateImageReader(img, 0U));
+            var dasm = this.CreateDisassembler(Architecture.CreateImageReader(img, 0U));
             return (TInstruction) dasm.First();
+        }
+
+        protected virtual IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
+        {
+            return Architecture.CreateDisassembler(rdr);
         }
     }
 }

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,47 +18,45 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Configuration;
 using Reko.Core.Expressions;
 using Reko.Core.Types;
 using Reko.ImageLoaders.LLVM;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Reko.UnitTests.ImageLoaders.Llvm
 {
     [TestFixture]
     public class ProgramBuilderTests
     {
-        private MockRepository mr;
         private Dictionary<string, Identifier> globals;
         private ServiceContainer sc;
-        private IProcessorArchitecture arch;
+        private Mock<IProcessorArchitecture> arch;
+        private Address addrFn;
 
         [SetUp]
         public void Setup()
         {
-            this.mr = new MockRepository();
             this.globals = new Dictionary<string, Identifier>();
             this.sc = new ServiceContainer();
-            this.arch = mr.Stub<IProcessorArchitecture>();
-            this.arch.Stub(a => a.PointerType).Return(PrimitiveType.Ptr32);
-            var cfgSvc = mr.Stub<IConfigurationService>();
-            var openv = mr.Stub<OperatingEnvironment>();
-            cfgSvc.Stub(c => c.GetArchitecture("x86-protected-64")).Return(arch);
-            cfgSvc.Stub(c => c.GetEnvironment("elf-neutral")).Return(openv);
-            openv.Stub(o => o.Load(sc, arch)).Return(new DefaultPlatform(sc, arch));
+            this.addrFn = Address.Ptr32(0x00100000);
+            this.arch = new Mock<IProcessorArchitecture>();
+            this.arch.Setup(a => a.Name).Returns("FakeArch");
+            this.arch.Setup(a => a.PointerType).Returns(PrimitiveType.Ptr32);
+            var cfgSvc = new Mock<IConfigurationService>();
+            var openv = new Mock<PlatformDefinition>();
+            cfgSvc.Setup(c => c.GetArchitecture("x86-protected-64")).Returns(arch.Object);
+            cfgSvc.Setup(c => c.GetEnvironment("elf-neutral")).Returns(openv.Object);
+            openv.Setup(o => o.Load(sc, arch.Object)).Returns(new DefaultPlatform(sc, arch.Object));
 
-            sc.AddService<IConfigurationService>(cfgSvc);
+            sc.AddService<IConfigurationService>(cfgSvc.Object);
         }
 
         public void Global(string name, DataType dt)
@@ -70,20 +68,20 @@ namespace Reko.UnitTests.ImageLoaders.Llvm
         {
             var program = new Program
             {
-                Platform = new DefaultPlatform(sc, arch),
+                Architecture = arch.Object,
+                Platform = new DefaultPlatform(sc, arch.Object),
             };
             
             var parser = new LLVMParser(new StringReader(
                 string.Join(Environment.NewLine, lines)));
             var fn = parser.ParseFunctionDefinition();
-            mr.ReplayAll();
 
             var pb = new ProgramBuilder(sc, program);
             foreach (var de in globals)
             {
                 pb.Globals.Add(de.Key, de.Value);
             }
-            var proc = pb.RegisterFunction(fn);
+            var proc = pb.RegisterFunction(fn, addrFn);
             pb.TranslateFunction(fn);
             return proc;
         }
@@ -288,29 +286,12 @@ l5:
 	loc6 = loc1 + 0xFFFFFFFF
 	// succ:  l7
 l7:
-	loc8 = PHI(loc4, loc6)
+	loc8 = PHI((loc4, l3), (loc6, l5))
 	return loc8
 	// succ:  foo_exit
 foo_exit:
 ";
             AssertProc(sExp, proc);
-        }
-
-        [Ignore("Only works on @uxmal's machine right now")]
-        [Test]
-        public void LLPB_File()
-        {
-            using (var rdr = File.OpenText(@"D:\dev\uxmal\reko\LLVM\more_llvm\more_llvm\c4\c4.ll"))
-            {
-
-                var parser = new LLVMParser(new LLVMLexer(rdr));
-                var module = parser.ParseModule();
-                var program = new Program();
-                mr.ReplayAll();
-
-                var pb = new ProgramBuilder(sc, program);
-                program = pb.BuildProgram(module);
-            }
         }
     }
 }

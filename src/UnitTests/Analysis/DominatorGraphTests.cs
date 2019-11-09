@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,12 +35,12 @@ namespace Reko.UnitTests.Analysis
         [Ignore("scanning-development")]
         public void DgWhileGoto()
         {
-			RunFileTest("Fragments/while_goto.asm", "Analysis/DgWhileGoto.txt");
+			RunFileTest_x86_real("Fragments/while_goto.asm", "Analysis/DgWhileGoto.txt");
         }
 
-        protected override void RunTest(Program prog, TextWriter writer)
+        protected override void RunTest(Program program, TextWriter writer)
         {
-            foreach (var proc in prog.Procedures.Values)
+            foreach (var proc in program.Procedures.Values)
             {
                 writer.WriteLine("===========");
                 proc.Write(false, writer);

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -39,8 +40,8 @@ namespace Reko.Loading
     /// </summary>
     public class Loader : ILoader
     {
-        private IConfigurationService cfgSvc;
-        private UnpackingService unpackerSvc;
+        private readonly IConfigurationService cfgSvc;
+        private readonly UnpackingService unpackerSvc;
 
         public Loader(IServiceProvider services)
         {
@@ -82,7 +83,7 @@ namespace Reko.Loading
                 program.EntryPoints[ep.Address] = ep;
             }
             program.EntryPoints[asm.StartAddress] =
-                new ImageSymbol(asm.StartAddress);
+                ImageSymbol.Procedure(program.Architecture, asm.StartAddress);
             CopyImportReferences(asm.ImportReferences, program);
             return program;
         }
@@ -94,6 +95,8 @@ namespace Reko.Loading
         /// <param name="rawBytes">Image of the executable file.</param>
         /// <param name="loader">.NET Class name of a custom loader (may be null)</param>
         /// <param name="addrLoad">Address into which to load the file.</param>
+        /// <returns>A <see cref="Program"/> if the file format is recognized, or null 
+        /// if the file cannot be recognized.</returns>
         public Program LoadExecutable(string filename, byte[] image, string loader, Address addrLoad)
         {
             ImageLoader imgLoader;
@@ -103,11 +106,15 @@ namespace Reko.Loading
             }
             else
             {
-                imgLoader = FindImageLoader(
-                    filename,
-                    image,
-                    () => CreateDefaultImageLoader(filename, image));
+                imgLoader = FindImageLoader<ImageLoader>(filename, image);
+                if (imgLoader == null)
+                {
+                    imgLoader = CreateDefaultImageLoader(filename, image);
+                }
             }
+            if (imgLoader == null)
+                return null;
+
             if (addrLoad == null)
             {
                 addrLoad = imgLoader.PreferredBaseAddress;     //$REVIEW: Should be a configuration property.
@@ -165,12 +172,21 @@ namespace Reko.Loading
                         "Unable to determine base address for executable. A default address should have been present in the reko.config file.");
                 }
             }
+            if (addrLoad.DataType.BitSize == 16 && image.Length > 65535)
+            {
+                //$HACK: this works around issues when a large ROM image is read
+                // for a 8- or 16-bit processor. Once we have a story for overlays
+                // this can go away.
+                var newImage = new byte[65535];
+                Array.Copy(image, newImage, newImage.Length);
+                image = newImage;
+            }
 
             var imgLoader = CreateCustomImageLoader(Services, details.LoaderName, filename, image);
             var program = imgLoader.Load(addrLoad, arch, platform);
             if (details.EntryPoint != null && arch.TryParseAddress(details.EntryPoint.Address, out Address addrEp))
             {
-                program.EntryPoints.Add(addrEp, new Core.ImageSymbol(addrEp) { Type = SymbolType.Procedure });
+                program.EntryPoints.Add(addrEp, ImageSymbol.Procedure(arch, addrEp));
             }
             program.Name = Path.GetFileName(filename);
             program.User.Processor = arch.Name;
@@ -190,14 +206,14 @@ namespace Reko.Loading
             if (rawFile == null)
             {
                 this.Services.RequireService<DecompilerEventListener>().Warn(
-                    new NullCodeLocation(""),
+                    new NullCodeLocation(filename),
                     "The format of the file is unknown.");
-                return new NullImageLoader(Services, filename, image);
+                return null;
             }
             return CreateRawImageLoader(filename, image, rawFile);
         }
 
-        private ImageLoader CreateRawImageLoader(string filename, byte[] image, RawFileElement rawFile)
+        private ImageLoader CreateRawImageLoader(string filename, byte[] image, RawFileDefinition rawFile)
         {
             var arch = cfgSvc.GetArchitecture(rawFile.Architecture);
             var env = cfgSvc.GetEnvironment(rawFile.Environment);
@@ -233,16 +249,13 @@ namespace Reko.Loading
                 {
                     addrEp = baseAddr;
                 }
-                imgLoader.EntryPoints.Add(new ImageSymbol(addrEp)
-                {
-                    Type = SymbolType.Procedure
-                });
+                imgLoader.EntryPoints.Add(ImageSymbol.Procedure(arch, addrEp));
             }
             return imgLoader;
         }
 
         public static Address GetRawBinaryEntryAddress(
-            RawFileElement rawFile,
+            RawFileDefinition rawFile,
             byte[] image, 
             IProcessorArchitecture arch, 
             Address baseAddr)
@@ -274,11 +287,11 @@ namespace Reko.Loading
         /// Loads a metadata file into a type library.
         /// </summary>
         /// <param name="fileName"></param>
-        /// <returns></returns>
+        /// <returns>a TypeLibrary instance, or null if the format of the file wasn't recognized.</returns>
         public TypeLibrary LoadMetadata(string fileName, IPlatform platform, TypeLibrary typeLib)
         {
             var rawBytes = LoadImageBytes(fileName, 0);
-            var mdLoader = FindImageLoader<MetadataLoader>(fileName, rawBytes, () => new NullMetadataLoader());
+            var mdLoader = FindImageLoader<MetadataLoader>(fileName, rawBytes);
             var result = mdLoader.Load(platform, typeLib);
             return result;
         }
@@ -307,10 +320,10 @@ namespace Reko.Loading
         /// begining of the program image.
         /// </summary>
         /// <param name="rawBytes"></param>
-        /// <returns>An appropriate image loader if known, a NullLoader if the image format is unknown.</returns>
-        public T FindImageLoader<T>(string filename, byte[] rawBytes, Func<T> defaultLoader)
+        /// <returns>An appropriate image loader if one can be found, otherwise null.
+        public T FindImageLoader<T>(string filename, byte[] rawBytes)
         {
-            foreach (LoaderConfiguration e in cfgSvc.GetImageLoaders())
+            foreach (LoaderDefinition  e in cfgSvc.GetImageLoaders())
             {
                 if (!string.IsNullOrEmpty(e.MagicNumber) &&
                     ImageHasMagicNumber(rawBytes, e.MagicNumber, e.Offset)
@@ -321,7 +334,7 @@ namespace Reko.Loading
                     return CreateImageLoader<T>(Services, e.TypeName, filename, rawBytes);
                 }
             }
-            return defaultLoader();
+            return default(T);
         }
 
         public bool ImageHasMagicNumber(byte[] image, string magicNumber, string sOffset)

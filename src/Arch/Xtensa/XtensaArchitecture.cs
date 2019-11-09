@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,10 @@ namespace Reko.Arch.Xtensa
     {
         public XtensaArchitecture(string archId)  : base(archId)
         {
+            //$TODO: Xtensa is bi-endian, but we're assuming little-endian here.
+            // Fix this if encountering a big-endian binary.
+            this.Endianness = EndianServices.Little;
+
             this.InstructionBitSize = 8;        // Instruction alignment, really.
             this.FramePointerType = PrimitiveType.Ptr32;
             this.PointerType = PrimitiveType.Ptr32;
@@ -101,6 +105,9 @@ namespace Reko.Arch.Xtensa
             Registers.f15,
         };
 
+        private static RegisterStorage[] allRegs =
+            aregs.Concat(bregs).Concat(fregs).ToArray();
+
         private static Dictionary<int, RegisterStorage> sregs = new Dictionary<int, RegisterStorage>
         {
             { 0x03, Registers.SAR },
@@ -131,35 +138,6 @@ namespace Reko.Arch.Xtensa
             return new XtensaDisassembler(this, rdr);
         }
 
-        public override EndianImageReader CreateImageReader(MemoryArea img, ulong off)
-        {
-            //$TODO: Xtensa is bi-endian, but we're assuming little-endian here.
-            // Fix this if encountering a big-endian binary.
-            return new LeImageReader(img, off);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            //$TODO: Xtensa is bi-endian, but we're assuming little-endian here.
-            // Fix this if encountering a big-endian binary.
-            return new LeImageReader(img, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addrBegin, Address addrEnd)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            throw new NotImplementedException();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea img, Address addr)
-        {
-            throw new NotImplementedException();
-        }
-
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
         {
             throw new NotImplementedException();
@@ -179,6 +157,9 @@ namespace Reko.Arch.Xtensa
         {
             return new XtensaRewriter(this, rdr, state, binder, host);
         }
+
+        // Xtensa uses a link register
+        public override int ReturnAddressOnStack => 0;
 
         public RegisterStorage GetAluRegister(int i)
         {
@@ -205,24 +186,23 @@ namespace Reko.Arch.Xtensa
             throw new NotImplementedException();
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
             throw new NotImplementedException();
         }
 
         public override SortedList<string, int> GetOpcodeNames()
         {
-            return Enum.GetValues(typeof(Opcodes))
-            .Cast<Opcodes>()
+            return Enum.GetValues(typeof(Mnemonic))
+            .Cast<Mnemonic>()
             .ToSortedList(
-                v => Enum.GetName(typeof(Opcodes), v).Replace('_','.'),
+                v => Enum.GetName(typeof(Mnemonic), v).Replace('_','.'),
                 v => (int)v);
         }
 
         public override int? GetOpcodeNumber(string name)
         {
-            Opcodes result;
-            if (!Enum.TryParse(name.Replace('.', '_'), true, out result))
+            if (!Enum.TryParse(name.Replace('.', '_'), true, out Mnemonic result))
                 return null;
             return (int)result;
         }
@@ -232,9 +212,9 @@ namespace Reko.Arch.Xtensa
             throw new NotImplementedException();
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
-            return aregs[i];
+            return allRegs[domain - StorageDomain.Register];
         }
 
         public override RegisterStorage[] GetRegisters()
@@ -242,14 +222,15 @@ namespace Reko.Arch.Xtensa
             throw new NotImplementedException();
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
             throw new NotImplementedException();
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            throw new NotImplementedException();
+            var uAddr = c.ToUInt32();
+            return Address.Ptr32(uAddr);
         }
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
@@ -265,11 +246,6 @@ namespace Reko.Arch.Xtensa
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse32(txtAddress, out addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
         }
     }
 }

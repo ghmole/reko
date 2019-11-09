@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,18 +18,16 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Types;
 using Reko.Gui;
 using Reko.UnitTests.Mocks;
-using NUnit.Framework;
-using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Text;
-using Rhino.Mocks;
 
 namespace Reko.UnitTests.Gui
 {
@@ -38,7 +36,7 @@ namespace Reko.UnitTests.Gui
     {
         private StringWriter sb;
         private HtmlCodeFormatter hcf;
-        private IProcessorArchitecture arch;
+        private Mock<IProcessorArchitecture> arch;
         private Dictionary<Address, Procedure> map;
 
         [SetUp]
@@ -47,16 +45,16 @@ namespace Reko.UnitTests.Gui
             sb = new StringWriter();
             map = new Dictionary<Address,Procedure>();
             hcf = new HtmlCodeFormatter(sb, map);
-            arch = MockRepository.GenerateStub<IProcessorArchitecture>();
-            arch.Replay();
+            arch = new Mock<IProcessorArchitecture>();
         }
 
         [Test]
         public void WriteProcedureConstant()
         {
-            var proc = new Procedure(arch, "proc", new Frame(PrimitiveType.Word32));
+            var addr = Address.Ptr32(0x42);
+            var proc = Procedure.Create(arch.Object, "proc", addr, new Frame(PrimitiveType.Word32));
             var pc = new ProcedureConstant(PrimitiveType.Word32, proc);
-            map.Add(Address.Ptr32(0x42), proc);
+            map.Add(addr, proc);
 
             pc.Accept(hcf);
 
@@ -79,7 +77,7 @@ namespace Reko.UnitTests.Gui
 
             hcf.Write(m.Procedure);
 
-            var sExp = @"void&nbsp;proc()<br />
+            var sExp = @"<span class=""kw"">define</span>&nbsp;proc<br />
 {<br />
 proc_entry:<br />
 &nbsp;&nbsp;&nbsp;&nbsp;<span class=""kw"">goto</span>&nbsp;l1<br />

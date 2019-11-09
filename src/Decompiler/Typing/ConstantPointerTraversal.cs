@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -164,11 +164,6 @@ namespace Reko.Typing
                 Discoveries.Add(new StructureField(offset, ptr.Pointee));
             }
             return Single(new WorkItem { DataType = ptr.Pointee, GlobalOffset = c.ToInt32() });
-        }
-
-        public IEnumerable<WorkItem> VisitQualifiedType(QualifiedType qt)
-        {
-            return qt.DataType.Accept(this);
         }
 
         public IEnumerable<WorkItem> VisitReference(ReferenceTo refTo)

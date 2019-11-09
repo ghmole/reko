@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,15 +42,16 @@ namespace Reko.Arch.M68k
         public M68kArchitecture(string archId) : base(archId)
         {
             InstructionBitSize = 16;
+            Endianness = EndianServices.Big;
             FramePointerType = PrimitiveType.Ptr32;
             PointerType = PrimitiveType.Ptr32;
             WordWidth = PrimitiveType.Word32;
             CarryFlagMask = (uint)FlagM.CF;
             StackRegister = Registers.a7;
             flagGroups = new Dictionary<uint, FlagGroupStorage>();
-    }
+        }
 
-    public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
+        public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
         {
             return M68kDisassembler.Create68020(rdr);
         }
@@ -76,35 +77,10 @@ namespace Reko.Arch.M68k
             return new M68kPointerScanner(rdr, knownLinAddresses, flags).Select(li => Address.Ptr32(li));
         }
 
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
-        {
-            return new BeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new BeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            return new BeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new BeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new BeImageWriter(mem, addr);
-        }
-
         public override SortedList<string, int> GetOpcodeNames()
         {
-            return Enum.GetValues(typeof(Opcode))
-                .Cast<Opcode>()
+            return Enum.GetValues(typeof(Mnemonic))
+                .Cast<Mnemonic>()
                 .ToSortedList(
                     v => v.ToString(),
                     v => (int)v);
@@ -112,15 +88,14 @@ namespace Reko.Arch.M68k
 
         public override int? GetOpcodeNumber(string name)
         {
-            Opcode result;
-            if (!Enum.TryParse(name, true, out result))
+            if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;
             return (int)result;
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
-            return Registers.GetRegister(i);
+            return Registers.GetRegister(domain - StorageDomain.Register);
         }
 
         public override RegisterStorage GetRegister(string name)
@@ -136,21 +111,30 @@ namespace Reko.Arch.M68k
             return Registers.regs;
         }
 
+        public override IEnumerable<FlagGroupStorage> GetSubFlags(FlagGroupStorage flags)
+        {
+            uint grf = flags.FlagGroupBits;
+            foreach (var cc in flagRegisters)
+            {
+                if ((grf & cc.FlagGroupBits) != 0)
+                    yield return cc;
+            }
+        }
+
         public override bool TryGetRegister(string name, out RegisterStorage reg)
         {
             return Registers.regsByName.TryGetValue(name, out reg);
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
-            FlagGroupStorage f;
-            if (flagGroups.TryGetValue(grf, out f))
+            if (flagGroups.TryGetValue(grf, out FlagGroupStorage f))
             {
                 return f;
             }
 
             var dt = Bits.IsSingleBitSet(grf) ? PrimitiveType.Bool : PrimitiveType.Byte;
-            var fl = new FlagGroupStorage(Registers.ccr, grf, GrfToString(grf), dt);
+            var fl = new FlagGroupStorage(Registers.ccr, grf, GrfToString(Registers.ccr, "", grf), dt);
             flagGroups.Add(grf, fl);
             return fl;
         }
@@ -170,7 +154,7 @@ namespace Reko.Arch.M68k
                 default: return null;
                 }
             }
-            return GetFlagGroup((uint)grf);
+            return GetFlagGroup(Registers.ccr, (uint)grf);
         }
 
         public override IEnumerable<RtlInstructionCluster> CreateRewriter(EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
@@ -178,9 +162,12 @@ namespace Reko.Arch.M68k
             return new Rewriter(this, rdr, (M68kState)state, binder, host);
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr32(c.ToUInt32());
+            var uAddr = c.ToUInt32();
+            if (codeAlign)
+                uAddr &= ~1u;
+            return Address.Ptr32(uAddr);
         }
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
@@ -195,36 +182,32 @@ namespace Reko.Arch.M68k
             }
         }
 
-        //$REVIEW: shouldn't this be flaggroup?
-        private static RegisterStorage[] flagRegisters = {
-            new RegisterStorage("C", 0, 0, PrimitiveType.Bool),
-            new RegisterStorage("V", 0, 0, PrimitiveType.Bool),
-            new RegisterStorage("Z", 0, 0, PrimitiveType.Bool),
-            new RegisterStorage("N", 0, 0, PrimitiveType.Bool),
-            new RegisterStorage("X", 0, 0, PrimitiveType.Bool),
+        private static FlagGroupStorage[] flagRegisters = {
+            Registers.C,
+            Registers.V,
+            Registers.Z,
+            Registers.N,
+            Registers.X,
         };
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
-            if ((grf & 0xF0000000u) == 0xF0000000u) //$HACK: grftostring needs a FlagRegister
-                return "FPUFLAGS";
-            StringBuilder s = new StringBuilder();
-            for (int r = 0; grf != 0; ++r, grf >>= 1)
+            if (flagregister == Registers.fpsr)
             {
-                if ((grf & 1) != 0)
-                    s.Append(flagRegisters[r].Name);
+                return "FPUFLAGS";
             }
-            return s.ToString();
+            StringBuilder sb = new StringBuilder();
+            if ((grf & Registers.C.FlagGroupBits) != 0) sb.Append(Registers.C.Name);
+            if ((grf & Registers.V.FlagGroupBits) != 0) sb.Append(Registers.V.Name);
+            if ((grf & Registers.Z.FlagGroupBits) != 0) sb.Append(Registers.Z.Name);
+            if ((grf & Registers.N.FlagGroupBits) != 0) sb.Append(Registers.N.Name);
+            if ((grf & Registers.X.FlagGroupBits) != 0) sb.Append(Registers.X.Name);
+            return sb.ToString();
         }
 
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse32(txtAddress, out addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadBe(addr, dt, out value);
         }
     }
 }

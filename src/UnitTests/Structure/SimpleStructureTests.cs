@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,97 +175,112 @@ namespace Reko.UnitTests.Structure
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrIf()
         {
             RunTest("Fragments/if.asm", "Structure/StrIf.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrFactorialReg()
         {
             RunTest("Fragments/factorial_reg.asm", "Structure/StrFactorialReg.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrFactorial()
         {
             RunTest("Fragments/factorial.asm", "Structure/StrFactorial.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrWhileBreak()
         {
             RunTest("Fragments/while_break.asm", "Structure/StrWhileBreak.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrWhileRepeat()
         {
             RunTest("Fragments/while_repeat.asm", "Structure/StrWhileRepeat.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrForkInLoop()
         {
             RunTest("Fragments/forkedloop.asm", "Structure/StrForkInLoop.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrNestedIf()
         {
             RunTest("Fragments/nested_ifs.asm", "Structure/StrNestedIf.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrNestedLoops()
         {
             RunTest("Fragments/matrix_addition.asm", "Structure/StrNestedLoop.txt");
         }
 
         [Test]
-        [Ignore("")]
+        [Ignore(Categories.IntegrationTests)]
         public void StrReg00006()
         {
             RunTest32("Fragments/regressions/r00006.asm", "Structure/StrReg00006.txt", Address.Ptr32(0x100048B0));
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrNonreducible()
         {
             RunTest("Fragments/nonreducible.asm", "Structure/StrNonreducible.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrWhileGoto()
         {
             RunTest("Fragments/while_goto.asm", "Structure/StrWhileGoto.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrIfElseIf()
         {
             RunTest(new MockIfElseIf(), "Structure/StrIfElseIf.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrReg00011()
         {
             RunTest(new Reg00011Mock(), "Structure/StrReg00011.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrReg00013()
         {
             RunTest("Fragments/regressions/r00013.asm", "Structure/StrReg00013.txt");
         }
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void StrManyIncrements()
         {
             RunTest(new ManyIncrements(), "Structure/StrManyIncrements.txt");
         }
 
         [Test]
+        [Category(Categories.UnitTests)]
         public void StrFragmentTest()
         {
             RewriteX86RealFragment(@"
@@ -284,7 +299,7 @@ ret
             RunTest(@"void fn00400000(word32 dwArg04)
 {
 	if (dwArg04 != 0x00000000)
-		Mem11[0x00123234:word32] = 0x00006423;
+		Mem9[0x00123234:word32] = 0x00006423;
 }
 ===
 ", program);
@@ -292,36 +307,37 @@ ret
         }
 
         [Test]
+        [Category(Categories.UnitTests)]
         public void StrReg00001()
         {
             var program = RewriteX86_32Fragment(
                 Fragments.Regressions.Reg00001.Text,
                 Address.Ptr32(0x00100000));
             var sExp =
-@"void fn00100000()
+@"void fn00100000(word32 dwArg00, word32 dwArg04)
 {
-	Mem5[0x02000000:word32] = fn0010000C(dwArg00, dwArg04);
+	Mem11[0x02000000:word32] = fn0010000C(dwArg00, dwArg04);
 }
 ===
 word32 fn0010000C(word32 dwArg04, word32 dwArg08)
 {
-	word32 ecx_12 = Mem0[dwArg04 + 0x0000003C:word32] + dwArg04;
-	word32 esi_20 = (word32) Mem0[ecx_12 + 0x00000006:word16];
-	word32 edx_21 = 0x00000000;
-	word32 eax_24 = (word32) Mem0[ecx_12 + 0x00000014:word16] + 0x00000012 + ecx_12 + 0x0000000C;
-	if (!DPB(CZ, false, 0))
+	word32 ecx_11 = Mem7[dwArg04 + 0x0000003C:word32] + dwArg04;
+	word32 esi_19 = (word32) Mem18[ecx_11 + 0x00000006:word16];
+	word32 edx_20 = 0x00000000;
+	word32 eax_23 = (word32) Mem7[ecx_11 + 0x00000014:word16] + 0x00000012 + ecx_11;
+	if (esi_19 >u 0x00000000)
 	{
 		do
 		{
-			word32 ecx_57 = Mem0[eax_24 + 0x00000000:word32];
-			if (dwArg08 >=u ecx_57 && dwArg08 <u Mem0[eax_24 + 0x00000008:word32] + ecx_57)
-				return eax_24;
-			edx_21 = edx_21 + 0x00000001;
-			eax_24 = eax_24 + 0x00000028;
-		} while (edx_21 <u esi_20);
+			word32 ecx_31 = Mem22[eax_23 + 0x0000000C:word32];
+			if (dwArg08 >=u ecx_31 && dwArg08 <u Mem22[eax_23 + 0x00000008:word32] + ecx_31)
+				return eax_23;
+			++edx_20;
+			eax_23 += 0x00000028;
+		} while (edx_20 <u esi_19);
 	}
-	eax_24 = 0x00000000;
-	return eax_24;
+	eax_23 = 0x00000000;
+	return eax_23;
 }
 ===
 ";
@@ -329,6 +345,7 @@ word32 fn0010000C(word32 dwArg04, word32 dwArg08)
         }
 
         [Test]
+        [Category(Categories.UnitTests)]
         public void StrInfiniteLoop()
         {
             var pm = new ProgramBuilder();
@@ -338,7 +355,7 @@ word32 fn0010000C(word32 dwArg04, word32 dwArg08)
                 m.Goto("lupe");
             });
             var sExp =
-@"void haltForever()
+@"define haltForever
 {
 	while (true)
 		;
@@ -349,11 +366,9 @@ word32 fn0010000C(word32 dwArg04, word32 dwArg08)
         }
 
         [Test]
-        [Ignore(Categories.FailedTests)]
+        [Category(Categories.IntegrationTests)]
         public void StrReg00568()
         {
-            // We are generating a redundant check in the complex instruction.
-            // It will probably need value set analysis to be properly resolved.
             RunTest("Fragments/regressions/r00568.asm", "Structure/StrReg00568.txt");
         }
     }

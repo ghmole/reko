@@ -1,112 +1,57 @@
 // fn0C00_0000 /////////////////////
 	LiveOut:  
-	MayUseIn:  bp ds si
-	BypassIn: 
-	Trashed:   SCZO ah al ax bh bl bp bpl bx ch cl cx dh dl dx eax ebp ebx ecx edx esi rax rbp rbx rcx rdx rsi si sil
+	BitsUsed:  bp:[0..15] ds:[0..15] si:[0..15]
+	Trashed:   SCZO ax bp bx cx dx si Top
 	Preserved: sp
 // fn0C00_0000
-void fn0C00_0000()
-// SymbolicIn: sp:fp
+define fn0C00_0000
 fn0C00_0000_entry:
-// DataOut: bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp
+	def ds
+	def si
+	def bp
 l0C00_0000:
-	sp = fp
-	call fn0C00_0004 (retsize: 2; depth: 2)
+	call fn0C00_0004 (retsize: 2;)
+		uses: bp:bp,ds:ds,si:si
 	return
-// DataOut:
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
 fn0C00_0000_exit:
-// DataOut:
-// DataOut (flags): 
-
 // fn0C00_0004 /////////////////////
 	LiveOut:  
-	MayUseIn:  bp ds si
-	BypassIn: 
-	Trashed:   SCZO ah al ax bh bl bp bpl bx ch cl cx dh dl dx eax ebp ebx ecx edx esi rax rbp rbx rcx rdx rsi si sil
+	BitsUsed:  bp:[0..15] ds:[0..15] si:[0..15]
+	Trashed:   SCZO ax bp bx cx dx si Top
 	Preserved: sp
 // fn0C00_0004
-void fn0C00_0004()
-// SymbolicIn: sp:fp
+define fn0C00_0004
 fn0C00_0004_entry:
-// DataOut: bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	def ds
+	def si
+	def Mem0
+	def bp
 l0C00_0004:
-	sp = fp
-	al = Mem0[ds:si:byte]
-	al = al >>u 0x01
-	SCZO = cond(al)
-	al = al >>u 0x01
-	SCZO = cond(al)
-	al = al >>u 0x01
-	SCZO = cond(al)
-	al = al >>u 0x01
-	SCZO = cond(al)
-	al = al + 0x30
-	SCZO = cond(al)
-	SCZO = cond(al - 0x39)
-	branch Test(LE,SZO) l0C00_0016
-// DataOut: al bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	bp_44 = PHI((bp, fn0C00_0004_entry), (bp_45, l0C00_0026))
+	Mem6 = PHI((Mem0, fn0C00_0004_entry), (Mem32, l0C00_0026))
+	si_5 = PHI((si, fn0C00_0004_entry), (si_41, l0C00_0026))
+	al_7 = Mem6[ds:si_5:byte]
+	al_12 = (al_7 >>u 0x04) + 0x30
+	branch al_12 <= 0x39 l0C00_0016
 l0C00_0014:
-	al = al + 0x07
-	SCZO = cond(al)
-// DataOut: al bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	al_15 = al_12 + 0x07
 l0C00_0016:
-	ah = Mem0[ds:si:byte]
-	ah = ah & 0x0F
-	SZO = cond(ah)
-	C = false
-	ah = ah + 0x30
-	SCZO = cond(ah)
-	SCZO = cond(ah - 0x39)
-	branch Test(LE,SZO) l0C00_0026
-// DataOut: ah al ax bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:<invalid> bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	al_28 = PHI((al_12, l0C00_0004), (al_15, l0C00_0014))
+	ah_20 = Mem6[ds:si_5:byte]
+	ah_22 = (ah_20 & 0x0F) + 0x30
+	ax_29 = SEQ(ah_22, al_28) (alias)
+	branch ah_22 <= 0x39 l0C00_0026
 l0C00_0023:
-	ah = ah + 0x07
-	SCZO = cond(ah)
-// DataOut: al ax bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:<invalid> bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	ax_30 = SEQ(ah_22 + 0x07, al_28) (alias)
 l0C00_0026:
-	Mem0[ds:0x5427:word16] = ax
-	ah = 0x40
-	bx = Mem0[ds:0x5424:word16]
-	cx = 0x0004
-	dx = 0x5427
-	C = msdos_write_file(bx, 0x0004, ds_dx, out ax)
-	si = si + 0x0001
-	SZO = cond(si)
-	bp = bp - 0x0001
-	SZO = cond(bp)
-	branch Test(NE,Z) l0C00_0004
-// DataOut: bp ds si
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
+	ax_27 = PHI((ax_29, l0C00_0016), (ax_30, l0C00_0023))
+	Mem32[ds:0x5427:word16] = ax_27
+	bx_34 = Mem32[ds:0x5424:word16]
+	ds_dx_37 = SEQ(ds, 0x5427) (alias)
+	msdos_write_file(bx_34, 0x0004, ds_dx_37, out ax_38)
+	si_41 = si_5 + 0x0001
+	bp_45 = bp_44 - 0x0001
+	branch bp_45 != 0x0000 l0C00_0004
 l0C00_003C:
 	return
-// DataOut:
-// DataOut (flags): 
-
-// SymbolicIn: sp:fp al:<invalid> ah:0x40 bx:<invalid> cx:0x0004 dx:0x5427 si:<invalid> bp:<invalid>
 fn0C00_0004_exit:
-// DataOut:
-// DataOut (flags): 
-

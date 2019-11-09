@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,6 +72,7 @@ namespace Reko.Scanning
                 return blockNew;
             }
             blockNew = new Block(procCalling, blockOrig.Name + "_in_" + procCalling.Name);
+            blockNew.Address = blockOrig.Address;
             mpBlocks.Add(blockOrig, blockNew);
             var succ = blockOrig.Succ.Count > 0 ? CloneBlock(blockOrig.Succ[0]) : null;
             foreach (var stm in blockOrig.Statements)
@@ -209,7 +210,11 @@ namespace Reko.Scanning
 
         public Expression VisitConditionalExpression(ConditionalExpression c)
         {
-            throw new NotImplementedException();
+            return new ConditionalExpression(
+                c.DataType,
+                c.Condition.Accept(this),
+                c.ThenExp.Accept(this),
+                c.FalseExp.Accept(this));
         }
 
         public Expression VisitConditionOf(ConditionOf cof)
@@ -356,9 +361,8 @@ namespace Reko.Scanning
         public Identifier VisitSequenceStorage(SequenceStorage seq)
         {
             var dt = this.dt;
-            var hd = (Identifier) seq.Head.Accept(this);
-            var tl = (Identifier) seq.Tail.Accept(this);
-            return procCalling.Frame.EnsureSequence(hd.Storage, tl.Storage, dt);
+            var clones = seq.Elements.Select(e => e.Accept(this).Storage);
+            return procCalling.Frame.EnsureSequence(dt, clones.ToArray());
         }
 
         public Identifier VisitStackArgumentStorage(StackArgumentStorage stack)

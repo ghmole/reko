@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,12 @@ namespace Reko.Analysis
     /// Try to rewrite indirect call statements to applications using
     /// user-defined data (e.g. global variables, parameters of procedures).
     /// </summary>
+    /// <remarks>
+    /// //$REVIEW: Once analysis-development branch is complete it will make
+    /// dealing with MIPS ELF binaries a lot nicer. Currently, almost all
+    /// calls in a MIPS ELF binary are decompiled into messy indirect 
+    /// calls.
+    /// </remarks>
     public class IndirectCallRewriter
     {
         private SsaState ssa;
@@ -43,8 +49,6 @@ namespace Reko.Analysis
         private SsaIdentifierTransformer ssaIdTransformer;
         private DecompilerEventListener eventListener;
         private SsaMutator ssam;
-        private bool changed;
-
 
         public IndirectCallRewriter(
             Program program,
@@ -69,14 +73,14 @@ namespace Reko.Analysis
         /// <returns>True if statements were changed.</returns>
         public bool Rewrite()
         {
-            changed = false;
+            bool changed = false;
             foreach (Statement stm in proc.Statements.ToList())
             {
                 if (stm.Instruction is CallInstruction ci)
                 {
                     try
                     {
-                        RewriteCall(stm, ci);
+                        changed |= TryRewriteCall(stm, ci);
                     }
                     catch (Exception ex)
                     {
@@ -91,53 +95,37 @@ namespace Reko.Analysis
             return changed;
         }
 
-        private void RewriteCall(Statement stm, CallInstruction call)
+        private bool TryRewriteCall(Statement stm, CallInstruction call)
         {
             var e = expander.Expand(call.Callee);
             var pt = e.Accept(asc).ResolveAs<Pointer>();
             if (pt == null)
-                return;
-            var ft = pt.Pointee as FunctionType;
-            if (ft == null)
-                return;
+                return false;
+            if (!(pt.Pointee is FunctionType ft))
+                return false;
+            RewriteCall(stm, call, ft);
+            return true;
+        }
+
+        public void RewriteCall(Statement stm, CallInstruction call, FunctionType ft)
+        {
             ssam.AdjustRegisterAfterCall(
                 stm,
                 call,
                 ssa.Procedure.Architecture.StackRegister,
                 ft.StackDelta - call.CallSite.SizeOfReturnAddressOnStack);
-            var ab = new ApplicationBuilder(
-                ssa.Procedure.Architecture, proc.Frame, call.CallSite,
-                call.Callee, ft, false);
-            stm.Instruction = ab.CreateInstruction();
+            ssam.AdjustRegisterAfterCall(
+                stm,
+                call,
+                program.Architecture.FpuStackRegister,
+                -ft.FpuStackDelta);
+            var ab = program.Architecture.CreateFrameApplicationBuilder(
+                 proc.Frame, call.CallSite, call.Callee);
+            stm.Instruction = ab.CreateInstruction(ft, null);
             ssaIdTransformer.Transform(stm, call);
-            DefineUninitializedIdentifiers(stm, call);
-            changed = true;
+            ssam.DefineUninitializedIdentifiers(stm, call);
         }
-
-        private void DefineUninitializedIdentifiers(
-            Statement stm,
-            CallInstruction call)
-        {
-            var trashedSids = call.Definitions.Select(d => d.Identifier)
-                .Select(id => ssa.Identifiers[id])
-                .Where(sid => sid.DefStatement == null);
-            foreach (var sid in trashedSids)
-            {
-                DefineUninitializedIdentifier(stm, sid);
             }
-        }
-
-        private void DefineUninitializedIdentifier(
-            Statement stm,
-            SsaIdentifier sid)
-        {
-            var value = Constant.Invalid;
-            var ass = new Assignment(sid.Identifier, value);
-            var newStm = ssam.InsertStatementAfter(ass, stm);
-            sid.DefExpression = value;
-            sid.DefStatement = newStm;
-        }
-    }
 
     /// <summary>
     /// Pulling type information from the leaves of expression trees to their
@@ -229,7 +217,7 @@ namespace Reko.Analysis
         public override Instruction TransformAssignment(Assignment a)
         {
             a.Src = a.Src.Accept(this);
-            a.Dst = FindDefinedId(call, a.Dst.Storage);
+            a.Dst = (Identifier)FindDefinedId(call, a.Dst.Storage);
             if (a.Dst == null)
                 return new SideEffect(a.Src);
             DefId(a.Dst, a.Src);
@@ -290,20 +278,20 @@ namespace Reko.Analysis
             }
         }
 
-        private Identifier FindDefinedId(CallInstruction call, Storage storage)
+        private Expression FindDefinedId(CallInstruction call, Storage storage)
         {
-            return call.Definitions.Select(d => d.Identifier).
-                OfType<Identifier>().
-                Where(usedId => usedId.Storage.Equals(storage)).
-                FirstOrDefault();
+            return call.Definitions
+                .Where(d => d.Storage.Equals(storage))
+                .Select(d => d.Expression)
+                .FirstOrDefault();
         }
 
-        private Identifier FindUsedId(CallInstruction call, Storage storage)
+        private Expression FindUsedId(CallInstruction call, Storage storage)
         {
-            return call.Uses.Select(u => u.Expression).
-                OfType<Identifier>().
-                Where(usedId => usedId.Storage.Equals(storage)).
-                FirstOrDefault();
+            return call.Uses
+                .Where(u => u.Storage.Equals(storage))
+                .Select(u => u.Expression)
+                .FirstOrDefault();
         }
 
         abstract class UsedIdsTransformer : InstructionTransformer

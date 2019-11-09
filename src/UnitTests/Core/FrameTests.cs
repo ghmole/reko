@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@ namespace Reko.UnitTests.Core
 			var f = new Frame(PrimitiveType.Word16);
 			Identifier ax = f.EnsureRegister(Registers.ax);
 			Identifier dx = f.EnsureRegister(Registers.dx);
-			Identifier dxax = f.EnsureSequence(dx.Storage, ax.Storage, PrimitiveType.Word32);
+			Identifier dxax = f.EnsureSequence(PrimitiveType.Word32, dx.Storage, ax.Storage);
 
 			using (FileUnitTester fut = new FileUnitTester("Core/SequenceTest.txt"))
 			{
@@ -64,7 +64,7 @@ namespace Reko.UnitTests.Core
 				fut.AssertFilesEqual();
 			}
 
-			Identifier dxax2 = f.EnsureSequence(dx.Storage, ax.Storage, PrimitiveType.Word32);
+			Identifier dxax2 = f.EnsureSequence(PrimitiveType.Word32, dx.Storage, ax.Storage);
 			Assert.IsTrue(dxax2 == dxax);
 		}
 
@@ -73,8 +73,7 @@ namespace Reko.UnitTests.Core
 		{
 			var arch = new X86ArchitectureReal("x86-real-16");
 			var f = new Frame(PrimitiveType.Word16);
-			uint iSz = (uint) (FlagM.ZF|FlagM.SF);
-			f.EnsureFlagGroup(Registers.eflags, iSz, arch.GrfToString(iSz), PrimitiveType.Byte);
+			f.EnsureFlagGroup(arch.GetFlagGroup("SZ"));
 			using (FileUnitTester fut = new FileUnitTester("Core/FrGrfTest.txt"))
 			{
 				f.Write(fut.TextWriter);
@@ -103,13 +102,13 @@ namespace Reko.UnitTests.Core
 			var f = new Frame(PrimitiveType.Word16);
 			Identifier ax = f.EnsureRegister(Registers.ax);
 			Identifier dx = f.EnsureRegister(Registers.dx);
-			Identifier dx_ax = f.EnsureSequence(dx.Storage, ax.Storage, PrimitiveType.Word32);
+			Identifier dx_ax = f.EnsureSequence(PrimitiveType.Word32, dx.Storage, ax.Storage);
 			SequenceStorage vDx_ax = (SequenceStorage) dx_ax.Storage;
 			using (FileUnitTester fut = new FileUnitTester("Core/FrSequenceAccess.txt"))
 			{
 				f.Write(fut.TextWriter);
-				fut.TextWriter.WriteLine("Head({0}) = {1}", dx_ax.Name, vDx_ax.Head.Name);
-				fut.TextWriter.WriteLine("Tail({0}) = {1}", dx_ax.Name, vDx_ax.Tail.Name);
+				fut.TextWriter.WriteLine("Head({0}) = {1}", dx_ax.Name, vDx_ax.Elements[0].Name);
+				fut.TextWriter.WriteLine("Tail({0}) = {1}", dx_ax.Name, vDx_ax.Elements[1].Name);
 
 				fut.AssertFilesEqual();
 			}
@@ -127,14 +126,13 @@ namespace Reko.UnitTests.Core
 			f.EnsureStackLocal(-stack, PrimitiveType.Word16, "wLoc04");
 
 			FunctionType sig = FunctionType.Action(
-                new Identifier[] {
 					new Identifier("arg0", PrimitiveType.Word16, new StackArgumentStorage(4, PrimitiveType.Word16)),
-					new Identifier("arg1", PrimitiveType.Word16, new StackArgumentStorage(6, PrimitiveType.Word16)) });
+					new Identifier("arg1", PrimitiveType.Word16, new StackArgumentStorage(6, PrimitiveType.Word16)));
 
 			var cs = new CallSite(f.ReturnAddressSize + 2 * 4, 0);
 			var fn = new ProcedureConstant(PrimitiveType.Ptr32, new PseudoProcedure("foo", sig));
-			ApplicationBuilder ab = new ApplicationBuilder(arch, f, cs, fn, sig, true);
-            Instruction instr = ab.CreateInstruction(); 
+			var ab = arch.CreateFrameApplicationBuilder(f, cs, fn);
+            Instruction instr = ab.CreateInstruction(sig, null); 
 			using (FileUnitTester fut = new FileUnitTester("Core/FrBindStackParameters.txt"))
 			{
 				f.Write(fut.TextWriter);
@@ -152,17 +150,14 @@ namespace Reko.UnitTests.Core
 			int stack = PrimitiveType.Word16.Size;
 			f.EnsureStackLocal(-stack, PrimitiveType.Word16);
 
-			FunctionType sig = new FunctionType(
+            FunctionType sig = FunctionType.Func(
                 ax,
-                new Identifier[] {
-                    cx,
-                    new Identifier("arg0", PrimitiveType.Word16, new StackArgumentStorage(0, PrimitiveType.Word16))
-                });
-			
+                cx,
+                new Identifier("arg0", PrimitiveType.Word16, new StackArgumentStorage(0, PrimitiveType.Word16)));
 			var cs = new CallSite(stack, 0);
-			ProcedureConstant fn = new ProcedureConstant(PrimitiveType.Ptr32, new PseudoProcedure("bar", sig));
-			ApplicationBuilder ab = new ApplicationBuilder(arch, f, cs, fn, sig, true);
-            Instruction instr = ab.CreateInstruction();
+			var fn = new ProcedureConstant(PrimitiveType.Ptr32, new PseudoProcedure("bar", sig));
+			var ab = new FrameApplicationBuilder(arch, f, cs, fn, true);
+            Instruction instr = ab.CreateInstruction(sig, null);
 			using (FileUnitTester fut = new FileUnitTester("Core/FrBindMixedParameters.txt"))
 			{
 				f.Write(fut.TextWriter);

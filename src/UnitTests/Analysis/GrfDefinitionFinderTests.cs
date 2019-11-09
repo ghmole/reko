@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,68 +18,63 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Analysis;
 using Reko.Core;
-using NUnit.Framework;
-using Reko.UnitTests.Mocks;
-using System;
-using System.IO;
 using Reko.Core.Expressions;
-using Rhino.Mocks;
+using Reko.UnitTests.Mocks;
 using System.Collections.Generic;
+using System.IO;
 
 namespace Reko.UnitTests.Analysis
 {
 	[TestFixture]
 	public class GrfDefinitionFinderTests : AnalysisTestBase
 	{
+        protected override void RunTest(Program program, TextWriter writer)
+        {
+            var importResolver = new Mock<IImportResolver>();
+            var flow = new ProgramDataFlow(program);
+            var sst = new SsaTransform(
+                program, 
+                program.Procedures.Values[0],
+                new HashSet<Procedure>(),
+                importResolver.Object,
+                flow);
+            var ssa = sst.Transform();
+            var grfd = new GrfDefinitionFinder(ssa.Identifiers);
+            foreach (SsaIdentifier sid in ssa.Identifiers)
+            {
+                var id = sid.OriginalIdentifier;
+                if (id == null || !(id.Storage is FlagGroupStorage) || sid.Uses.Count == 0)
+                    continue;
+                writer.Write("{0}: ", sid.DefStatement.Instruction);
+                grfd.FindDefiningExpression(sid);
+                string fmt = grfd.IsNegated ? "!{0};" : "{0}";
+                writer.WriteLine(fmt, grfd.DefiningExpression);
+            }
+        }
+
 		[Test]
-		public void GrfdAdcMock()
+        [Category(Categories.IntegrationTests)]
+        public void GrfdAdcMock()
 		{
 			RunFileTest(new AdcMock(), "Analysis/GrfdAdcMock.txt");
 		}
 
 		[Test]
-		public void GrfdAddSubCarries()
+        [Category(Categories.IntegrationTests)]
+        public void GrfdAddSubCarries()
 		{
-			RunFileTest("Fragments/addsubcarries.asm", "Analysis/GrfdAddSubCarries.txt");
+			RunFileTest_x86_real("Fragments/addsubcarries.asm", "Analysis/GrfdAddSubCarries.txt");
 		}
 
 		[Test]
-		public void GrfdCmpMock()
+        [Category(Categories.IntegrationTests)]
+        public void GrfdCmpMock()
 		{
 			RunFileTest(new CmpMock(), "Analysis/GrfdCmpMock.txt");
-		}
-
-		protected override void RunTest(Program program, TextWriter writer)
-		{
-            var importResolver = MockRepository.GenerateStub<IImportResolver>();
-            importResolver.Replay();
-            var dfa = new DataFlowAnalysis(program, importResolver, new FakeDecompilerEventListener());
-			dfa.UntangleProcedures();
-			foreach (Procedure proc in program.Procedures.Values)
-			{
-				Aliases alias = new Aliases(proc);
-				alias.Transform();
-				SsaTransform sst = new SsaTransform(
-                    dfa.ProgramDataFlow,
-                    proc,
-                    importResolver,
-                    proc.CreateBlockDominatorGraph(),
-                    new HashSet<RegisterStorage>());
-				SsaState ssa = sst.SsaState;
-				GrfDefinitionFinder grfd = new GrfDefinitionFinder(ssa.Identifiers);
-				foreach (SsaIdentifier sid in ssa.Identifiers)
-				{
-                    var id = sid.OriginalIdentifier as Identifier;
-					if (id == null || !(id.Storage is FlagGroupStorage) || sid.Uses.Count == 0)
-						continue;
-					writer.Write("{0}: ", sid.DefStatement.Instruction);
-					grfd.FindDefiningExpression(sid);
-					string fmt = grfd.IsNegated ? "!{0};" : "{0}";
-					writer.WriteLine(fmt, grfd.DefiningExpression);
-				}
-			}
 		}
 	}
 }

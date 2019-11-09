@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -151,6 +151,7 @@ namespace Reko.Core.Types
         public Formatter VisitPrimitive(PrimitiveType pt)
         {
             writer.Write(pt.Name);
+            WriteQualifier(pt.Qualifier);
             return writer;
         }
 
@@ -167,24 +168,33 @@ namespace Reko.Core.Types
         public Formatter VisitPointer(Pointer ptr)
         {
 			writer.Write($"(ptr{ptr.BitSize} ");
-			WriteReference(ptr.Pointee);
+            WriteQualifier(ptr.Qualifier);
+            WriteReference(ptr.Pointee);
 			writer.Write(")");
             return writer;
 		}
 
-        public Formatter VisitQualifiedType(QualifiedType qt)
+        public Formatter WriteQualifier(Qualifier q)
         {
-            if (qt.Qualifier == Qualifier.None)
-                return qt.DataType.Accept(this);
-            writer.Write("(");
-            switch (qt.Qualifier)
+            var sep = "";
+            if ((q & Qualifier.Const) != 0)
             {
-            case Qualifier.Const: writer.Write("const"); break;
-            case Qualifier.Volatile: writer.Write("volatile"); break;
-            case Qualifier.Restricted: writer.Write("restrict"); break;
+                sep = " ";
+                writer.Write("const");
             }
-            qt.DataType.Accept(this);
-            writer.Write(")");
+            if ((q & Qualifier.Volatile) != 0)
+            {
+                writer.Write(sep);
+                sep = " ";
+                writer.Write("volatile");
+            }
+            if ((q & Qualifier.Restricted) != 0)
+            {
+                writer.Write(sep);
+                sep = " ";
+                writer.Write("restricted");
+            }
+            writer.Write(sep);
             return writer;
         }
 
@@ -199,6 +209,7 @@ namespace Reko.Core.Types
         public Formatter VisitString(StringType str)
         {
             writer.Write("(str");
+            WriteQualifier(str.Qualifier);
             if (str.LengthPrefixType != null)
             {
                 writer.Write(" length-");
@@ -288,7 +299,10 @@ namespace Reko.Core.Types
 
         public Formatter VisitUnknownType(UnknownType ut)
         {
-            writer.Write("<unknown>");
+            if (ut.BitSize == 0)
+                writer.Write("<unknown>");
+            else
+                writer.Write($"<unknown{ut.BitSize}>");
             return writer;
         }
 

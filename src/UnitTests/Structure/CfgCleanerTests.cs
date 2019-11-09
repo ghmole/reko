@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -85,7 +85,7 @@ namespace Reko.UnitTests.Structure
             #region Expected
 @"// ProcedureBuilder
 // Return size: 0
-void ProcedureBuilder()
+define ProcedureBuilder
 ProcedureBuilder_entry:
 	pfn()
 	return

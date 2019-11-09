@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,15 +30,16 @@ namespace Reko.Analysis
 	{
         private Dictionary<Identifier, SsaIdentifier> sids =
             new Dictionary<Identifier, SsaIdentifier>();
+        private int serialNumber = 0;
 
 		public SsaIdentifier Add(Identifier idOld, Statement stmDef, Expression exprDef, bool isSideEffect)
 		{
-			int i = sids.Count;
+			int i = ++serialNumber;
 			Identifier idNew;
 			if (stmDef != null)
 			{
 				idNew = idOld is MemoryIdentifier
-					? new MemoryIdentifier(i, idOld.DataType)
+					? new MemoryIdentifier(ReplaceNumericSuffix(idOld.Name, i), idOld.DataType, idOld.Storage)
 					: new Identifier(FormatSsaName(idOld, i), idOld.DataType, StorageOf(idOld));
 			}
 			else
@@ -50,6 +51,7 @@ namespace Reko.Analysis
 			return sid;
 		}
 
+
 		public SsaIdentifier this[Identifier id]
 		{
 			get { return sids[id]; }
@@ -58,6 +60,7 @@ namespace Reko.Analysis
 
         public void Add(Identifier id, SsaIdentifier sid)
         {
+            ++serialNumber;
             sids.Add(id, sid);
         }
 
@@ -91,7 +94,7 @@ namespace Reko.Analysis
             return sids.TryGetValue(id, out sid);
         }
 
-		public string FormatSsaName(Expression e, int v)
+		private string FormatSsaName(Expression e, int v)
 		{
             string prefix = null;
             switch (e)
@@ -112,6 +115,21 @@ namespace Reko.Analysis
             }
             return string.Format("{0}_{1}", prefix, v);
 		}
+
+        private static string ReplaceNumericSuffix(string str, int newSuffix)
+        {
+            for (int i = str.Length-1; i >= 0; --i)
+            {
+                if (!Char.IsDigit(str[i]))
+                {
+                    if (i >= str.Length - 1)
+                        return str + newSuffix;
+                    else
+                        return str.Remove(i + 1) + newSuffix;
+                }
+            }
+            return "" + newSuffix;
+        }
 
         private Storage StorageOf(Expression e)
         {

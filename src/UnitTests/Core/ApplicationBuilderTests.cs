@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,7 +51,7 @@ namespace Reko.UnitTests.Core
 			arg08 = new Identifier("arg08",   PrimitiveType.Word16, new StackArgumentStorage(8, PrimitiveType.Word16));
 			arg0C = new Identifier("arg0C",   PrimitiveType.Byte, new StackArgumentStorage(0x0C, PrimitiveType.Byte));
 			regOut = new Identifier("edxOut", PrimitiveType.Word32, new OutArgumentStorage(frame.EnsureRegister(Registers.edx)));
-            sig = new FunctionType(
+            sig = FunctionType.Func(
                 ret,
                 new Identifier[] { arg04, arg08, arg0C, regOut });
         }
@@ -59,7 +59,7 @@ namespace Reko.UnitTests.Core
 		[Test]
         public void AppBld_BindReturnValue()
 		{
-            ab  = new ApplicationBuilder(arch, frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null), sig, false);
+            ab  = arch.CreateFrameApplicationBuilder(frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null));
 			var r = ab.Bind(ret);
 			Assert.AreEqual("eax", r.ToString());
 		}
@@ -67,7 +67,7 @@ namespace Reko.UnitTests.Core
 		[Test]
         public void AppBld_BindOutParameter()
 		{
-            ab = new ApplicationBuilder(arch, frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null), sig, false);
+            ab = arch.CreateFrameApplicationBuilder(frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null));
             var o = ab.Bind(regOut);
 			Assert.AreEqual("edx", o.ToString());
 		}
@@ -76,78 +76,89 @@ namespace Reko.UnitTests.Core
         public void AppBld_BuildApplication()
 		{
 			Assert.IsTrue(sig.Parameters[3].Storage is OutArgumentStorage);
-            ab = new ApplicationBuilder(arch, frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null), sig, false);
-            var instr = ab.CreateInstruction();
+            ab = arch.CreateFrameApplicationBuilder(frame, new CallSite(4, 0), new Identifier("foo", PrimitiveType.Word32, null));
+            var instr = ab.CreateInstruction(sig, null);
 			Assert.AreEqual("eax = foo(Mem0[esp:word32], Mem0[esp + 4:word16], Mem0[esp + 8:byte], out edx)", instr.ToString());
 		}
 
         [Test]
         public void AppBld_BindToCallingFrame()
         {
-            var caller = new Procedure(arch, "caller", new Frame(PrimitiveType.Word16));
+            var caller = new Procedure(arch, "caller", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Word16));
             caller.Frame.EnsureStackLocal(-4, PrimitiveType.Word32, "bindToArg04");
             caller.Frame.EnsureStackLocal(-6, PrimitiveType.Word16, "bindToArg02");
 
-            var callee = new Procedure(arch,"callee", new Frame(PrimitiveType.Word16));
+            var callee = new Procedure(arch,"callee", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Word16));
             var wArg = callee.Frame.EnsureStackArgument(0, PrimitiveType.Word16);
             var dwArg = callee.Frame.EnsureStackArgument(2, PrimitiveType.Word32);
-            callee.Signature = FunctionType.Action(
-                new Identifier[] { wArg, dwArg });
+            callee.Signature = FunctionType.Action(wArg, dwArg);
             var cs = new CallSite(0, 0)
             {
                 StackDepthOnEntry = 6
             };
-            ab = new ApplicationBuilder(arch, caller.Frame, cs, new ProcedureConstant(PrimitiveType.Ptr32, callee), callee.Signature, true); 
-            var instr = ab.CreateInstruction();
+            ab = new FrameApplicationBuilder(arch, caller.Frame, cs, new ProcedureConstant(PrimitiveType.Ptr32, callee), true);
+            var instr = ab.CreateInstruction(callee.Signature, callee.Characteristics);
             Assert.AreEqual("callee(bindToArg02, bindToArg04)", instr.ToString());
         }
 
-        [Test(Description="The byte is smaller than the target register, so we expect a 'DPB' instruction")]
+        [Test(Description="The byte is smaller than the target register, so we expect a 'SEQ' instruction")]
         public void AppBld_BindByteToRegister()
         {
-            var callee = new Procedure(arch, "callee", new Frame(PrimitiveType.Ptr32));
-            var ab = new ApplicationBuilder(
-                arch, 
+            var callee = new Procedure(arch, "callee", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Ptr32));
+            var ab = arch.CreateFrameApplicationBuilder(
                 callee.Frame,
-                new CallSite(4, 0), 
-                new Identifier("foo", PrimitiveType.Ptr32, null),
-                new FunctionType(new Identifier("bRet", PrimitiveType.Byte, Registers.eax), new Identifier[0]),
-                true);
-            var instr = ab.CreateInstruction();
-            Assert.AreEqual("eax = DPB(eax, foo(), 0)", instr.ToString());
+                new CallSite(4, 0),
+                new Identifier("foo", PrimitiveType.Ptr32, null));
+            var sig = FunctionType.Func(new Identifier("bRet", PrimitiveType.Byte, Registers.eax));
+            var instr = ab.CreateInstruction(sig, null);
+            Assert.AreEqual("eax = SEQ(0x000000, foo())", instr.ToString());
+        }
+
+        [Test(Description ="Variadic signature specified, but no way of parsing the parameters.")]
+        public void AppBld_NoVariadic_Characteristics()
+        {
+            var caller = new Procedure(arch, "caller", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Ptr32));
+            var callee = new Procedure(arch, "callee", Address.Ptr32(0x00123500), new Frame(PrimitiveType.Ptr32));
+            var ab = arch.CreateFrameApplicationBuilder(
+                caller.Frame,
+                new CallSite(4, 0),
+                new ProcedureConstant(PrimitiveType.Ptr32, callee));
+            var unk = new UnknownType();
+            var sig = FunctionType.Action(new Identifier("...", unk, new StackArgumentStorage(0, unk)));
+            var instr = ab.CreateInstruction(sig, null);
+            Assert.AreEqual("callee(0x00000000)", instr.ToString());//$BUG: obviously wrong
         }
 
         [Test(Description = "Calling convention returns values in a reserved slot on the stack.")]
         public void AppBld_BindStackReturnValue()
         {
-            var rand = new Procedure(arch, "rand", new Frame(PrimitiveType.Ptr32));
-            var ab = new ApplicationBuilder(
-                arch,
-                rand.Frame,
+            var caller = new Procedure(arch, "caller", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Ptr32));
+            var rand = new Procedure(arch, "rand", Address.Ptr32(0x00123500), new Frame(PrimitiveType.Ptr32));
+            var ab = arch.CreateFrameApplicationBuilder(
+                caller.Frame,
                 new CallSite(4, 0),
-                new ProcedureConstant(PrimitiveType.Ptr32, rand),
-                new FunctionType(new Identifier("", PrimitiveType.Int32, new StackArgumentStorage(4, PrimitiveType.Int32))),
-                true);
-            var instr = ab.CreateInstruction();
-            Assert.AreEqual("dwArg04 = rand()", instr.ToString());
+                new ProcedureConstant(PrimitiveType.Ptr32, rand));
+
+            var sig = FunctionType.Func(new Identifier("", PrimitiveType.Int32, new StackArgumentStorage(4, PrimitiveType.Int32)));
+            var instr = ab.CreateInstruction(sig, null);
+            Assert.AreEqual("Mem0[esp:int32] = rand()", instr.ToString());
         }
 
         [Test(Description = "Calling convention returns values in a reserved slot on the stack.")]
         public void AppBld_BindStackReturnValue_WithArgs()
         {
-            var fputs = new Procedure(arch, "fputs", new Frame(PrimitiveType.Ptr32));
-            var ab = new ApplicationBuilder(
-                arch,
-                fputs.Frame,
+            var caller = new Procedure(arch, "caller", Address.Ptr32(0x00123400), new Frame(PrimitiveType.Ptr32));
+            var fputs = new Procedure(arch, "fputs", Address.Ptr32(0x00123500), new Frame(PrimitiveType.Ptr32));
+            var ab = arch.CreateFrameApplicationBuilder(
+                caller.Frame,
                 new CallSite(4, 0),
-                new ProcedureConstant(PrimitiveType.Ptr32, fputs),
-                new FunctionType(
+                new ProcedureConstant(PrimitiveType.Ptr32, fputs));
+            var sig = FunctionType.Func(
                     new Identifier("", PrimitiveType.Int32, new StackArgumentStorage(12, PrimitiveType.Int32)),
                     new Identifier("str", PrimitiveType.Ptr32, new StackArgumentStorage(8, PrimitiveType.Int32)),
-                    new Identifier("stm", PrimitiveType.Ptr32, new StackArgumentStorage(4, PrimitiveType.Int32))),
-                true);
-            var instr = ab.CreateInstruction();
-            Assert.AreEqual("dwArg0C = fputs(dwArg08, dwArg04)", instr.ToString());
+                    new Identifier("stm", PrimitiveType.Ptr32, new StackArgumentStorage(4, PrimitiveType.Int32)));
+            var instr = ab.CreateInstruction(sig, null);
+            Assert.AreEqual("Mem0[esp + 8:int32] = fputs(Mem0[esp + 4:int32], Mem0[esp:int32])", instr.ToString());
         }
     }
 }

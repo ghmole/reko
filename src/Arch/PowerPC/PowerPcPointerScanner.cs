@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,8 +73,7 @@ namespace Reko.Arch.PowerPC
 
         public override bool MatchCall(EndianImageReader rdr, uint opcode, out uint target)
         {
-            int offset;
-            if (TryGetDisplacement(opcode, 0x48000001u, out offset))
+            if (TryGetDisplacement(opcode, 0x48000001u, out int offset))
             {
                 target = (uint)(rdr.Address.ToUInt32() + offset);
                 return true;
@@ -85,8 +84,7 @@ namespace Reko.Arch.PowerPC
 
         public override bool MatchJump(EndianImageReader rdr, uint opcode, out uint target)
         {
-            int offset;
-            if (TryGetDisplacement(opcode, 0x48000000u, out offset))
+            if (TryGetDisplacement(opcode, 0x48000000u, out int offset))
             {
                 target = (uint)(rdr.Address.ToUInt32() + offset);
                 return true;
@@ -120,8 +118,7 @@ namespace Reko.Arch.PowerPC
 
         public override bool MatchCall(EndianImageReader rdr, uint opcode, out ulong target)
         {
-            int offset;
-            if (TryGetDisplacement(opcode, 0x48000001u, out offset))
+            if (TryGetDisplacement(opcode, 0x48000001u, out int offset))
             {
                 target = (ulong)((long)rdr.Address.ToLinear() + (long)offset);
                 return true;
@@ -132,8 +129,7 @@ namespace Reko.Arch.PowerPC
 
         public override bool MatchJump(EndianImageReader rdr, uint opcode, out ulong target)
         {
-            int offset;
-            if (TryGetDisplacement(opcode, 0x48000000u, out offset))
+            if (TryGetDisplacement(opcode, 0x48000000u, out int offset))
             {
                 target = (ulong)((long)rdr.Address.ToLinear() + (long)offset);
                 return true;

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,7 +74,7 @@ namespace Reko.UnitTests.Arch.Intel
             get { return baseAddr; }
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             return arch.CreateRewriter(
                 new LeImageReader(image, 0),
@@ -95,7 +95,7 @@ namespace Reko.UnitTests.Arch.Intel
             arch = arch16;
             baseAddr = baseAddr16;
             var asm = new X86Assembler(sc, new MsdosPlatform(sc, arch), baseAddr16, new List<ImageSymbol>());
-            host = new RewriterHost(asm.ImportReferences);
+            host = new RewriterHost(arch, asm.ImportReferences);
             return asm;
         }
 
@@ -104,7 +104,7 @@ namespace Reko.UnitTests.Arch.Intel
             arch = arch32;
             baseAddr = baseAddr32;
             var asm = new X86Assembler(sc, new DefaultPlatform(sc, arch), baseAddr32, new List<ImageSymbol>());
-            host = new RewriterHost(asm.ImportReferences);
+            host = new RewriterHost(arch, asm.ImportReferences);
             return asm;
         }
 
@@ -121,86 +121,6 @@ namespace Reko.UnitTests.Arch.Intel
         private ImmediateOperand Imm16(ushort u) { return new ImmediateOperand(Constant.Word16(u)); }
 
         private PrimitiveType Word16 { get { return PrimitiveType.Word16; } }
-
-        private X86Instruction Instr(Opcode op, PrimitiveType dSize, PrimitiveType aSize, params MachineOperand[] ops)
-        {
-            return new X86Instruction(op, dSize, aSize, ops);
-        }
-
-        private class RewriterHost : IRewriterHost
-        {
-            private Dictionary<string, PseudoProcedure> ppp;
-            private Dictionary<Address, ImportReference> importThunks;
-
-            public RewriterHost(Dictionary<Address, ImportReference> importThunks)
-            {
-                this.importThunks = importThunks;
-                this.ppp = new Dictionary<string, PseudoProcedure>();
-            }
-
-            public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, int arity)
-            {
-                if (ppp.TryGetValue(name, out var p))
-                    return p;
-                p = new PseudoProcedure(name, returnType, arity);
-                ppp.Add(name, p);
-                return p;
-            }
-
-            public Expression PseudoProcedure(string name, DataType returnType, params Expression[] args)
-            {
-                var ppp = EnsurePseudoProcedure(name, returnType, args.Length);
-                return new Application(
-                    new ProcedureConstant(PrimitiveType.Ptr32, ppp),
-                    returnType,
-                    args);
-            }
-
-            public Expression PseudoProcedure(string name, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
-            {
-                var ppp = EnsurePseudoProcedure(name, returnType, args.Length);
-                ppp.Characteristics = c;
-                return new Application(
-                    new ProcedureConstant(PrimitiveType.Ptr32, ppp),
-                    returnType,
-                    args);
-            }
-
-            public FunctionType GetCallSignatureAtAddress(Address addrCallInstruction)
-            {
-                throw new NotImplementedException();
-            }
-
-            public Expression GetImport(Address addrThunk, Address addrInstruction)
-            {
-                throw new NotImplementedException();
-            }
-
-            public ExternalProcedure GetImportedProcedure(Address addrThunk, Address addrInstruction)
-            {
-                if (importThunks.TryGetValue(addrThunk, out var p))
-                    throw new NotImplementedException();
-                else
-                    return null;
-            }
-
-
-            public ExternalProcedure GetInterceptedCall(Address addrImportThunk)
-            {
-                throw new NotImplementedException();
-            }
-
-            public void Error(Address address, string format, params object[] args)
-            {
-                throw new NotImplementedException();
-            }
-
-            public void Warn(Address address, string format, params object[] args)
-            {
-                Debug.Write($"W: {address}: ");
-                Debug.Print(format, args);
-            }
-        }
 
         private void Run16bitTest(Action<X86Assembler> fn)
         {
@@ -240,7 +160,7 @@ namespace Reko.UnitTests.Arch.Intel
         private void Run64bitTest(string hexBytes)
         {
             arch = arch64;
-            image = new MemoryArea(baseAddr64, OperatingEnvironmentElement.LoadHexBytes(hexBytes).ToArray());
+            image = new MemoryArea(baseAddr64, PlatformDefinition.LoadHexBytes(hexBytes).ToArray());
             host = new RewriterHost(null);
         }
 
@@ -409,11 +329,11 @@ namespace Reko.UnitTests.Arch.Intel
             });
             AssertCode(
                 "0|L--|0C00:0000(2): 2 instructions",
-                "1|L--|sp = sp - 0x0004",
+                "1|L--|sp = sp - 4",
                 "2|L--|Mem0[ss:sp:word32] = eax",
                 "3|L--|0C00:0002(2): 2 instructions",
                 "4|L--|ebx = Mem0[ss:sp:word32]",
-                "5|L--|sp = sp + 0x0004");
+                "5|L--|sp = sp + 4");
         }
 
         [Test]
@@ -551,7 +471,7 @@ namespace Reko.UnitTests.Arch.Intel
                 m.JmpF(Address.SegPtr(0xF000, 0xFFF0));
             });
             AssertCode(
-                "0|L--|0C00:0000(5): 1 instructions",
+                "0|T--|0C00:0000(5): 1 instructions",
                 "1|L--|__bios_reboot()");
         }
 
@@ -633,10 +553,10 @@ namespace Reko.UnitTests.Arch.Intel
             });
             AssertCode(
                 "0|L--|0C00:0000(4): 4 instructions",
-                "1|L--|sp = sp - 0x0002",
+                "1|L--|sp = sp - 2",
                 "2|L--|Mem0[ss:sp:word16] = bp",
                 "3|L--|bp = sp",
-                "4|L--|sp = sp - 0x0010");
+                "4|L--|sp = sp - 16");
         }
 
         [Test]
@@ -744,8 +664,9 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Fild(m.MemDw(Registers.ebx, 4));
             });
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|rLoc1 = (real64) Mem0[ebx + 0x00000004:int32]");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Top = Top - 1",
+                "2|L--|ST[Top:real64] = (real64) Mem0[ebx + 0x00000004:int32]");
         }
 
         [Test]
@@ -756,8 +677,9 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Fstp(m.MemDw(Registers.ebx, 4));
             });
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|Mem0[ebx + 0x00000004:real32] = (real32) rArg0");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Mem0[ebx + 0x00000004:real32] = (real32) ST[Top:real64]",
+                "2|L--|Top = Top + 1");
         }
         [Test]
         public void X86rw_RepScasb()
@@ -820,7 +742,7 @@ namespace Reko.UnitTests.Arch.Intel
             });
             AssertCode(
                 "0|L--|0C00:0000(3): 1 instructions",
-                "1|L--|rArg0 = rArg0 + (real64) Mem0[ds:bx + 0x0000:word16]");
+                "1|L--|ST[Top:real64] = ST[Top:real64] + (real64) Mem0[ds:bx + 0x0000:word16]");
         }
 
         /// <summary>
@@ -888,7 +810,7 @@ namespace Reko.UnitTests.Arch.Intel
             });
             AssertCode(
                 "0|L--|0C00:0000(2): 1 instructions",
-                "1|L--|rArg0 = rArg0 * rArg1");
+                "1|L--|ST[Top:real64] = ST[Top:real64] * ST[Top + 1:real64]");
         }
 
         [Test]
@@ -934,7 +856,7 @@ namespace Reko.UnitTests.Arch.Intel
                 "2|L--|ecx = __bsr(eax)");
         }
 
-     
+
 
 
         [Test]
@@ -996,11 +918,12 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Jpe("foo");
             });
             AssertCode(
-                "0|L--|0C00:0000(2): 1 instructions",
-                "1|L--|FPUF = cond(rArg0 - rArg1)",
-                "2|L--|0C00:0002(7): 2 instructions",
-                "3|L--|SCZO = FPUF",
-                "4|T--|if (Test(NE,FPUF)) branch 0C00:0000");
+                "0|L--|0C00:0000(2): 2 instructions",
+                "1|L--|FPUF = cond(ST[Top:real64] - ST[Top + 1:real64])",
+                "2|L--|Top = Top + 2",
+                "3|T--|0C00:0002(7): 2 instructions",
+                "4|L--|SCZO = FPUF",
+                "5|T--|if (Test(NE,FPUF)) branch 0C00:0000");
         }
 
         [Test]
@@ -1015,7 +938,7 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Jnz("foo");
             });
             AssertCode(
-                "0|L--|10000000(12): 3 instructions",
+                "0|T--|10000000(12): 3 instructions",
                 "1|L--|SCZO = FPUF",
                 "2|L--|eax = Mem0[esp + 0x00000004:word32]",
                 "3|T--|if (Test(LE,FPUF)) branch 10000000");
@@ -1126,11 +1049,11 @@ namespace Reko.UnitTests.Arch.Intel
             });
             AssertCode(
                 "0|L--|0C00:0000(1): 2 instructions",
-                "1|L--|sp = sp - 0x0002",
+                "1|L--|sp = sp - 2",
                 "2|L--|Mem0[ss:sp:word16] = SCZDOP",
                 "3|L--|0C00:0001(1): 2 instructions",
                 "4|L--|SCZDOP = Mem0[ss:sp:word16]",
-                "5|L--|sp = sp + 0x0002");
+                "5|L--|sp = sp + 2");
         }
 
         [Test]
@@ -1259,8 +1182,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDA, 0xE9);
             AssertCode(
-              "0|L--|10000000(2): 1 instructions",
-              "1|L--|FPUF = cond(rArg0 - rArg1)");
+              "0|L--|10000000(2): 2 instructions",
+              "1|L--|FPUF = cond(ST[Top:real64] - ST[Top + 1:real64])",
+              "2|L--|Top = Top + 2");
         }
 
         [Test]
@@ -1308,7 +1232,7 @@ namespace Reko.UnitTests.Arch.Intel
                 "1|L--|edx_eax = __xgetbv(ecx)");
         }
 
-     
+
 
         [Test]
         public void X86rw_setc()
@@ -1421,7 +1345,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run16bitTest(0x0E, 0xE8, 0x42, 0x32);
             AssertCode(
                 "0|T--|0C00:0000(4): 2 instructions",
-                "1|L--|sp = sp - 0x0002",
+                "1|L--|sp = sp - 2",
                 "2|T--|call 0C00:3246 (2)");
         }
 
@@ -1430,19 +1354,20 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xd9, 0x1c, 0x24);
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|Mem0[esp:real32] = (real32) rArg0");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Mem0[esp:real32] = (real32) ST[Top:real64]",
+                "2|L--|Top = Top + 1");
         }
 
         [Test]
-        public void X86rw_cmpxchg()
+        public void X86rw_cmpxchg_byte()
         {
             Run32bitTest(0xF0, 0x0F, 0xB0, 0x23); // lock cmpxchg[ebx], ah
             AssertCode(
                 "0|L--|10000000(1): 1 instructions",
                 "1|L--|__lock()",
                 "2|L--|10000001(3): 1 instructions",
-                "3|L--|Z = __cmpxchg(Mem0[ebx:byte], ah, eax, out eax)");
+                "3|L--|Z = __cmpxchg(Mem0[ebx:byte], ah, al, out al)");
         }
 
         [Test]
@@ -1450,8 +1375,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run16bitTest(0xD9, 0x44, 0x40); // fld word ptr [foo]
             AssertCode(
-                "0|L--|0C00:0000(3): 1 instructions",
-                "1|L--|rLoc1 = (real64) Mem0[ds:si + 0x0040:real32]");
+                "0|L--|0C00:0000(3): 2 instructions",
+                "1|L--|Top = Top - 1",
+                "2|L--|ST[Top:real64] = (real64) Mem0[ds:si + 0x0040:real32]");
         }
 
         [Test]
@@ -1499,9 +1425,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run16bitTest(0xD9, 0xF9);
             AssertCode(
-                "0|L--|0C00:0000(2): 2 instructions",
-                "1|L--|rArg1 = rArg1 * lg2(rArg0 + 1.0)",
-                "2|L--|FPUF = cond(rArg1)");
+                "0|L--|0C00:0000(2): 3 instructions",
+                "1|L--|ST[Top + 1:real64] = ST[Top + 1:real64] * lg2(ST[Top:real64] + 1.0)",
+                "2|L--|FPUF = cond(ST[Top + 1:real64])");
         }
 
         [Test]
@@ -1510,7 +1436,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xDB, 0xEB);  // fucomi\tst(0),st(3)
             AssertCode(
                "0|L--|10000000(2): 3 instructions",
-               "1|L--|CZP = cond(rArg0 - rArg3)",
+               "1|L--|CZP = cond(ST[Top:real64] - ST[Top + 3:real64])",
                "2|L--|O = false",
                "3|L--|S = false");
         }
@@ -1520,8 +1446,8 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDF, 0xE9);   // fucomip\tst(0),st(1)
             AssertCode(
-               "0|L--|10000000(2): 3 instructions",
-               "1|L--|CZP = cond(rArg0 - rArg1)",
+               "0|L--|10000000(2): 4 instructions",
+               "1|L--|CZP = cond(ST[Top:real64] - ST[Top + 1:real64])",
                "2|L--|O = false",
                "3|L--|S = false");
         }
@@ -1565,10 +1491,11 @@ namespace Reko.UnitTests.Arch.Intel
         [Test(Description = "Regression reported by @mewmew")]
         public void X86rw_regression1()
         {
-            Run32bitTest(0xDB, 0x7C, 0x47, 0x83);       // fst [esi-0x7D + eax*2]
+            Run32bitTest(0xDB, 0x7C, 0x47, 0x83);       // fstp [esi-0x7D + eax*2]
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|Mem0[edi - 0x0000007D + eax * 0x00000002:real80] = (real80) rArg0");
+                "0|L--|10000000(4): 2 instructions",
+                "1|L--|Mem0[edi - 0x0000007D + eax * 0x00000002:real80] = (real80) ST[Top:real64]",
+                "2|L--|Top = Top + 1");
         }
 
         [Test]
@@ -1577,7 +1504,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xDC, 0x3D, 0x78, 0x56, 0x34, 0x12); // fdivr [12345678]
             AssertCode(
                 "0|L--|10000000(6): 1 instructions",
-                "1|L--|rArg0 = Mem0[0x12345678:real64] / rArg0");
+                "1|L--|ST[Top:real64] = Mem0[0x12345678:real64] / ST[Top:real64]");
         }
 
         [Test]
@@ -1603,7 +1530,9 @@ namespace Reko.UnitTests.Arch.Intel
             Run64bitTest(0x33, 0xC0);
             AssertCode(
                "0|L--|0000000140000000(2): 3 instructions",
-               "1|L--|rax = (uint64) (eax ^ eax)");
+               "1|L--|rax = (uint64) (eax ^ eax)",
+               "2|L--|SZO = cond(eax)",
+               "3|L--|C = false");
         }
 
         [Test]
@@ -1647,7 +1576,7 @@ namespace Reko.UnitTests.Arch.Intel
                "0|L--|0000000140000000(4): 2 instructions",
                "1|L--|v3 = (real32) xmm1 - xmm5",
                "2|L--|xmm1 = DPB(xmm1, v3, 0)");
-        }
+    }
 
         [Test]
         public void X86rw_cvtsi2ss()
@@ -1766,9 +1695,10 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run16bitTest(0xD9, 0xF2);
             AssertCode(     // fptan
-                "0|L--|0C00:0000(2): 2 instructions",
-                "1|L--|rArg0 = tan(rArg0)",
-                "2|L--|rLoc1 = 1.0");
+                "0|L--|0C00:0000(2): 3 instructions",
+                "1|L--|ST[Top:real64] = tan(ST[Top:real64])",
+                "2|L--|Top = Top - 1",
+                "3|L--|ST[Top:real64] = 1.0");
         }
 
         [Test]
@@ -1777,7 +1707,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run16bitTest(0xD9, 0xF0);
             AssertCode(     // f2xm1
                 "0|L--|0C00:0000(2): 1 instructions",
-                "1|L--|rArg0 = pow(2.0, rArg0) - 1.0");
+                "1|L--|ST[Top:real64] = pow(2.0, ST[Top:real64]) - 1.0");
         }
 
         [Test]
@@ -1786,7 +1716,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run64bitTest(0xD8, 0x0D, 0x89, 0x9F, 0x00, 0x00);
             AssertCode(     // fmul
               "0|L--|0000000140000000(6): 1 instructions",
-              "1|L--|rArg0 = rArg0 * Mem0[0x0000000140009F8F:real32]");
+              "1|L--|ST[Top:real64] = ST[Top:real64] * Mem0[0x0000000140009F8F:real32]");
         }
 
         [Test]
@@ -1804,7 +1734,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run64bitTest(0x6A, 0xC2);
             AssertCode(     // "push 0xC2", 
                 "0|L--|0000000140000000(2): 2 instructions",
-                "1|L--|rsp = rsp - 0x0000000000000008",
+                "1|L--|rsp = rsp - 8",
                 "2|L--|Mem0[rsp:word64] = 0xFFFFFFFFFFFFFFC2");
         }
 
@@ -1814,7 +1744,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run64bitTest(0x53);
             AssertCode(     // "push rbx", 
                 "0|L--|0000000140000000(1): 2 instructions",
-                "1|L--|rsp = rsp - 0x0000000000000008",
+                "1|L--|rsp = rsp - 8",
                 "2|L--|Mem0[rsp:word64] = rbx");
         }
 
@@ -1825,7 +1755,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(     // "push rbx", 
                 "0|L--|0000000140000000(3): 3 instructions",
                 "1|L--|v4 = Mem0[rbp - 0x0000000000000020:word64]",
-                "2|L--|rsp = rsp - 0x0000000000000008",
+                "2|L--|rsp = rsp - 8",
                 "3|L--|Mem0[rsp:word64] = v4");
         }
 
@@ -1835,7 +1765,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0x06);
             AssertCode(     // "push es", 
                 "0|L--|10000000(1): 2 instructions",
-                "1|L--|esp = esp - 0x00000002",
+                "1|L--|esp = esp - 2",
                 "2|L--|Mem0[esp:word16] = es");
         }
 
@@ -1863,7 +1793,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run64bitTest(0x41, 0x0F, 0x18, 0x08); // prefetch
             AssertCode(
                 "0|L--|0000000140000000(4): 1 instructions",
-                "1|L--|__prefetcht0(Mem0[rax:byte])");
+                "1|L--|__prefetcht0(Mem0[r8:byte])");
         }
 
         [Test]
@@ -1992,7 +1922,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
                 "1|L--|xmm0 = __andnps(xmm0, Mem0[edx + 0x00000042:word128])");
-        }
+    }
 
         [Test]
         public void X86rw_andps()
@@ -2001,7 +1931,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                "0|L--|10000000(4): 3 instructions",
                "1|L--|v4 = xmm0",
-               "2|L--|v5 = Mem0[edx + 0x00000042:word128]", 
+               "2|L--|v5 = Mem0[edx + 0x00000042:word128]",
                "3|L--|xmm0 = __andps(v4, v5)");
         }
 
@@ -2110,7 +2040,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|T--|if (Test(GE,C)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -2120,7 +2050,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|T--|if (Test(GT,CZ)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -2130,7 +2060,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|T--|if (Test(NE,Z)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -2140,7 +2070,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|T--|if (Test(LE,CZ)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -2150,28 +2080,27 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|T--|if (Test(EQ,Z)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
-        [Ignore("How to deal with unordered comparisons?? Is IsNan enough?")]
         public void X86rw_fcmovnu()
         {
             Run32bitTest(0xDB, 0xD9);    // fcmovnu\tst(0),st(1)
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|@@@");
+                "0|L--|10000000(2): 2 instructions",
+                "1|T--|if (Test(IS_NAN,P)) branch 10000002",
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
-        [Ignore("How to deal with unordered comparisons?? Is IsNan enough?")]
         public void X86rw_fcmovu()
         {
             Run32bitTest(0xDA, 0xD9);    // fcmovu\tst(0),st(1)
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|if (IsNan(P) branch 100000002",
-                "2|L--|rArg0 = rArg1");
+                "0|L--|10000000(2): 2 instructions",
+                "1|T--|if (Test(NOT_NAN,P)) branch 10000002",
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -2179,8 +2108,8 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDF, 0xF2);    // fcomip\tst(0),st(2)
             AssertCode(
-                "0|L--|10000000(2): 3 instructions",
-                "1|L--|CZP = cond(rArg0 - rArg2)",
+                "0|L--|10000000(2): 4 instructions",
+                "1|L--|CZP = cond(ST[Top:real64] - ST[Top + 2:real64])",
                 "2|L--|O = false",
                 "3|L--|S = false");
         }
@@ -2191,7 +2120,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xDD, 0xC2);    // ffree\tst(2)
             AssertCode(
                 "0|L--|10000000(2): 1 instructions",
-                "1|L--|__ffree(rArg2)");
+                "1|L--|__ffree(ST[Top + 2:real64])");
         }
 
         [Test]
@@ -2199,8 +2128,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDF, 0x40, 0x42);    // fild\tword ptr [eax+42]
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|rLoc1 = (real64) Mem0[eax + 0x00000042:int16]");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Top = Top - 1",
+                "2|L--|ST[Top:real64] = (real64) Mem0[eax + 0x00000042:int16]");
         }
 
         [Test]
@@ -2208,8 +2138,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDB, 0x08);    // fisttp\tdword ptr [eax]
             AssertCode(
-                "0|L--|10000000(2): 1 instructions",
-                "1|L--|Mem0[eax:int32] = (int32) trunc(rArg0)");
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|Mem0[eax:int32] = (int32) trunc(ST[Top:real64])",
+                "2|L--|Top = Top + 1");
         }
 
         [Test]
@@ -2217,8 +2148,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDF, 0x48, 0x42);    // fisttp\tword ptr [eax+42]
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|Mem0[eax + 0x00000042:int16] = (int16) trunc(rArg0)");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Mem0[eax + 0x00000042:int16] = (int16) trunc(ST[Top:real64])",
+                "2|L--|Top = Top + 1");
         }
 
         [Test]
@@ -2226,8 +2158,8 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDD, 0x48, 0x42);    // fisttp\tqword ptr [eax+42]
             AssertCode(
-                "0|L--|10000000(3): 1 instructions",
-                "1|L--|Mem0[eax + 0x00000042:int64] = (int64) trunc(rArg0)");
+                "0|L--|10000000(3): 2 instructions",
+                "1|L--|Mem0[eax + 0x00000042:int64] = (int64) trunc(ST[Top:real64])");
         }
 
         [Test]
@@ -2235,8 +2167,9 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDB, 0x28);    // fld\ttword ptr [eax]
             AssertCode(
-                "0|L--|10000000(2): 1 instructions",
-                "1|L--|rLoc1 = (real64) Mem0[eax:real80]");
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|Top = Top - 1",
+                "2|L--|ST[Top:real64] = (real64) Mem0[eax:real80]");
         }
 
         [Test]
@@ -2244,8 +2177,8 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDD, 0xE5);    // fucom\tst(5),st(0)
             AssertCode(
-                "0|L--|10000000(2): 1 instructions",
-                "1|L--|FPUF = cond(rArg0 - rArg5)");
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|FPUF = cond(ST[Top:real64] - ST[Top + 5:real64])");
         }
 
         [Test]
@@ -2253,8 +2186,8 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xDD, 0xEA);    // fucomp\tst(2)
             AssertCode(
-                "0|L--|10000000(2): 1 instructions",
-                "1|L--|FPUF = cond(rArg0 - rArg2)");
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|FPUF = cond(ST[Top:real64] - ST[Top + 2:real64])");
         }
 
         [Test]
@@ -2310,7 +2243,7 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run64bitTest(0x0F, 0x05);    // syscall
             AssertCode(
-                "0|L--|0000000140000000(2): 1 instructions",
+                "0|T--|0000000140000000(2): 1 instructions",
                 "1|L--|__syscall()");
             Run32bitTest(0x0F, 0x05);    // illegal
             AssertCode(
@@ -2621,7 +2554,7 @@ namespace Reko.UnitTests.Arch.Intel
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
                 "1|L--|mm0 = __pxor(mm0, Mem0[edx + 0x00000042:word64])");
-        } 
+        }
 
         [Test]
         public void X86rw_rcpps()
@@ -2774,26 +2707,23 @@ namespace Reko.UnitTests.Arch.Intel
         }
 
         [Test]
-        [Ignore("Find docs from Intel")]
         public void X86rw_vmread()
         {
             Run32bitTest(0x0F, 0x78, 0x42, 0x42);    // vmread\t[edx+42],eax
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|@@@");
+                "0|S--|10000000(4): 1 instructions",
+                "1|L--|Mem0[edx + 0x00000042:word32] = __vmread(eax)");
         }
 
 
         [Test]
-        [Ignore("Find docs from Intel")]
         public void X86rw_vmwrite()
         {
             Run32bitTest(0x0F, 0x79, 0x42, 0x42);    // vmwrite\teax,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|@@@");
+                "0|S--|10000000(4): 1 instructions",
+                "1|L--|__vmwrite(eax, Mem0[edx + 0x00000042:word32])");
         }
-
 
 
         [Test]
@@ -2991,7 +2921,7 @@ namespace Reko.UnitTests.Arch.Intel
                 "2|L--|v5 = Mem0[edx + 0x00000042:word64]",
                 "3|L--|mm0 = __psubsb(v4, v5)");
         }
-  
+
         [Test]
         public void X86rw_pmaxsw()
         {
@@ -3022,7 +2952,7 @@ namespace Reko.UnitTests.Arch.Intel
                 "0|L--|10000000(4): 1 instructions",
                 "1|L--|mm0 = __por(mm0, Mem0[edx + 0x00000042:word64])");
         }
-        
+
         [Test]
         public void X86rw_pslld()
         {
@@ -3123,8 +3053,8 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xDA, 0xDD);	// fcmovu	st(0),st(5)
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
-                "1|T--|if (Test(EQ,Z)) branch 10000002",
-                "2|L--|rArg0 = rArg5");
+                "1|T--|if (Test(NOT_NAN,P)) branch 10000002",
+                "2|L--|ST[Top:real64] = ST[Top + 5:real64]");
         }
 
         [Test]
@@ -3153,8 +3083,8 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xDB, 0xD9);	// fcmovnu	st(0),st(1)
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
-                "1|T--|if (Test(EQ,Z)) branch 10000002",
-                "2|L--|rArg0 = rArg1");
+                "1|T--|if (Test(IS_NAN,P)) branch 10000002",
+                "2|L--|ST[Top:real64] = ST[Top + 1:real64]");
         }
 
         [Test]
@@ -3193,10 +3123,11 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Run32bitTest(0xD9, 0xF4);	// fxtract
             AssertCode(
-                "0|L--|10000000(2): 3 instructions",
-                "1|L--|v3 = rArg0",
-                "2|L--|rArg0 = __exponent(v3)",
-                "3|L--|rLoc1 = __significand(v3)");
+                "0|L--|10000000(2): 4 instructions",
+                "1|L--|v3 = ST[Top:real64]",
+                "2|L--|Top = Top - 1",
+                "3|L--|ST[Top + 1:real64] = __exponent(v3)",
+                "4|L--|ST[Top:real64] = __significand(v3)");
         }
 
         [Test]
@@ -3205,7 +3136,7 @@ namespace Reko.UnitTests.Arch.Intel
             Run32bitTest(0xD9, 0xF5);	// fprem1	st(5),st(0)
             AssertCode(
                 "0|L--|10000000(2): 1 instructions",
-                "1|L--|rArg5 = __fprem1(rArg5, rArg0)");
+                "1|L--|ST[Top + 5:real64] = __fprem1(ST[Top + 5:real64], ST[Top:real64])");
         }
 
         [Test]
@@ -3425,6 +3356,92 @@ namespace Reko.UnitTests.Arch.Intel
                 "0|L--|0000000140000000(4): 2 instructions",
                 "1|L--|v3 = __sqrt(xmm0)",
                 "2|L--|xmm0 = DPB(xmm0, v3, 0)");
+        }
+
+        [Test]
+        public void X86Rw_sldt()
+        {
+            Run64bitTest(0x0F, 0x00, 0x01);  // sldt	word ptr [ecx]
+            AssertCode(
+                 "0|S--|0000000140000000(3): 1 instructions",
+                 "1|L--|Mem0[rcx:word16] = __sldt()");
+        }
+
+
+        [Test]
+        public void X86Rw_minpd()
+        {
+            Run64bitTest(0x66, 0x0F, 0x5D, 0x42, 0x42); // minpd\txmm0,[rdx+42]
+            AssertCode(
+                "0|L--|0000000140000000(5): 3 instructions",
+                "1|L--|v4 = xmm0",
+                "2|L--|v5 = Mem0[rdx + 0x0000000000000042:word128]",
+                "3|L--|xmm0 = __minpd(v4, v5)");
+        }
+
+        [Test]
+        public void X86Rw_sgdt()
+        {
+            Run32bitTest(0x0F, 0x01, 0x00);	// sgdt	[eax]
+            AssertCode(
+                "0|S--|10000000(3): 1 instructions",
+                "1|L--|Mem0[eax:word48] = __sgdt()");
+        }
+
+        [Test]
+        public void X86Rw_sidt()
+        {
+            Run32bitTest(0x0F, 0x01, 0x8A, 0x86, 0x04, 0x05, 0x00);	// sidt	[edx+00050486]
+            AssertCode(
+                "0|S--|10000000(7): 1 instructions",
+                "1|L--|Mem0[edx + 0x00050486:word48] = __sidt()");
+        }
+
+        [Test]
+        public void X86Rw_lldt()
+        {
+            Run32bitTest(0x0F, 0x00, 0x55, 0x8D);	// lldt	word ptr [ebp-73]
+            AssertCode(
+                "0|S--|10000000(4): 1 instructions",
+                "1|L--|__lldt(Mem0[ebp - 0x00000073:word48])");
+        }
+
+        [Test]
+        public void X86Rw_ud0()
+        {
+            Run32bitTest(0x0F, 0xFF, 0xFF);	// ud0	edi,edi
+            AssertCode(
+                "0|---|10000000(3): 1 instructions",
+                "1|---|<invalid>");
+        }
+
+        [Test]
+        public void X86Rw_ud1()
+        {
+            Run32bitTest(0x0F, 0xB9, 0x00);	// ud1	eax,[eax]
+            AssertCode(
+                "0|---|10000000(3): 1 instructions",
+                "1|---|<invalid>");
+        }
+
+        [Test]
+        public void X86Rw_lidt()
+        {
+            Run32bitTest(0x0F, 0x01, 0x1B);	// lidt	[ebx]
+            AssertCode(
+                "0|S--|10000000(3): 1 instructions",
+                "1|L--|__lidt(Mem0[ebx:word48])");
+        }
+
+        [Test]
+        public void X86Rw_sha1msg2()
+        {
+            Run32bitTest(0x0F, 0x38, 0xCA, 0x75, 0xE8);	// sha1msg2	xmm6,[ebp-18]
+            AssertCode(
+                "0|L--|10000000(5): 3 instructions",
+                "1|L--|v4 = Mem0[ebp - 0x00000018:word128]",
+                "2|L--|v5 = xmm6",
+                "3|L--|xmm6 = __sha1msg2(v5, v4)");
         }
     }
 }

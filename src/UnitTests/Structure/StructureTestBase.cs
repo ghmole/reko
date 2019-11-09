@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using Reko.Analysis;
 using Reko.Arch.X86;
 using Reko.Assemblers.x86;
@@ -28,7 +29,6 @@ using Reko.Environments.Msdos;
 using Reko.Loading;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 
@@ -41,19 +41,19 @@ namespace Reko.UnitTests.Structure
 
         protected Program RewriteProgramMsdos(string sourceFilename, Address addrBase)
 		{
-            var cfgSvc = MockRepository.GenerateStub<IConfigurationService>();
-            var env = MockRepository.GenerateStub<OperatingEnvironment>();
-            var tlSvc = MockRepository.GenerateStub<ITypeLibraryLoaderService>();
-            cfgSvc.Stub(c => c.GetEnvironment("ms-dos")).Return(env);
-            cfgSvc.Stub(c => c.GetSignatureFiles()).Return(new List<SignatureFile>());
-            env.Stub(e => e.TypeLibraries).Return(new List<ITypeLibraryElement>());
-            env.Stub(e => e.CharacteristicsLibraries).Return(new List<ITypeLibraryElement>());
+            var cfgSvc = new Mock<IConfigurationService>();
+            var env = new Mock<PlatformDefinition>();
+            var tlSvc = new Mock<ITypeLibraryLoaderService>();
+            cfgSvc.Setup(c => c.GetEnvironment("ms-dos")).Returns(env.Object);
+            cfgSvc.Setup(c => c.GetSignatureFiles()).Returns(new List<SignatureFileDefinition>());
+            env.Setup(e => e.TypeLibraries).Returns(new List<TypeLibraryDefinition>());
+            env.Setup(e => e.CharacteristicsLibraries).Returns(new List<TypeLibraryDefinition>());
             sc = new ServiceContainer();
-            sc.AddService<IConfigurationService>(cfgSvc);
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            sc.AddService<IConfigurationService>(cfgSvc.Object);
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
             sc.AddService<DecompilerEventListener>(new FakeDecompilerEventListener());
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
-            sc.AddService<ITypeLibraryLoaderService>(tlSvc);
+            sc.AddService<ITypeLibraryLoaderService>(tlSvc.Object);
             var ldr = new Loader(sc);
             var arch = new X86ArchitectureReal("x86-real-16");
 
@@ -88,7 +88,7 @@ namespace Reko.UnitTests.Structure
             program.Platform = new DefaultPlatform(null, program.Architecture);
             program.EntryPoints.Add(
                 addrBase,
-                new ImageSymbol(addrBase));
+                ImageSymbol.Procedure(program.Architecture,addrBase));
             return RewriteProgram();
         }
 
@@ -96,23 +96,23 @@ namespace Reko.UnitTests.Structure
         {
             sc = new ServiceContainer();
             sc.AddService<DecompilerEventListener>(new FakeDecompilerEventListener());
-            var asm = new X86TextAssembler(sc, new X86ArchitectureFlat32("x86-protected-32"));
+            var arch = new X86ArchitectureFlat32("x86-protected-32");
+            var asm = new X86TextAssembler(sc, arch);
             program = asm.AssembleFragment(addrBase, asmFragment);
             program.Platform = new DefaultPlatform(null, program.Architecture);
             program.EntryPoints.Add(
                 addrBase,
-                new ImageSymbol(addrBase));
+                ImageSymbol.Procedure(arch, addrBase));
             return RewriteProgram();
         }
 
         private Program RewriteProgram()
         {
             var eventListener = new FakeDecompilerEventListener();
-            var importResolver = MockRepository.GenerateStub<IImportResolver>();
-            importResolver.Replay();
+            var importResolver = new Mock<IImportResolver>();
             var scan = new Scanner(
                 program,
-                importResolver,
+                importResolver.Object,
                 sc);
             foreach (ImageSymbol ep in program.EntryPoints.Values)
             {
@@ -120,7 +120,7 @@ namespace Reko.UnitTests.Structure
             }
             scan.ScanImage();
 
-            var dfa = new DataFlowAnalysis(program, importResolver, eventListener);
+            var dfa = new DataFlowAnalysis(program, importResolver.Object, eventListener);
             dfa.AnalyzeProgram();
 
             return program;

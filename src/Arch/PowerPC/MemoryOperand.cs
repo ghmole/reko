@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,8 +37,8 @@ namespace Reko.Arch.PowerPC
             this.Offset = offset;
         }
 
-        public RegisterStorage BaseRegister { get; private set; }
-        public Constant Offset { get; private set; } 
+        public RegisterStorage BaseRegister { get; }
+        public Constant Offset { get; } 
 
         public override void Write(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,16 +33,16 @@ namespace Reko.Core.Output
     /// </summary>
     public class GlobalDataWriter : IDataTypeVisitor<CodeFormatter>
     {
-        private Program program;
+        private readonly Program program;
+        private readonly IServiceProvider services;
+        private readonly DataTypeComparer cmp;
         private EndianImageReader rdr;
         private CodeFormatter codeFormatter;
         private StructureType globals;
-        private IServiceProvider services;
         private int recursionGuard;     //$REVIEW: remove this once deep recursion bugs have been flushed out.
         private Formatter formatter;
         private TypeReferenceFormatter tw;
         private Queue<StructureField> queue;
-        private DataTypeComparer cmp;
 
         public GlobalDataWriter(Program program, IServiceProvider services)
         {
@@ -81,7 +81,7 @@ namespace Reko.Core.Output
                 if (program.SegmentMap.IsValidAddress(addr))
                 {
                     formatter.Write(" = ");
-                    this.rdr = program.CreateImageReader(addr);
+                    this.rdr = program.CreateImageReader(program.Architecture, addr);
                     field.DataType.Accept(this);
                 }
             }
@@ -109,7 +109,7 @@ namespace Reko.Core.Output
                 if (program.SegmentMap.IsValidAddress(address))
                 {
                     formatter.Write(" = ");
-                    this.rdr = program.CreateImageReader(address);
+                    this.rdr = program.CreateImageReader(program.Architecture, address);
                     dataType.Accept(this);
                 }
             }
@@ -201,8 +201,40 @@ namespace Reko.Core.Output
 
         public CodeFormatter VisitPrimitive(PrimitiveType pt)
         {
-            rdr.Read(pt).Accept(codeFormatter);
+            if (pt.Size > 8)
+            {
+                var bytes = rdr.ReadBytes(pt.Size);
+                FormatRawBytes(bytes);
+            }
+            else
+            {
+                rdr.Read(pt).Accept(codeFormatter);
+            }
             return codeFormatter;
+        }
+
+        private void FormatRawBytes(byte[] bytes)
+        {
+            var fmt = codeFormatter.InnerFormatter;
+            fmt.Terminate();
+            fmt.Indent();
+            fmt.Write("{");
+            fmt.Terminate();
+            fmt.Indentation += fmt.TabSize;
+
+            var structOffset = rdr.Offset;
+            for (int i = 0; i < bytes.Length;)
+            {
+                fmt.Indent();
+                for (int j = 0; i < bytes.Length && j < 16; ++j, ++i)
+                {
+                    fmt.Write("0x{0:X2}, ", bytes[i]);
+                }
+                fmt.Terminate("");
+            }
+            fmt.Indentation -= fmt.TabSize;
+            fmt.Indent();
+            fmt.Write("}");
         }
 
         public CodeFormatter VisitMemberPointer(MemberPointer memptr)
@@ -249,11 +281,6 @@ namespace Reko.Core.Output
                 codeFormatter.InnerFormatter.Write("&g_{0}", field.Name);
             }
             return codeFormatter;
-        }
-
-        public CodeFormatter VisitQualifiedType(QualifiedType qt)
-        {
-            return qt.DataType.Accept(this);
         }
 
         public CodeFormatter VisitReference(ReferenceTo refTo)

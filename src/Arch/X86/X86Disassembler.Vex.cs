@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,20 +28,42 @@ namespace Reko.Arch.X86
 {
     public partial class X86Disassembler
     {
-        private static Dictionary<Opcode, Opcode> CreateVexMapping()
+        private static Dictionary<Mnemonic, Mnemonic> CreateVexMapping()
         {
-            return new Dictionary<Opcode, Opcode>
+            return new Dictionary<Mnemonic, Mnemonic>
             {
-                { Opcode.addsd, Opcode.vaddsd },
-                { Opcode.addpd, Opcode.vaddpd },
-                { Opcode.cvtsi2sd, Opcode.vcvtsi2sd },
-                { Opcode.cvtsi2ss, Opcode.vcvtsi2ss },
-                { Opcode.movapd, Opcode.vmovapd },
-                { Opcode.movaps, Opcode.vmovaps },
-                { Opcode.movsd, Opcode.vmovsd },
-                { Opcode.movss, Opcode.vmovss },
-                { Opcode.xorpd, Opcode.vxorpd },
-                { Opcode.xorps, Opcode.vxorps },
+                { Mnemonic.illegal, Mnemonic.illegal },
+                { Mnemonic.addsd, Mnemonic.vaddsd },
+                { Mnemonic.addpd, Mnemonic.vaddpd },
+                { Mnemonic.addsubpd, Mnemonic.vaddsubpd },
+                { Mnemonic.addsubps, Mnemonic.vaddsubps },
+                { Mnemonic.cvtsi2sd, Mnemonic.vcvtsi2sd },
+                { Mnemonic.cvtsi2ss, Mnemonic.vcvtsi2ss },
+                { Mnemonic.cvttpd2dq, Mnemonic.vcvttpd2dq },
+                { Mnemonic.cvtdq2pd, Mnemonic.vcvtdq2pd },
+                { Mnemonic.cvtpd2dq, Mnemonic.vcvtpd2dq },
+                { Mnemonic.movapd, Mnemonic.vmovapd },
+                { Mnemonic.movaps, Mnemonic.vmovaps },
+                { Mnemonic.movlps, Mnemonic.vmovlps },
+                { Mnemonic.movlpd, Mnemonic.vmovlpd },
+                { Mnemonic.movsd, Mnemonic.vmovsd },
+                { Mnemonic.movss, Mnemonic.vmovss },
+                { Mnemonic.xorpd, Mnemonic.vxorpd },
+                { Mnemonic.xorps, Mnemonic.vxorps },
+                { Mnemonic.unpckhpd, Mnemonic.vunpckhpd },
+                { Mnemonic.unpckhps, Mnemonic.vunpckhps },
+
+                //$TODO: should be in the decoder.
+                { Mnemonic.vhaddpd, Mnemonic.vhaddpd },
+                { Mnemonic.vhaddps, Mnemonic.vhaddps },
+                { Mnemonic.vhsubpd, Mnemonic.vhsubpd },
+                { Mnemonic.vhsubps, Mnemonic.vhsubps },
+                { Mnemonic.vlddqu, Mnemonic.vlddqu }, 
+                { Mnemonic.vmovlps, Mnemonic.vmovlps},
+                { Mnemonic.vpacksswb, Mnemonic.vpacksswb },
+                { Mnemonic.vpslld, Mnemonic.vpslld },
+                { Mnemonic.vpunpckhqdq, Mnemonic.vpunpckhqdq },
+                { Mnemonic.vpunpcklqdq, Mnemonic.vpunpcklqdq },
             };
         }
     }

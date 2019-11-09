@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,9 +39,15 @@ namespace Reko.Scanning
     {
         public ScanResults()
         {
+            this.TransferTargets = new HashSet<Address>();
+            this.DirectlyCalledAddresses = new Dictionary<Address, int>();
+            this.Instructions = new Dictionary<Address, RtlInstructionCluster>();
+            this.FlatInstructions = new Dictionary<ulong, ScanResults.instr>();
+            this.FlatEdges = new List<link>();
             this.IndirectCalls = new HashSet<Address>();
             this.IndirectJumps = new HashSet<Address>();
             this.Procedures = new List<RtlProcedure>();
+            this.Invalid = new HashSet<Address>();
             this.WatchedAddresses = new HashSet<Address>();
         }
 
@@ -49,7 +55,7 @@ namespace Reko.Scanning
         /// All the discovered machine instructions, rewritten into RTL
         /// instruction clusters.
         /// </summary>
-        public SortedList<Address, RtlInstructionCluster> Instructions;
+        public Dictionary<Address, RtlInstructionCluster> Instructions;
 
         /// <summary>
         /// Interprocedural control flow graph, consisting of all
@@ -89,8 +95,13 @@ namespace Reko.Scanning
         /// This is a key end result of the scanning stage.
         /// </summary>
         public List<RtlProcedure> Procedures { get;  set; }
-        public SortedList<Address, instr> FlatInstructions { get;  set; }
+        public Dictionary<ulong, instr> FlatInstructions { get;  set; }
         public List<link> FlatEdges { get; set; }
+
+        /// <summary>
+        /// All the places that were identified as padding.
+        /// </summary>
+        public List<RtlBlock> RemovedPadding { get; set; }
 
         /// <summary>
         /// Tally of occurrences of bitpatterns that look like addresses,
@@ -114,6 +125,10 @@ namespace Reko.Scanning
         public HashSet<Address> IndirectCalls;
 
         /// <summary>
+        /// Addresses which cannot possibly be valid instructions.
+        /// </summary>
+        public HashSet<Address> Invalid;
+        /// <summary>
         /// Useful for debugging.
         /// </summary>
         public HashSet<Address> WatchedAddresses;
@@ -121,7 +136,7 @@ namespace Reko.Scanning
         [Conditional("DEBUG")]
         public void Dump(string caption = "Dump")
         {
-            BreakOnWatchedAddress(ICFG.Nodes.Select(n => n.Address));
+            //BreakOnWatchedAddress(ICFG.Nodes.Select(n => n.Address));
 
             return;     // This is horribly verbose, so only use it when debugging unit tests.
 #if VERBOSE
@@ -170,7 +185,7 @@ namespace Reko.Scanning
             public Address block_id;
             public int pred;
             public int succ;
-            internal RtlInstructionCluster rtl;
+            public RtlInstructionCluster rtl;
         }
 
         public class link
@@ -180,8 +195,7 @@ namespace Reko.Scanning
 
             public override bool Equals(object obj)
             {
-                var that = obj as link;
-                if (that == null)
+                if (!(obj is link that))
                     return false;
                 return that.first == this.first && that.second == this.second;
             }

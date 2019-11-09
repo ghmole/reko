@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,8 @@
  */
 #endregion
 
+using Reko.Core;
+using Reko.Core.Machine;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -43,148 +45,148 @@ namespace Reko.Arch.PowerPC
                 // 00
                 invalid,
                 invalid,
-                new DOpRec(Opcode.tdi, "I1,r2,S"),
-                new DOpRec(Opcode.twi, "I1,r2,S"),
+                Instr(Mnemonic.tdi, I1,r2,S),
+                Instr(Mnemonic.twi, I1,r2,S),
                 Ext4Decoder(),
                 Ext5Decoder(),
                 Ext6Decoder(),
-                new DOpRec(Opcode.mulli, "r1,r2,S"),
+                Instr(Mnemonic.mulli, r1,r2,S),
 
-                new DOpRec(Opcode.subfic, "r1,r2,S"),
+                Instr(Mnemonic.subfic, r1,r2,S),
                 invalid,
-                new CmpOpRec(Opcode.cmpli, "C1,r2,U"),
-                new CmpOpRec(Opcode.cmpi, "C1,r2,S"),
-                new DOpRec(Opcode.addic, "r1,r2,S"),
-                new DOpRec(Opcode.addic, ":r1,r2,S"),
-                new DOpRec(Opcode.addi, "r1,r2,S"),
-                new DOpRec(Opcode.addis, "r1,r2,S"),
+                new CmpDecoder(Mnemonic.cmpli, C1,r2,U),
+                new CmpDecoder(Mnemonic.cmpi, C1,r2,S),
+                Instr(Mnemonic.addic, r1,r2,S),
+                Instr(Mnemonic.addic, CC,r1,r2,S),
+                Instr(Mnemonic.addi, r1,r2,S),
+                Instr(Mnemonic.addis, r1,r2,S),
                 // 10
-                new BOpRec(),
-                new DOpRec(Opcode.sc, ""),
-                new IOpRec(),
-                new XOpRec(new Dictionary<uint, Decoder>()
+                new BDecoder(),
+                Instr(Mnemonic.sc),
+                new IDecoder(),
+                new XDecoder(new Dictionary<uint, Decoder>()
                 {
-                    { 0, new DOpRec(Opcode.mcrf, "C1,C2")},
-                    { 16, new BclrOpRec() },
-                    { 33, new DOpRec(Opcode.crnor, "I1,I2,I3") },
-                    { 50, new DOpRec(Opcode.rfi, "") },
-                    { 0x96, new DOpRec(Opcode.isync, "") },
-                    { 449, new DOpRec(Opcode.cror, "I1,I2,I3") },
-                    { 0x0C1, new DOpRec(Opcode.crxor, "I1,I2,I3") },
-                    { 0x121, new DOpRec(Opcode.creqv, "I1,I2,I3") },
-                    { 0x210, new XlOpRecAux(Opcode.bcctr, Opcode.bctrl, "I1,I2")}
+                    { 0, Instr(Mnemonic.mcrf, C1,C2)},
+                    { 16, new BclrDecoder() },
+                    { 33, Instr(Mnemonic.crnor, I1,I2,I3) },
+                    { 50, Instr( InstrClass.Transfer, Mnemonic.rfi) },
+                    { 0x96, Instr(Mnemonic.isync) },
+                    { 449, Instr(Mnemonic.cror, I1,I2,I3) },
+                    { 0x0C1, Instr(Mnemonic.crxor, I1,I2,I3) },
+                    { 0x121, Instr(Mnemonic.creqv, I1,I2,I3) },
+                    { 0x210, new XlDecoderAux(Mnemonic.bcctr, Mnemonic.bctrl, I1,I2)}
                 }),
-                new DOpRec(Opcode.rlwimi, "r2,r1,I3,I4,I5"),
-                new DOpRec(Opcode.rlwinm, ".r2,r1,I3,I4,I5"),
+                Instr(Mnemonic.rlwimi, r2,r1,I3,I4,I5),
+                Instr(Mnemonic.rlwinm, C,r2,r1,I3,I4,I5),
                 invalid,
-                new DOpRec(Opcode.rlwnm, "r2,r1,r3,I4,I5"),
+                Instr(Mnemonic.rlwnm, r2,r1,r3,I4,I5),
 
-                new DOpRec(Opcode.ori, "r2,r1,U"),
-                new DOpRec(Opcode.oris, "r2,r1,U"),
-                new DOpRec(Opcode.xori, "r2,r1,U"),
-                new DOpRec(Opcode.xoris, "r2,r1,U"),
-                new DOpRec(Opcode.andi, ":r2,r1,U"),
-                new DOpRec(Opcode.andis, ":r2,r1,U"),
-                new MDOpRec(),
+                Instr(Mnemonic.ori, r2,r1,U),
+                Instr(Mnemonic.oris, r2,r1,U),
+                Instr(Mnemonic.xori, r2,r1,U),
+                Instr(Mnemonic.xoris, r2,r1,U),
+                Instr(Mnemonic.andi, CC,r2,r1,U),
+                Instr(Mnemonic.andis, CC,r2,r1,U),
+                new MDDecoder(),
                 Ext1FDecoder(),
                 // 20
-                new DOpRec(Opcode.lwz, "r1,E2"),
-                new DOpRec(Opcode.lwzu, "r1,E2"),
-                new DOpRec(Opcode.lbz, "r1,E2"),
-                new DOpRec(Opcode.lbzu, "r1,E2"),
-                new DOpRec(Opcode.stw, "r1,E2"),
-                new DOpRec(Opcode.stwu, "r1,E2"),
-                new DOpRec(Opcode.stb, "r1,E2"),
-                new DOpRec(Opcode.stbu, "r1,E2"),
+                Instr(Mnemonic.lwz, r1,E2),
+                Instr(Mnemonic.lwzu, r1,E2),
+                Instr(Mnemonic.lbz, r1,E2),
+                Instr(Mnemonic.lbzu, r1,E2),
+                Instr(Mnemonic.stw, r1,E2),
+                Instr(Mnemonic.stwu, r1,E2),
+                Instr(Mnemonic.stb, r1,E2),
+                Instr(Mnemonic.stbu, r1,E2),
 
-                new DOpRec(Opcode.lhz, "r1,E2"),
-                new DOpRec(Opcode.lhzu, "r1,E2"),
-                new DOpRec(Opcode.lha, "r1,E2"),
-                new DOpRec(Opcode.lhau, "r1,E2"),
-                new DOpRec(Opcode.sth, "r1,E2"),
-                new DOpRec(Opcode.sthu, "r1,E2"),
-                new DOpRec(Opcode.lmw, "r1,E2"),
-                new DOpRec(Opcode.stmw, "r1,E2"),
+                Instr(Mnemonic.lhz, r1,E2),
+                Instr(Mnemonic.lhzu, r1,E2),
+                Instr(Mnemonic.lha, r1,E2),
+                Instr(Mnemonic.lhau, r1,E2),
+                Instr(Mnemonic.sth, r1,E2),
+                Instr(Mnemonic.sthu, r1,E2),
+                Instr(Mnemonic.lmw, r1,E2),
+                Instr(Mnemonic.stmw, r1,E2),
                 // 30
-                new DOpRec(Opcode.lfs, "f1,E2"),
-                new DOpRec(Opcode.lfsu, "f1,E2"),
-                new DOpRec(Opcode.lfd, "f1,E2"),
-                new DOpRec(Opcode.lfdu, "f1,E2"),
-                new DOpRec(Opcode.stfs, "f1,E2"),
-                new DOpRec(Opcode.stfsu, "f1,E2"),
-                new DOpRec(Opcode.stfd, "f1,E2"),
-                new DOpRec(Opcode.stfdu, "f1,E2"),
+                Instr(Mnemonic.lfs, f1,E2),
+                Instr(Mnemonic.lfsu, f1,E2),
+                Instr(Mnemonic.lfd, f1,E2),
+                Instr(Mnemonic.lfdu, f1,E2),
+                Instr(Mnemonic.stfs, f1,E2),
+                Instr(Mnemonic.stfsu, f1,E2),
+                Instr(Mnemonic.stfd, f1,E2),
+                Instr(Mnemonic.stfdu, f1,E2),
 
                 Ext38Decoder(),
                 Ext39Decoder(),
-                new DSOpRec(Opcode.ld, Opcode.ldu, "r1,E2"),    // 3A
+                new DSDecoder(Mnemonic.ld, Mnemonic.ldu, r1,E2),    // 3A
                 Ext3BDecoder(),
 
                 Ext3CDecoder(),
                 Ext3DDecoder(),
-                new DSOpRec(Opcode.std, Opcode.stdu, "r1,E2"),          // 3E
-                new FpuOpRec(1, 0x1F, new Dictionary<uint, Decoder>()     // 3F
+                new DSDecoder(Mnemonic.std, Mnemonic.stdu, r1,E2),          // 3E
+                new FpuDecoder(1, 0x1F, new Dictionary<uint, Decoder>()     // 3F
                 {
-                    { 0x00, new FpuOpRec(6, 0x1F, new Dictionary<uint, Decoder>
+                    { 0x00, new FpuDecoder(6, 0x1F, new Dictionary<uint, Decoder>
                         {
-                            { 0, new FpuOpRecAux(Opcode.fcmpu, "C1,f2,f3") },
-                            { 1, new FpuOpRecAux(Opcode.fcmpo, "C1,f2,f3") },
-                            //{ 2, new FpuOpRecAux(Opcode.mcrfs)}
+                            { 0, Instr(Mnemonic.fcmpu, C1,f2,f3) },
+                            { 1, Instr(Mnemonic.fcmpo, C1,f2,f3) },
+                            //{ 2, Instr(Opcode.mcrfs)}
                         })
                     },
-                    { 0x06, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x06, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            //{ 1, new FpuOpRecAux(Opcode.mtfsb1 },
-                            //{ 2, new FpuOpRecAux(Opcode.mtfsb0 },
-                            //{ 4, new FpuOpRecAux(Opcode.mtfsfi }
+                            //{ 1, Instr(Opcode.mtfsb1 },
+                            //{ 2, Instr(Opcode.mtfsb0 },
+                            //{ 4, Instr(Opcode.mtfsfi }
                         })
                     },
-                    { 0x07, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x07, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            { 0x12, new FpuOpRecAux(Opcode.mffs, ".f1" )},
-                            { 0x16, new FpuOpRecAux(Opcode.mtfsf, "u17:8,f3" )},
+                            { 0x12, Instr(Mnemonic.mffs, C,f1)},
+                            { 0x16, Instr(Mnemonic.mtfsf, u17_8,f3 )},
                         })
                     },
-                    { 0x08, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x08, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            { 1, new FpuOpRecAux(Opcode.fneg, ".f1,f3") },
-                            { 2, new FpuOpRecAux(Opcode.fmr, ".f1,f3" )},
-                            { 4, new FpuOpRecAux(Opcode.fnabs, ".f1,f3") },
-                            { 8, new FpuOpRecAux(Opcode.fabs, ".f1,f3") },
+                            { 1, Instr(Mnemonic.fneg, C,f1,f3) },
+                            { 2, Instr(Mnemonic.fmr, C,f1,f3)},
+                            { 4, Instr(Mnemonic.fnabs, C,f1,f3) },
+                            { 8, Instr(Mnemonic.fabs, C,f1,f3) },
                         })
                     },
-                    { 0x0C, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x0C, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            { 0, new FpuOpRecAux(Opcode.frsp, ".f1,f3") },
+                            { 0, Instr(Mnemonic.frsp, C,f1,f3) },
                         })
                     },
-                    { 0x0E, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x0E, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            { 0x00, new FpuOpRecAux(Opcode.fctiw, ".f1,f3") },
-                            { 0x19, new FpuOpRecAux(Opcode.fctid, ".f1,f3") },
-                            { 0x1A, new FpuOpRecAux(Opcode.fcfid,  ".f1,f3") },
+                            { 0x00, Instr(Mnemonic.fctiw, C,f1,f3) },
+                            { 0x19, Instr(Mnemonic.fctid, C,f1,f3) },
+                            { 0x1A, Instr(Mnemonic.fcfid,  C,f1,f3) },
                         })
                     },
-                    { 0x0F, new FpuOpRec(6, 0x1F, new Dictionary<uint,Decoder>
+                    { 0x0F, new FpuDecoder(6, 0x1F, new Dictionary<uint,Decoder>
                         {
-                            { 0x00, new FpuOpRecAux(Opcode.fctiwz,  ".f1,f3") },
-                            { 0x19, new FpuOpRecAux(Opcode.fctidz,   ".f1,f3") },
+                            { 0x00, Instr(Mnemonic.fctiwz,  C,f1,f3) },
+                            { 0x19, Instr(Mnemonic.fctidz,   C,f1,f3) },
                         })
                     },
 
-                    { 18, new FpuOpRecAux(Opcode.fdiv, ".f1,f2,f3") },
-                    { 20, new FpuOpRecAux(Opcode.fsub, ".f1,f2,f3") },
-                    { 21, new FpuOpRecAux(Opcode.fadd, ".f1,f2,f3") },
-                    { 0x16, new FpuOpRecAux(Opcode.fsqrt, ".f1,f3") },
-                    { 0x17, new FpuOpRecAux(Opcode.fsel, ".f1,f2,f4,f3") },
-                    { 0x19, new FpuOpRecAux(Opcode.fmul, ".f1,f2,f4") },
-                    { 0x1A, new FpuOpRecAux(Opcode.frsqrte, ".f1,f3") },
+                    { 18, Instr(Mnemonic.fdiv, C,f1,f2,f3) },
+                    { 20, Instr(Mnemonic.fsub, C,f1,f2,f3) },
+                    { 21, Instr(Mnemonic.fadd, C,f1,f2,f3) },
+                    { 0x16, Instr(Mnemonic.fsqrt, C,f1,f3) },
+                    { 0x17, Instr(Mnemonic.fsel, C,f1,f2,f4,f3) },
+                    { 0x19, Instr(Mnemonic.fmul, C,f1,f2,f4) },
+                    { 0x1A, Instr(Mnemonic.frsqrte, C,f1,f3) },
 
-                    { 0x1C, new FpuOpRecAux(Opcode.fmsub, ".f1,f2,f4,f3") },
+                    { 0x1C, Instr(Mnemonic.fmsub, C,f1,f2,f4,f3) },
 
-                    { 0x1D, new FpuOpRecAux(Opcode.fmadd, ".f1,f2,f4,f3") },
-                    { 0x1E, new FpuOpRecAux(Opcode.fnmsub, ".f1,f2,f4,f3") },
-                    { 0x1F, new FpuOpRecAux(Opcode.fnmadd, ".f1,f2,f4,f3") },
+                    { 0x1D, Instr(Mnemonic.fmadd, C,f1,f2,f4,f3) },
+                    { 0x1E, Instr(Mnemonic.fnmsub, C,f1,f2,f4,f3) },
+                    { 0x1F, Instr(Mnemonic.fnmadd, C,f1,f2,f4,f3) },
                 })
 
             };
@@ -192,14 +194,19 @@ namespace Reko.Arch.PowerPC
         }
 
 
-        private Decoder Nyi(string message)
+        private static Decoder Nyi(string message)
         {
             return new NyiDecoder(message);
         }
 
-        private Decoder Instr(Opcode opcode, string format)
+        private static Decoder Instr(Mnemonic opcode, params Mutator<PowerPcDisassembler> [] mutators)
         {
-            return new DOpRec(opcode, format);
+            return new InstrDecoder(opcode, mutators, InstrClass.Linear);
+        }
+
+        private static Decoder Instr(InstrClass iclass, Mnemonic opcode, params Mutator<PowerPcDisassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode,  mutators, iclass);
         }
 
         private Decoder Mask(int ppcBitPosition, int bits, params Decoder[] decoders)
@@ -226,7 +233,7 @@ namespace Reko.Arch.PowerPC
 
         private Decoder Ext4Decoder()
         {
-            if (string.Compare(this.model , "750") == 0)
+            if (string.Compare(this.model, "750") == 0)
             {
                 return Ext4Decoder_PPC750CL();
             }
@@ -238,9 +245,9 @@ namespace Reko.Arch.PowerPC
 
         private Decoder Ext4Decoder_VMX128()
         {
-            var decoder = new VXOpRec(
-                 new Dictionary<uint, Decoder>     // 4
-                 {
+            var decoder = new VXDecoder(
+                new Dictionary<uint, Decoder>     // 4
+                {
 /*
 
 Conventions:
@@ -271,19 +278,19 @@ Conventions:
    lvlx128                           Load Vector128 Left Indexed
 |0 0 0 1 0 0|  VD128  |   RA    |   RB    |1 0 0 0 0 0 0|VDh|1 1|
    lvlx128       vr(VD128), r(RA), r(RB)*/
-                { 0x403, new DOpRec(Opcode.lvlx128, "Wd,r2,r3") },
-                { 0x407, new DOpRec(Opcode.lvlx128, "Wd,r2,r3") },
-                { 0x40B, new DOpRec(Opcode.lvlx128, "Wd,r2,r3") },
-                { 0x40F, new DOpRec(Opcode.lvlx128, "Wd,r2,r3") },
+                { 0x403, Instr(Mnemonic.lvlx128, Wd,r2,r3) },
+                { 0x407, Instr(Mnemonic.lvlx128, Wd,r2,r3) },
+                { 0x40B, Instr(Mnemonic.lvlx128, Wd,r2,r3) },
+                { 0x40F, Instr(Mnemonic.lvlx128, Wd,r2,r3) },
    /*
 =================================================================
    lvrx128                          Load Vector128 Right Indexed
 |0 0 0 1 0 0|  VD128  |   RA    |   RB    |1 0 0 0 1 0 0|VDh|1 1|
    lvrx128       vr(VD128), r(RA), r(RB) */
-                { 0x443, new DOpRec(Opcode.lvrx128, "Wd,r2,r3") },
-                { 0x447, new DOpRec(Opcode.lvrx128, "Wd,r2,r3") },
-                { 0x44B, new DOpRec(Opcode.lvrx128, "Wd,r2,r3") },
-                { 0x44F, new DOpRec(Opcode.lvrx128, "Wd,r2,r3") },
+                { 0x443, Instr(Mnemonic.lvrx128, Wd,r2,r3) },
+                { 0x447, Instr(Mnemonic.lvrx128, Wd,r2,r3) },
+                { 0x44B, Instr(Mnemonic.lvrx128, Wd,r2,r3) },
+                { 0x44F, Instr(Mnemonic.lvrx128, Wd,r2,r3) },
    /*
 =================================================================
    lvlxl128                      Load Vector128 Left Indexed LRU
@@ -306,10 +313,10 @@ Conventions:
 |0 0 0 1 0 0|  VD128  |   RA    |   RB    |0 0 0 1 1 0 0|VDh|1 1|
    lvx128        vr(VD128), r(RA), r(RB)
 =================================================================*/
-                { 0x0C3, new DOpRec(Opcode.lvx128, "Wd,r2,r3") },
-                { 0x0C7, new DOpRec(Opcode.lvx128, "Wd,r2,r3") },
-                { 0x0CB, new DOpRec(Opcode.lvx128, "Wd,r2,r3") },
-                { 0x0CF, new DOpRec(Opcode.lvx128, "Wd,r2,r3") },
+                { 0x0C3, Instr(Mnemonic.lvx128, Wd,r2,r3) },
+                { 0x0C7, Instr(Mnemonic.lvx128, Wd,r2,r3) },
+                { 0x0CB, Instr(Mnemonic.lvx128, Wd,r2,r3) },
+                { 0x0CF, Instr(Mnemonic.lvx128, Wd,r2,r3) },
 /*
    lvxl128                            Load Vector128 Indexed LRU
 |0 0 0 1 0 0|  VD128  |   RA    |   RB    |0 1 0 1 1 0 0|VDh|1 1|
@@ -323,10 +330,10 @@ Conventions:
 |0 0 0 1 0 0|  VS128  |   RA    |   RB    |1 0 1 0 0 0 0|VDh|1 1|
    stvlx128      vr(VS128), r(RA), r(RB)
 */
-                { 0x503, new DOpRec(Opcode.stvlx128, "Wd,r2,r3") },
-                { 0x507, new DOpRec(Opcode.stvlx128, "Wd,r2,r3") },
-                { 0x50B, new DOpRec(Opcode.stvlx128, "Wd,r2,r3") },
-                { 0x50F, new DOpRec(Opcode.stvlx128, "Wd,r2,r3") },
+                { 0x503, Instr(Mnemonic.stvlx128, Wd,r2,r3) },
+                { 0x507, Instr(Mnemonic.stvlx128, Wd,r2,r3) },
+                { 0x50B, Instr(Mnemonic.stvlx128, Wd,r2,r3) },
+                { 0x50F, Instr(Mnemonic.stvlx128, Wd,r2,r3) },
 
 /*=================================================================
    stvlxl128                    Store Vector128 Left Indexed LRU
@@ -337,10 +344,10 @@ Conventions:
 |0 0 0 1 0 0|  VS128  |   RA    |   RB    |1 0 1 0 1 0 0|VDh|1 1|
    stvrx128       vr(VS128), r(RA), r(RB)
 */
-                { 0x543, new DOpRec(Opcode.stvrx128, "Wd,r2,r3") },
-                { 0x547, new DOpRec(Opcode.stvrx128, "Wd,r2,r3") },
-                { 0x54B, new DOpRec(Opcode.stvrx128, "Wd,r2,r3") },
-                { 0x54F, new DOpRec(Opcode.stvrx128, "Wd,r2,r3") },
+                { 0x543, Instr(Mnemonic.stvrx128, Wd,r2,r3) },
+                { 0x547, Instr(Mnemonic.stvrx128, Wd,r2,r3) },
+                { 0x54B, Instr(Mnemonic.stvrx128, Wd,r2,r3) },
+                { 0x54F, Instr(Mnemonic.stvrx128, Wd,r2,r3) },
 
 /*=================================================================
    stvrxl128                   Store Vector128 Right Indexed LRU
@@ -350,10 +357,10 @@ Conventions:
    stvx128                               Store Vector128 Indexed
 |0 0 0 1 0 0|  VS128  |   RA    |   RB    |0 0 1 1 1 0 0|VDh|1 1|
    stvx128       vr(VS128), r(RA), r(RB)*/
-                { 0x1C3, new DOpRec(Opcode.stvx128, "Wd,r2,r3") },
-                { 0x1C7, new DOpRec(Opcode.stvx128, "Wd,r2,r3") },
-                { 0x1CB, new DOpRec(Opcode.stvx128, "Wd,r2,r3") },
-                { 0x1CF, new DOpRec(Opcode.stvx128, "Wd,r2,r3") },
+                { 0x1C3, Instr(Mnemonic.stvx128, Wd,r2,r3) },
+                { 0x1C7, Instr(Mnemonic.stvx128, Wd,r2,r3) },
+                { 0x1CB, Instr(Mnemonic.stvx128, Wd,r2,r3) },
+                { 0x1CF, Instr(Mnemonic.stvx128, Wd,r2,r3) },
 
 /*=================================================================
    stvxl128                          Store Vector128 Indexed LRU
@@ -643,55 +650,55 @@ Conventions:
 |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |0 1 1 1 1 0 0|VDh|VBh|
    vupkhsb128    vr(VD128), vr(VB128)
 */
-                        { 0x000, new DOpRec(Opcode.vaddubm, "v1,v2,v3") },
-                        { 0x002, new DOpRec(Opcode.vmaxub, "v1,v2,v3") },
-                        { 0x00A, new DOpRec(Opcode.vaddfp, "v1,v2,v3") },
-                       // { 0x010, new DOpRec(Opcode.mulhhwu, "r1,r2,r3") },
-                        { 0x020, new DOpRec(Opcode.vmhaddshs, "v1,v2,v3,v4") },
-                        { 0x022, new DOpRec(Opcode.vmladduhm, "v1,v2,v3,v4") },
-                        { 0x042, new DOpRec(Opcode.vmaxuh, "v1,v2,v3") },
-                        { 0x04A, new DOpRec(Opcode.vsubfp, "v1,v2,v3") },
-                        { 0x080, new DOpRec(Opcode.vadduwm, "v1,v2,v3") },
-                        { 0x086, new DOpRec(Opcode.vcmpequw, "v1,v2,v3") },
-                        { 0x08C, new DOpRec(Opcode.vmrghw, "v1,v2,v3") },
-                        { 0x0C6, new DOpRec(Opcode.vcmpeqfp, "v1,v2,v3") },
-                        { 0x0E2, new DOpRec(Opcode.vmladduhm, "v1,v2,v3,v4") },
-                        { 0x100, new DOpRec(Opcode.vadduqm, "v1,v2,v3") },
-                        { 0x10A, new DOpRec(Opcode.vrefp, "v1,v3") },
-                        { 0x14A, new DOpRec(Opcode.vrsqrtefp, "v1,v3") },
-                        { 0x184, new DOpRec(Opcode.vslw, "v1,v2,v3") },
-                        { 0x18C, new DOpRec(Opcode.vmrglw, "v1,v2,v3") },
-                        { 0x200, new DOpRec(Opcode.vaddubs, "v1,v2,v3") },
-                        { 0x28C, new DOpRec(Opcode.vspltw, "v1,v3,u16:2") },
-                        { 0x2C6, new DOpRec(Opcode.vcmpgtfp, "v1,v2,v3") },
-                        { 0x34A, new DOpRec(Opcode.vcfsx, "v1,v3,u16:5") },
-                        { 0x38C, new DOpRec(Opcode.vspltisw, "v1,s16:5") },
-                        { 0x3CA, new DOpRec(Opcode.vctsxs, "v1,v3,u16:5") },
-                        { 0x401, new DOpRec(Opcode.bcdadd, ":v1,v2,v3,u9:1") },
-                        { 0x404, new DOpRec(Opcode.vand, "v1,v2,v3") },
-                        { 0x406, new DOpRec(Opcode.vcmpequb, ":v1,v2,v3") },
-                        { 0x444, new DOpRec(Opcode.vandc, "v1,v2,v3") },
-                        { 0x484, new DOpRec(Opcode.vor, "v1,v2,v3") },
-                        { 0x4C4, new DOpRec(Opcode.vxor, "v1,v2,v3")},
-                        { 0x4C6, new DOpRec(Opcode.vcmpeqfp, ":v1,v2,v3") },
-                        { 0x4C7, new DOpRec(Opcode.vcmpequd, ":v1,v2,v3") },
+                        { 0x000, Instr(Mnemonic.vaddubm, v1,v2,v3) },
+                        { 0x002, Instr(Mnemonic.vmaxub, v1,v2,v3) },
+                        { 0x00A, Instr(Mnemonic.vaddfp, v1,v2,v3) },
+                       // { 0x010, Instr(Opcode.mulhhwu, r1,r2,r3) },
+                        { 0x020, Instr(Mnemonic.vmhaddshs, v1,v2,v3,v4) },
+                        { 0x022, Instr(Mnemonic.vmladduhm, v1,v2,v3,v4) },
+                        { 0x042, Instr(Mnemonic.vmaxuh, v1,v2,v3) },
+                        { 0x04A, Instr(Mnemonic.vsubfp, v1,v2,v3) },
+                        { 0x080, Instr(Mnemonic.vadduwm, v1,v2,v3) },
+                        { 0x086, Instr(Mnemonic.vcmpequw, v1,v2,v3) },
+                        { 0x08C, Instr(Mnemonic.vmrghw, v1,v2,v3) },
+                        { 0x0C6, Instr(Mnemonic.vcmpeqfp, v1,v2,v3) },
+                        { 0x0E2, Instr(Mnemonic.vmladduhm, v1,v2,v3,v4) },
+                        { 0x100, Instr(Mnemonic.vadduqm, v1,v2,v3) },
+                        { 0x10A, Instr(Mnemonic.vrefp, v1,v3) },
+                        { 0x14A, Instr(Mnemonic.vrsqrtefp, v1,v3) },
+                        { 0x184, Instr(Mnemonic.vslw, v1,v2,v3) },
+                        { 0x18C, Instr(Mnemonic.vmrglw, v1,v2,v3) },
+                        { 0x200, Instr(Mnemonic.vaddubs, v1,v2,v3) },
+                        { 0x28C, Instr(Mnemonic.vspltw, v1,v3,u16_2) },
+                        { 0x2C6, Instr(Mnemonic.vcmpgtfp, v1,v2,v3) },
+                        { 0x34A, Instr(Mnemonic.vcfsx, v1,v3,u16_5) },
+                        { 0x38C, Instr(Mnemonic.vspltisw, v1,s16_5) },
+                        { 0x3CA, Instr(Mnemonic.vctsxs, v1,v3,u16_5) },
+                        { 0x401, Instr(Mnemonic.bcdadd, CC,v1,v2,v3,u9_1) },
+                        { 0x404, Instr(Mnemonic.vand, v1,v2,v3) },
+                        { 0x406, Instr(Mnemonic.vcmpequb, CC,v1,v2,v3) },
+                        { 0x444, Instr(Mnemonic.vandc, v1,v2,v3) },
+                        { 0x484, Instr(Mnemonic.vor, v1,v2,v3) },
+                        { 0x4C4, Instr(Mnemonic.vxor, v1,v2,v3)},
+                        { 0x4C6, Instr(Mnemonic.vcmpeqfp, CC,v1,v2,v3) },
+                        { 0x4C7, Instr(Mnemonic.vcmpequd, CC,v1,v2,v3) },
                         // These aren't present for the VMX extension of PowerPC architecture
-                        //{ 0x503, new DOpRec(Opcode.evmhessfaaw, "r1,r2,r3") },
-                        //{ 0x50B, new DOpRec(Opcode.evmhesmfaaw, "r1,r2,r3") },
-                        { 0x686, new DOpRec(Opcode.vcmpgtuw, ":v1,v2,v3") },
-                        { 0x6C6, new DOpRec(Opcode.vcmpgtfp, ":v1,v2,v3") },
-                 },
-                 new Dictionary<uint, Decoder>
-                 {
-                        { 0x028, new DOpRec(Opcode.vmsumshm, "v1,v2,v3,v4") },
-                        { 0x029, new DOpRec(Opcode.vmsumshs, "v1,v2,v3,v4") },
-                        { 0x02A, new DOpRec(Opcode.vsel, "v1,v2,v3,v4") },
-                        { 0x02B, new DOpRec(Opcode.vperm, "v1,v2,v3,v4") },
-                        { 0x02C, new DOpRec(Opcode.vsldoi, "v1,v2,v3,u6:5") },
-                        { 0x02E, new DOpRec(Opcode.vmaddfp, "v1,v2,v4,v3") },
-                        { 0x02F, new DOpRec(Opcode.vnmsubfp, "v1,v2,v4,v3") }
+                        //{ 0x503, Instr(Opcode.evmhessfaaw, r1,r2,r3) },
+                        //{ 0x50B, Instr(Opcode.evmhesmfaaw, r1,r2,r3) },
+                        { 0x686, Instr(Mnemonic.vcmpgtuw, CC,v1,v2,v3) },
+                        { 0x6C6, Instr(Mnemonic.vcmpgtfp, CC,v1,v2,v3) },
+                },
+                new Dictionary<uint, Decoder>
+                {
+                    { 0x028, Instr(Mnemonic.vmsumshm, v1,v2,v3,v4) },
+                    { 0x029, Instr(Mnemonic.vmsumshs, v1,v2,v3,v4) },
+                    { 0x02A, Instr(Mnemonic.vsel, v1,v2,v3,v4) },
+                    { 0x02B, Instr(Mnemonic.vperm, v1,v2,v3,v4) },
+                    { 0x02C, Instr(Mnemonic.vsldoi, v1,v2,v3,u6_5) },
+                    { 0x02E, Instr(Mnemonic.vmaddfp, v1,v2,v4,v3) },
+                    { 0x02F, Instr(Mnemonic.vnmsubfp, v1,v2,v4,v3) }
 
-                 });
+                });
             return decoder;
         }
 
@@ -699,7 +706,7 @@ Conventions:
         {
             var decoder = Mask(26, 5,
                 Sparse(21, 5,
-                    (1, Instr(Opcode.ps_cmpo0, "c1,f2,f3"))
+                    (1, Instr(Mnemonic.ps_cmpo0, c1,f2,f3))
                     ),
                 Nyi("0b00001"),
                 Nyi("0b00010"),
@@ -708,49 +715,49 @@ Conventions:
                 Nyi("0b00100"),
                 Nyi("0b00101"),
                 Mask(25, 1,
-                    Instr(Opcode.psq_lx, "f1,r2,r3,u21:1,u22:3"),
-                    Instr(Opcode.psq_lux, "f1,r2,r3,u21:1,u22:3")),
+                    Instr(Mnemonic.psq_lx, f1,r2,r3,u21_1,u22_3),
+                    Instr(Mnemonic.psq_lux, f1,r2,r3,u21_1,u22_3)),
                 Mask(25, 1,
-                    Instr(Opcode.psq_stx, "f1,r2,r3,u21:1,u22:3"),
-                    Instr(Opcode.psq_stux, "f1,r2,r3,u21:1,u22:3")),
+                    Instr(Mnemonic.psq_stx, f1,r2,r3,u21_1,u22_3),
+                    Instr(Mnemonic.psq_stux, f1,r2,r3,u21_1,u22_3)),
 
                 Sparse(21, 5,
-                    (1, new DOpRec(Opcode.ps_neg, ".f1,f3")),
-                    (2, new DOpRec(Opcode.ps_mr, ".f1,f3")),
-                    (4, new DOpRec(Opcode.ps_nabs, ".f1,f3")),
-                    (8, new DOpRec(Opcode.ps_abs, ".f1,f3"))),
+                    (1, Instr(Mnemonic.ps_neg, C,f1,f3)),
+                    (2, Instr(Mnemonic.ps_mr, C,f1,f3)),
+                    (4, Instr(Mnemonic.ps_nabs, C,f1,f3)),
+                    (8, Instr(Mnemonic.ps_abs, C,f1,f3))),
                 Nyi("0b01001"),
-                Instr(Opcode.ps_sum0, ".f1,f2,f4,f3"),
-                Instr(Opcode.ps_sum1, ".f1,f2,f4,f3"),
+                Instr(Mnemonic.ps_sum0, C,f1,f2,f4,f3),
+                Instr(Mnemonic.ps_sum1, C,f1,f2,f4,f3),
 
-                Instr(Opcode.ps_muls0, ".f1,f2,f4"),
-                Instr(Opcode.ps_muls1, ".f1,f2,f4"),
-                Instr(Opcode.ps_madds0, ".f1,f2,f4,f3"),
-                Instr(Opcode.ps_madds1, ".f1,f2,f4,f3"),
+                Instr(Mnemonic.ps_muls0, C,f1,f2,f4),
+                Instr(Mnemonic.ps_muls1, C,f1,f2,f4),
+                Instr(Mnemonic.ps_madds0, C,f1,f2,f4,f3),
+                Instr(Mnemonic.ps_madds1, C,f1,f2,f4,f3),
 
                 Sparse(21, 5,
-                    (0b10000, Instr(Opcode.ps_merge00, ".f1,f2,f3")),
-                    (0b10001, Instr(Opcode.ps_merge01, ".f1,f2,f3")),
-                    (0b10010, Instr(Opcode.ps_merge10, ".f1,f2,f3")),
-                    (0b10011, Instr(Opcode.ps_merge11, ".f1,f2,f3"))),
+                    (0b10000, Instr(Mnemonic.ps_merge00, C,f1,f2,f3)),
+                    (0b10001, Instr(Mnemonic.ps_merge01, C,f1,f2,f3)),
+                    (0b10010, Instr(Mnemonic.ps_merge10, C,f1,f2,f3)),
+                    (0b10011, Instr(Mnemonic.ps_merge11, C,f1,f2,f3))),
                 Nyi("0b10001"),
-                Instr(Opcode.ps_div, ".f1,f2,f3"),
+                Instr(Mnemonic.ps_div, C,f1,f2,f3),
                 Nyi("0b10011"),
 
-                Instr(Opcode.ps_sub, ".f1,f2,f3"),
-                Instr(Opcode.ps_add, ".f1,f2,f3"),
+                Instr(Mnemonic.ps_sub, C,f1,f2,f3),
+                Instr(Mnemonic.ps_add, C,f1,f2,f3),
                 Nyi("0b10110"),
-                Instr(Opcode.ps_sel, ".f1,f2,f4,f3"),
+                Instr(Mnemonic.ps_sel, C,f1,f2,f4,f3),
 
-                Instr(Opcode.ps_res, ".f1,f3"),
-                Instr(Opcode.ps_mul, ".f1,f2,f4"),
-                Instr(Opcode.ps_rsqrte, ".f1,f3"),
+                Instr(Mnemonic.ps_res, C,f1,f3),
+                Instr(Mnemonic.ps_mul, C,f1,f2,f4),
+                Instr(Mnemonic.ps_rsqrte, C,f1,f3),
                 Nyi("0b11011"),
 
-                Instr(Opcode.ps_msub, ".f1,f2,f4,f3"),
-                Instr(Opcode.ps_madd, ".f1,f2,f4,f3"),
-                Instr(Opcode.ps_nmsub, ".f1,f2,f4,f3"),
-                Instr(Opcode.ps_nmadd, ".f1,f2,f4,f3"));
+                Instr(Mnemonic.ps_msub, C,f1,f2,f4,f3),
+                Instr(Mnemonic.ps_madd, C,f1,f2,f4,f3),
+                Instr(Mnemonic.ps_nmsub, C,f1,f2,f4,f3),
+                Instr(Mnemonic.ps_nmadd, C,f1,f2,f4,f3));
             return decoder;
         }
 
@@ -778,34 +785,34 @@ Conventions:
                 { 0x1C, new FnDecoder(VMXDecoder.DecodeVperm128) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0| VC  |a|0|VDh|VBh|    vperm128      vr(VD128), vr(VA128), vr(VB128), vr(VC)
                 { 0x1E, new FnDecoder(VMXDecoder.DecodeVperm128) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0| VC  |a|0|VDh|VBh|    vperm128      vr(VD128), vr(VA128), vr(VB128), vr(VC)
 
-                { 0x01, new DOpRec(Opcode.vaddfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 0|a|1|VDh|VBh|    vaddfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x03, new DOpRec(Opcode.vaddfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 0|a|1|VDh|VBh|    vaddfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x01, Instr(Mnemonic.vaddfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 0|a|1|VDh|VBh|    vaddfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x03, Instr(Mnemonic.vaddfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 0|a|1|VDh|VBh|    vaddfp128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x05, new DOpRec(Opcode.vsubfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 1|a|1|VDh|VBh|    vsubfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x07, new DOpRec(Opcode.vsubfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 1|a|1|VDh|VBh|    vsubfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x05, Instr(Mnemonic.vsubfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 1|a|1|VDh|VBh|    vsubfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x07, Instr(Mnemonic.vsubfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 0 1|a|1|VDh|VBh|    vsubfp128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x09, new DOpRec(Opcode.vmulfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 1 0|a|1|VDh|VBh|    vmulfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x0B, new DOpRec(Opcode.vmulfp128, "Wd,Wa,Wb") },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 1 0|a|1|VDh|VBh|    vmulfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x09, Instr(Mnemonic.vmulfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 1 0|a|1|VDh|VBh|    vmulfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x0B, Instr(Mnemonic.vmulfp128, Wd,Wa,Wb) },         // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 0 1 0|a|1|VDh|VBh|    vmulfp128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x11, new DOpRec(Opcode.vmaddcfp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VDS128 |  VA128  |  VB128  |A|0 1 0 0|a|1|VDh|VBh|    vmaddcfp128   vr(VDS128), vr(VA128), vr(VSD128), vr(VB128)
-                { 0x13, new DOpRec(Opcode.vmaddcfp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VDS128 |  VA128  |  VB128  |A|0 1 0 0|a|1|VDh|VBh|    vmaddcfp128   vr(VDS128), vr(VA128), vr(VSD128), vr(VB128)
+                { 0x11, Instr(Mnemonic.vmaddcfp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VDS128 |  VA128  |  VB128  |A|0 1 0 0|a|1|VDh|VBh|    vmaddcfp128   vr(VDS128), vr(VA128), vr(VSD128), vr(VB128)
+                { 0x13, Instr(Mnemonic.vmaddcfp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VDS128 |  VA128  |  VB128  |A|0 1 0 0|a|1|VDh|VBh|    vmaddcfp128   vr(VDS128), vr(VA128), vr(VSD128), vr(VB128)
 
-                { 0x19, new DOpRec(Opcode.vmsub3fp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 0|a|1|VDh|VBh|    vmsub3fp128   vr(VD128), vr(VA128), vr(VB128)
-                { 0x1B, new DOpRec(Opcode.vmsub3fp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 0|a|1|VDh|VBh|    vmsub3fp128   vr(VD128), vr(VA128), vr(VB128)
+                { 0x19, Instr(Mnemonic.vmsub3fp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 0|a|1|VDh|VBh|    vmsub3fp128   vr(VD128), vr(VA128), vr(VB128)
+                { 0x1B, Instr(Mnemonic.vmsub3fp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 0|a|1|VDh|VBh|    vmsub3fp128   vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x1D, new DOpRec(Opcode.vmsub4fp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vmsub4fp128   vr(VD128), vr(VA128), vr(VB128)
-                { 0x1F, new DOpRec(Opcode.vmsub4fp128, "Wd,Wa,Wb") },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vmsub4fp128   vr(VD128), vr(VA128), vr(VB128)
+                { 0x1D, Instr(Mnemonic.vmsub4fp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vmsub4fp128   vr(VD128), vr(VA128), vr(VB128)
+                { 0x1F, Instr(Mnemonic.vmsub4fp128, Wd,Wa,Wb) },       // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vmsub4fp128   vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x21, new DOpRec(Opcode.vand128, "Wd,Wa,Wb") },           // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 0 0|a|1|VDh|VBh|    vand128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x23, new DOpRec(Opcode.vand128, "Wd,Wa,Wb") },           // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 0 0|a|1|VDh|VBh|    vand128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x21, Instr(Mnemonic.vand128, Wd,Wa,Wb) },           // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 0 0|a|1|VDh|VBh|    vand128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x23, Instr(Mnemonic.vand128, Wd,Wa,Wb) },           // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 0 0|a|1|VDh|VBh|    vand128       vr(VD128), vr(VA128), vr(VB128)
 
 
 
-                { 0x2D, new DOpRec(Opcode.vor128, "Wd,Wa,Wb") },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|1|VDh|VBh|    vor128        vr(VD128), vr(VA128), vr(VB128)
-                { 0x2F, new DOpRec(Opcode.vor128, "Wd,Wa,Wb") },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|1|VDh|VBh|    vor128        vr(VD128), vr(VA128), vr(VB128)
+                { 0x2D, Instr(Mnemonic.vor128, Wd,Wa,Wb) },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|1|VDh|VBh|    vor128        vr(VD128), vr(VA128), vr(VB128)
+                { 0x2F, Instr(Mnemonic.vor128, Wd,Wa,Wb) },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|1|VDh|VBh|    vor128        vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x31, new DOpRec(Opcode.vxor128, "Wd,Wa,Wb") },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|1|VDh|VBh|    vxor128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x33, new DOpRec(Opcode.vxor128, "Wd,Wa,Wb") },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|1|VDh|VBh|    vxor128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x31, Instr(Mnemonic.vxor128, Wd,Wa,Wb) },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|1|VDh|VBh|    vxor128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x33, Instr(Mnemonic.vxor128, Wd,Wa,Wb) },            // |0 0 0 1 0 1|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|1|VDh|VBh|    vxor128       vr(VD128), vr(VA128), vr(VB128)
 
             });
         }
@@ -813,220 +820,220 @@ Conventions:
         private Decoder Ext6Decoder() {
             return new VMXDecoder(0x7F, new Dictionary<uint, Decoder>
             {
-                { 0x00, new DOpRec(Opcode.vcmpeqfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x02, new DOpRec(Opcode.vcmpeqfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x04, new DOpRec(Opcode.vcmpeqfp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x06, new DOpRec(Opcode.vcmpeqfp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x40, new DOpRec(Opcode.vcmpeqfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x42, new DOpRec(Opcode.vcmpeqfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x44, new DOpRec(Opcode.vcmpeqfp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x46, new DOpRec(Opcode.vcmpeqfp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x00, Instr(Mnemonic.vcmpeqfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x02, Instr(Mnemonic.vcmpeqfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x04, Instr(Mnemonic.vcmpeqfp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x06, Instr(Mnemonic.vcmpeqfp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x40, Instr(Mnemonic.vcmpeqfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x42, Instr(Mnemonic.vcmpeqfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x44, Instr(Mnemonic.vcmpeqfp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x46, Instr(Mnemonic.vcmpeqfp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 0|R|a|0|VDh|VBh|    vcmpeqfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
 
-                { 0x08, new DOpRec(Opcode.vcmpgefp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x0A, new DOpRec(Opcode.vcmpgefp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x0C, new DOpRec(Opcode.vcmpgefp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x0E, new DOpRec(Opcode.vcmpgefp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x48, new DOpRec(Opcode.vcmpgefp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x4A, new DOpRec(Opcode.vcmpgefp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x4C, new DOpRec(Opcode.vcmpgefp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x4E, new DOpRec(Opcode.vcmpgefp128, ":Wd,Wa,Wb") },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x08, Instr(Mnemonic.vcmpgefp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x0A, Instr(Mnemonic.vcmpgefp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x0C, Instr(Mnemonic.vcmpgefp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x0E, Instr(Mnemonic.vcmpgefp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x48, Instr(Mnemonic.vcmpgefp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x4A, Instr(Mnemonic.vcmpgefp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x4C, Instr(Mnemonic.vcmpgefp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x4E, Instr(Mnemonic.vcmpgefp128, CC,Wd,Wa,Wb) },      // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1|R|a|0|VDh|VBh|    vcmpgefp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
 
 
-                { 0x10, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x12, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x14, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x16, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x50, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x52, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x54, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x56, new DOpRec(Opcode.vcmpgtfp128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x10, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x12, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x14, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x16, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x50, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x52, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x54, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x56, Instr(Mnemonic.vcmpgtfp128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 0|R|a|0|VDh|VBh|    vcmpgtfp128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
 
-                { 0x18, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x1A, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x1C, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x1E, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x58, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x5A, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x5C, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x5E, new DOpRec(Opcode.vcmpbfp128, "Wd,Wa,Wb") },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x18, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x1A, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x1C, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x1E, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x58, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x5A, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x5C, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x5E, Instr(Mnemonic.vcmpbfp128, Wd,Wa,Wb) },        // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1|R|a|0|VDh|VBh|    vcmpbfp128    vr(VD128), vr(VA128), vr(VB128)         (R == 0)
 
-                { 0x0D, new DOpRec(Opcode.vslw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x0F, new DOpRec(Opcode.vslw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x4D, new DOpRec(Opcode.vslw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x4F, new DOpRec(Opcode.vslw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x0D, Instr(Mnemonic.vslw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x0F, Instr(Mnemonic.vslw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x4D, Instr(Mnemonic.vslw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x4F, Instr(Mnemonic.vslw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 0 1 1|a|1|VDh|VBh|    vslw128       vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x1D, new DOpRec(Opcode.vsrw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x1F, new DOpRec(Opcode.vsrw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x5D, new DOpRec(Opcode.vsrw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
-                { 0x5F, new DOpRec(Opcode.vsrw128, "Wd,Wa,Wb") },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x1D, Instr(Mnemonic.vsrw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x1F, Instr(Mnemonic.vsrw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x5D, Instr(Mnemonic.vsrw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
+                { 0x5F, Instr(Mnemonic.vsrw128, Wd,Wa,Wb) },           // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|0 1 1 1|a|1|VDh|VBh|    vsrw128       vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x20, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x22, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x24, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x26, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x60, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x62, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x64, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
-                { 0x66, new DOpRec(Opcode.vcmpequw128, "Wd,Wa,Wb") },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x20, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x22, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x24, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x26, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x60, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x62, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x64, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
+                { 0x66, Instr(Mnemonic.vcmpequw128, Wd,Wa,Wb) },       // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 0|R|a|0|VDh|VBh|    vcmpequw128   vr(VD128), vr(VA128), vr(VB128)         (R == 0)
 
-                { 0x23, new DOpRec(Opcode.vcfpsxws128, "Wd,Wb,s16:5") },    // |0 0 0 1 1 0|  VD128  |  SIMM   |  VB128  |0 1 0 0 0 1 1|VDh|VBh|    vcfpsxws128   vr(VD128), vr(VB128), SIMM
+                { 0x23, Instr(Mnemonic.vcfpsxws128, Wd,Wb,s16_5) },    // |0 0 0 1 1 0|  VD128  |  SIMM   |  VB128  |0 1 0 0 0 1 1|VDh|VBh|    vcfpsxws128   vr(VD128), vr(VB128), SIMM
 
-                { 0x28, new DOpRec(Opcode.vmaxfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x2A, new DOpRec(Opcode.vmaxfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x68, new DOpRec(Opcode.vmaxfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x6A, new DOpRec(Opcode.vmaxfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x28, Instr(Mnemonic.vmaxfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x2A, Instr(Mnemonic.vmaxfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x68, Instr(Mnemonic.vmaxfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x6A, Instr(Mnemonic.vmaxfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 0|a|0|VDh|VBh|    vmaxfp128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x2B, new DOpRec(Opcode.vcsxwfp128, "Wd,Wb,u16:5") },     // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |0 1 0 1 0 1 1|VDh|VBh|    vcsxwfp128    vr(VD128), vr(VB128), SIMM
+                { 0x2B, Instr(Mnemonic.vcsxwfp128, Wd,Wb,u16_5) },     // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |0 1 0 1 0 1 1|VDh|VBh|    vcsxwfp128    vr(VD128), vr(VB128), SIMM
 
-                { 0x2C, new DOpRec(Opcode.vminfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x2E, new DOpRec(Opcode.vminfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x6C, new DOpRec(Opcode.vminfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x6E, new DOpRec(Opcode.vminfp128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x2C, Instr(Mnemonic.vminfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x2E, Instr(Mnemonic.vminfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x6C, Instr(Mnemonic.vminfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x6E, Instr(Mnemonic.vminfp128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 0 1 1|a|0|VDh|VBh|    vminfp128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x30, new DOpRec(Opcode.vmrghw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x32, new DOpRec(Opcode.vmrghw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x70, new DOpRec(Opcode.vmrghw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x72, new DOpRec(Opcode.vmrghw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x30, Instr(Mnemonic.vmrghw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x32, Instr(Mnemonic.vmrghw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x70, Instr(Mnemonic.vmrghw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x72, Instr(Mnemonic.vmrghw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 0|a|0|VDh|VBh|    vmrghw128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x34, new DOpRec(Opcode.vmrglw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x36, new DOpRec(Opcode.vmrglw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x74, new DOpRec(Opcode.vmrglw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
-                { 0x76, new DOpRec(Opcode.vmrglw128, "Wd,Wa,Wb") },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x34, Instr(Mnemonic.vmrglw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x36, Instr(Mnemonic.vmrglw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x74, Instr(Mnemonic.vmrglw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
+                { 0x76, Instr(Mnemonic.vmrglw128, Wd,Wa,Wb) },         // |0 0 0 1 1 0|  VD128  |  VA128  |  VB128  |A|1 1 0 1|a|0|VDh|VBh|    vmrglw128     vr(VD128), vr(VA128), vr(VB128)
 
-                { 0x37, new DOpRec(Opcode.vrfin128, "Wd,Wb") },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |0 1 1 0 1 1 1|VDh|VBh|    vrfin128      vr(VD128), vr(VB128)
+                { 0x37, Instr(Mnemonic.vrfin128, Wd,Wb) },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |0 1 1 0 1 1 1|VDh|VBh|    vrfin128      vr(VD128), vr(VB128)
 
-                { 0x3F, new DOpRec(Opcode.vrfiz128, "Wd,Wb") },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |0 1 1 1 1 1 1|VDh|VBh|    vrfiz128      vr(VD128), vr(VB128)
+                { 0x3F, Instr(Mnemonic.vrfiz128, Wd,Wb) },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |0 1 1 1 1 1 1|VDh|VBh|    vrfiz128      vr(VD128), vr(VB128)
 
-                { 0x61, new DOpRec(Opcode.vpkd3d128, "Wd,Wb,u18:3,u16:2,u6:2") },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
-                { 0x65, new DOpRec(Opcode.vpkd3d128, "Wd,Wb,u18:3,u16:2,u6:2") },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
-                { 0x69, new DOpRec(Opcode.vpkd3d128, "Wd,Wb,u18:3,u16:2,u6:2") },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
-                { 0x6D, new DOpRec(Opcode.vpkd3d128, "Wd,Wb,u18:3,u16:2,u6:2") },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
+                { 0x61, Instr(Mnemonic.vpkd3d128, Wd,Wb,u18_3,u16_2,u6_2) },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
+                { 0x65, Instr(Mnemonic.vpkd3d128, Wd,Wb,u18_3,u16_2,u6_2) },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
+                { 0x69, Instr(Mnemonic.vpkd3d128, Wd,Wb,u18_3,u16_2,u6_2) },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
+                { 0x6D, Instr(Mnemonic.vpkd3d128, Wd,Wb,u18_3,u16_2,u6_2) },   // |0 0 0 1 1 0|  VD128  |  x  | y |  VB128  |1 1 0| z |0 1|VDh|VBh|    vpkd3d128     vr(VD128), vr(VB128), x, y, z
 
-                { 0x63, new DOpRec(Opcode.vrefp128, "Wd,Wb") },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 0 0 1 1|VDh|VBh|    vrefp128      vr(VD128), vr(VB128)
+                { 0x63, Instr(Mnemonic.vrefp128, Wd,Wb) },             // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 0 0 1 1|VDh|VBh|    vrefp128      vr(VD128), vr(VB128)
 
-                { 0x67, new DOpRec(Opcode.vrsqrtefp128, "Wd,Wb") },         // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 0 1 1 1|VDh|VBh|    vrsqrtefp128  vr(VD128), vr(VB128)
+                { 0x67, Instr(Mnemonic.vrsqrtefp128, Wd,Wb) },         // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 0 1 1 1|VDh|VBh|    vrsqrtefp128  vr(VD128), vr(VB128)
 
-                { 0x6B, new DOpRec(Opcode.vexptefp128, "Wd,Wb") },          // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 1 0 1 1|VDh|VBh|    vexptefp128   vr(VD128), vr(VB128)
+                { 0x6B, Instr(Mnemonic.vexptefp128, Wd,Wb) },          // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 1 0 1 1|VDh|VBh|    vexptefp128   vr(VD128), vr(VB128)
 
-                { 0x6F, new DOpRec(Opcode.vlogefp128, "Wd,Wb") },           // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 1 1 1 1|VDh|VBh|    vlogefp128    vr(VD128), vr(VB128)
+                { 0x6F, Instr(Mnemonic.vlogefp128, Wd,Wb) },           // |0 0 0 1 1 0|  VD128  |0 0 0 0 0|  VB128  |1 1 0 1 1 1 1|VDh|VBh|    vlogefp128    vr(VD128), vr(VB128)
 
-                { 0x77, new DOpRec(Opcode.vspltisw128, "Wd,Wb,s16:5") },
+                { 0x77, Instr(Mnemonic.vspltisw128, Wd,Wb,s16_5) },
 
-                { 0x71, new DOpRec(Opcode.vrlimi128, "Wd,Wb,u16:5,u14:2") },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
-                { 0x75, new DOpRec(Opcode.vrlimi128, "Wd,Wb,u16:5,u14:2") },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
-                { 0x79, new DOpRec(Opcode.vrlimi128, "Wd,Wb,u16:5,u14:2") },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
-                { 0x7D, new DOpRec(Opcode.vrlimi128, "Wd,Wb,u16:5,u14:2") },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
+                { 0x71, Instr(Mnemonic.vrlimi128, Wd,Wb,u16_5,u14_2) },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
+                { 0x75, Instr(Mnemonic.vrlimi128, Wd,Wb,u16_5,u14_2) },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
+                { 0x79, Instr(Mnemonic.vrlimi128, Wd,Wb,u16_5,u14_2) },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
+                { 0x7D, Instr(Mnemonic.vrlimi128, Wd,Wb,u16_5,u14_2) },    // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1| z |0 1|VDh|VBh|    vrlimi128     vr(VD128), vr(VB128), UIMM, z
 
-                { 0x73, new DOpRec(Opcode.vspltw128, "Wd,Wb,u16:5") },      // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1 0 0 1 1|VDh|VBh|    vspltw128     vr(VD128), vr(VB128), UIMM
+                { 0x73, Instr(Mnemonic.vspltw128, Wd,Wb,u16_5) },      // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1 0 0 1 1|VDh|VBh|    vspltw128     vr(VD128), vr(VB128), UIMM
 
-                { 0x7F, new DOpRec(Opcode.vupkd3d128, "Wd,Wb,u16:5") },     // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1 1 1 1 1|VDh|VBh|    vupkd3d128    vr(VD128), vr(VB128), UIMM
+                { 0x7F, Instr(Mnemonic.vupkd3d128, Wd,Wb,u16_5) },     // |0 0 0 1 1 0|  VD128  |  UIMM   |  VB128  |1 1 1 1 1 1 1|VDh|VBh|    vupkd3d128    vr(VD128), vr(VB128), UIMM
             });
         }
 
         private Decoder Ext1FDecoder()
         {
-            return new XOpRec(new Dictionary<uint, Decoder>      // 1F
+            return new XDecoder(new Dictionary<uint, Decoder>      // 1F
             {
-                { 0, new CmpOpRec(Opcode.cmp, "C1,r2,r3") },
-                { 4, new DOpRec(Opcode.tw, "I1,r2,r3") },
-                { 0x006, new DOpRec(Opcode.lvsl, "v1,r2,r3") },
-                { 0x008, new DOpRec(Opcode.subfc, "r1,r2,r3")},
-                { 0x00A, new DOpRec(Opcode.addc, "r1,r2,r3")},
-                { 0x00B, new DOpRec(Opcode.mulhwu, ".r1,r2,r3")},
-                { 0x013, new DOpRec(Opcode.mfcr, "r1") },
-                { 0x015, new DOpRec(Opcode.ldx, "r1,r2,r3") },
-                { 0x017, new DOpRec(Opcode.lwzx, "r1,r2,r3") },
-                { 0x018, new DOpRec(Opcode.slw, ".r2,r1,r3") },
-                { 0x01A, new DOpRec(Opcode.cntlzw, "r2,r1") },
-                { 0x01B, new DOpRec(Opcode.sld, ".r2,r1,r3") },
-                { 0x01C, new DOpRec(Opcode.and, ".r2,r1,r3")},
-                { 0x020, new CmpOpRec(Opcode.cmpl, "C1,r2,r3") },
-                { 0x014, new DOpRec(Opcode.lwarx, "r1,r2,r3") },
-                { 0x028, new DOpRec(Opcode.subf, ".r1,r2,r3")},
-                { 0x035, new DOpRec(Opcode.ldux, "r1,r2,r3")},
-                { 0x036, new DOpRec(Opcode.dcbst, "r2,r3")},
-                { 0x037, new DOpRec(Opcode.lwzux, "r1,r2,r3")},
-                { 0x03A, new DOpRec(Opcode.cntlzd, "r2,r1") },
-                { 0x03C, new DOpRec(Opcode.andc, ".r2,r1,r3") },
-                { 0x047, new DOpRec(Opcode.lvewx, "v1,r2,r3") },
-                { 0x04B, new DOpRec(Opcode.mulhw, ".r1,r2,r3") },
-                { 0x053, new DOpRec(Opcode.mfmsr, "r1") },
-                { 0x054, new DOpRec(Opcode.ldarx, "r1,r2,r3") },
-                { 0x056, new DOpRec(Opcode.dcbf, "r2,r3") },
-                { 0x057, new DOpRec(Opcode.lbzx, "r1,r2,r3") },
-                { 0x067, new DOpRec(Opcode.lvx, "v1,r2,r3") },
-                { 0x068, new DOpRec(Opcode.neg, "r1,r2") },
-                { 0x077, new DOpRec(Opcode.lbzux, "r1,r2,r3") },
-                { 124, new DOpRec(Opcode.nor, ".r2,r1,r3") },
-                { 0x088, new DOpRec(Opcode.subfe, "r1,r2,r3") },
-                { 0x08A, new DOpRec(Opcode.adde, ".r1,r2,r3") },
-                { 0x090, new DOpRec(Opcode.mtcrf, "M,r1") },
-                { 0x092, new DOpRec(Opcode.mtmsr, "r1,u16:1") },
-                { 0x095, new DOpRec(Opcode.stdx, "r1,r2,r3") },
-                { 0x096, new DOpRec(Opcode.stwcx, ".r1,r2,r3") },
-                { 0x097, new DOpRec(Opcode.stwx, "r1,r2,r3") },
-                { 0x0C7, new DOpRec(Opcode.stvewx, "v1,r2,r3")},
-                { 0x0B2, new DOpRec(Opcode.mtmsrd, "r1,u16:1") },
-                { 0x0B7, new DOpRec(Opcode.stwux, "r1,r2,r3") },
-                { 0x0E7, new DOpRec(Opcode.stvx, "v1,r2,r3") },
-                { 215, new DOpRec(Opcode.stbx, "r1,r2,r3") },
-                { 235, new DOpRec(Opcode.mullw, ".r1,r2,r3") },
-                { 0x0C8, new DOpRec(Opcode.subfze, ".r1,r2") },
-                { 0x0CA, new DOpRec(Opcode.addze, ".r1,r2") },
-                { 0x0D6, new DOpRec(Opcode.stdcx, ":r1,r2,r3") },
-                { 0x0E9, new DOpRec(Opcode.mulld, ".r1,r2,r3")},
-                { 0x0EA, new DOpRec(Opcode.addme, ".r1,r2")},
-                { 0x0F6, new DOpRec(Opcode.dcbtst, "r2,r3") },
-                { 247, new DOpRec(Opcode.stbux, "r1,r2,r3") },
-                { 0x10A, new DOpRec(Opcode.add, ".r1,r2,r3") },
-                { 279, new DOpRec(Opcode.lhzx, "r1,r2,r3") },
-                { 0x116, new DOpRec(Opcode.dcbt, "r2,r3,u21:4") },
-                { 0x11C, new DOpRec(Opcode.eqv, "r1,r2,r3") },
-                { 316, new DOpRec(Opcode.xor, ".r2,r1,r3") },
-                { 444, new DOpRec(Opcode.or, ".r2,r1,r3") },
+                { 0, new CmpDecoder(Mnemonic.cmp, C1,r2,r3) },
+                { 4, Instr(Mnemonic.tw, I1,r2,r3) },
+                { 0x006, Instr(Mnemonic.lvsl, v1,r2,r3) },
+                { 0x008, Instr(Mnemonic.subfc, r1,r2,r3)},
+                { 0x00A, Instr(Mnemonic.addc, r1,r2,r3)},
+                { 0x00B, Instr(Mnemonic.mulhwu, C,r1,r2,r3)},
+                { 0x013, Instr(Mnemonic.mfcr, r1) },
+                { 0x015, Instr(Mnemonic.ldx, r1,r2,r3) },
+                { 0x017, Instr(Mnemonic.lwzx, r1,r2,r3) },
+                { 0x018, Instr(Mnemonic.slw, C,r2,r1,r3) },
+                { 0x01A, Instr(Mnemonic.cntlzw, r2,r1) },
+                { 0x01B, Instr(Mnemonic.sld, C,r2,r1,r3) },
+                { 0x01C, Instr(Mnemonic.and, C,r2,r1,r3)},
+                { 0x020, new CmpDecoder(Mnemonic.cmpl, C1,r2,r3) },
+                { 0x014, Instr(Mnemonic.lwarx, r1,r2,r3) },
+                { 0x028, Instr(Mnemonic.subf, C,r1,r2,r3)},
+                { 0x035, Instr(Mnemonic.ldux, r1,r2,r3)},
+                { 0x036, Instr(Mnemonic.dcbst, r2,r3)},
+                { 0x037, Instr(Mnemonic.lwzux, r1,r2,r3)},
+                { 0x03A, Instr(Mnemonic.cntlzd, r2,r1) },
+                { 0x03C, Instr(Mnemonic.andc, C,r2,r1,r3) },
+                { 0x047, Instr(Mnemonic.lvewx, v1,r2,r3) },
+                { 0x04B, Instr(Mnemonic.mulhw, C,r1,r2,r3) },
+                { 0x053, Instr(Mnemonic.mfmsr, r1) },
+                { 0x054, Instr(Mnemonic.ldarx, r1,r2,r3) },
+                { 0x056, Instr(Mnemonic.dcbf, r2,r3) },
+                { 0x057, Instr(Mnemonic.lbzx, r1,r2,r3) },
+                { 0x067, Instr(Mnemonic.lvx, v1,r2,r3) },
+                { 0x068, Instr(Mnemonic.neg, r1,r2) },
+                { 0x077, Instr(Mnemonic.lbzux, r1,r2,r3) },
+                { 124, Instr(Mnemonic.nor, C,r2,r1,r3) },
+                { 0x088, Instr(Mnemonic.subfe, r1,r2,r3) },
+                { 0x08A, Instr(Mnemonic.adde, C,r1,r2,r3) },
+                { 0x090, Instr(Mnemonic.mtcrf, M,r1) },
+                { 0x092, Instr(Mnemonic.mtmsr, r1,u16_1) },
+                { 0x095, Instr(Mnemonic.stdx, r1,r2,r3) },
+                { 0x096, Instr(Mnemonic.stwcx, C,r1,r2,r3) },
+                { 0x097, Instr(Mnemonic.stwx, r1,r2,r3) },
+                { 0x0C7, Instr(Mnemonic.stvewx, v1,r2,r3)},
+                { 0x0B2, Instr(Mnemonic.mtmsrd, r1,u16_1) },
+                { 0x0B7, Instr(Mnemonic.stwux, r1,r2,r3) },
+                { 0x0E7, Instr(Mnemonic.stvx, v1,r2,r3) },
+                { 215, Instr(Mnemonic.stbx, r1,r2,r3) },
+                { 235, Instr(Mnemonic.mullw, C,r1,r2,r3) },
+                { 0x0C8, Instr(Mnemonic.subfze, C,r1,r2) },
+                { 0x0CA, Instr(Mnemonic.addze, C,r1,r2) },
+                { 0x0D6, Instr(Mnemonic.stdcx, CC,r1,r2,r3) },
+                { 0x0E9, Instr(Mnemonic.mulld, C,r1,r2,r3)},
+                { 0x0EA, Instr(Mnemonic.addme, C,r1,r2)},
+                { 0x0F6, Instr(Mnemonic.dcbtst, r2,r3) },
+                { 247, Instr(Mnemonic.stbux, r1,r2,r3) },
+                { 0x10A, Instr(Mnemonic.add, C,r1,r2,r3) },
+                { 279, Instr(Mnemonic.lhzx, r1,r2,r3) },
+                { 0x116, Instr(Mnemonic.dcbt, r2,r3,u21_4) },
+                { 0x11C, Instr(Mnemonic.eqv, r1,r2,r3) },
+                { 316, Instr(Mnemonic.xor, C,r2,r1,r3) },
+                { 444, Instr(Mnemonic.or, C,r2,r1,r3) },
 
-                { 0x153, new SprOpRec(false) },
-                { 0x155, new DOpRec(Opcode.lwax, "r1,r2,r3") },
-                { 0x157, new DOpRec(Opcode.lhax, "r1,r2,r3") },
-                { 0x173, new XfxOpRec(Opcode.mftb, "r1,X3") },
-                { 0x177, new DOpRec(Opcode.lhaux, "r1,r2,r3") },
-                { 0x197, new DOpRec(Opcode.sthx, "r1,r2,r3") },
-                { 0x19C, new DOpRec(Opcode.orc, ".r2,r1,r3") },
-                { 0x1C9, new DOpRec(Opcode.divdu, ".r1,r2,r3") },
-                { 0x1CB, new DOpRec(Opcode.divwu, ".r1,r2,r3") },
-                { 0x1DC, new DOpRec(Opcode.nand, ".r2,r1,r3") },
-                { 0x1D3, new SprOpRec(true) },
-                { 0x1D6, new DOpRec(Opcode.dcbi, "r2,r3")},
-                { 0x1E9, new DOpRec(Opcode.divd, ".r1,r2,r3")},
-                { 0x1EB, new DOpRec(Opcode.divw, ".r1,r2,r3")},
-                { 0x207, new DOpRec(Opcode.lvlx, "r1,r2,r3") },
-                { 0x216, new DOpRec(Opcode.lwbrx, "r1,r2,r3") },
-                { 0x217, new DOpRec(Opcode.lfsx, "f1,r2,r3") },
-                { 0x218, new DOpRec(Opcode.srw, ".r2,r1,r3") },
-                { 0x21B, new DOpRec(Opcode.srd, ".r2,r1,r3") },
-                { 0x255, new DOpRec(Opcode.lswi, "r1,r2,I3") },
-                { 0x237, new DOpRec(Opcode.lfsux, "f1,r2,r3") },
-                { 0x257, new DOpRec(Opcode.lfdx, "f1,r2,r3") },
-                { 0x277, new DOpRec(Opcode.lfdux, "f1,r2,r3") },
-                { 0x256, new DOpRec(Opcode.sync, "") },
-                { 0x296, new DOpRec(Opcode.stwbrx, ".r2,r1,r3") },
-                { 0x297, new DOpRec(Opcode.stfsx, "f1,r2,r3") },
-                { 0x2B7, new DOpRec(Opcode.stfsux, "f1,r2,r3") },
-                { 0x2D5, new DOpRec(Opcode.stswi, "r1,r2,I3") },
-                { 0x2D7, new DOpRec(Opcode.stfdx, "f1,r2,r3") },
-                { 0x316, new DOpRec(Opcode.lhbrx, "r1,r2,r3")},
-                { 0x318, new DOpRec(Opcode.sraw, ".r2,r1,r2")},
-                { 0x31A, new DOpRec(Opcode.srad, ".r2,r1,r2")},
-                { 0x33A, new DOpRec(Opcode.sradi, ".r2,r1,I3") },
-                { 0x338, new DOpRec(Opcode.srawi, "r2,r1,I3") },
-                { 0x33B, new XSOpRec(Opcode.sradi, ".r2,r1,I3") },
-                { 0x356, new DOpRec(Opcode.eieio, "") },
-                { 0x39A, new DOpRec(Opcode.extsh, ".r2,r1")},
-                { 0x3BA, new DOpRec(Opcode.extsb, ".r2,r1")},
-                { 0x3D7, new DOpRec(Opcode.stfiwx, "f1,r2,r3")},
-                { 0x3D6, new DOpRec(Opcode.icbi, "r2,r3")},
-                { 0x3DA, new DOpRec(Opcode.extsw, ".r2,r1")},
-                { 0x3F6, new DOpRec(Opcode.dcbz, "r2,r3") }
+                { 0x153, new SprDecoder(false) },
+                { 0x155, Instr(Mnemonic.lwax, r1,r2,r3) },
+                { 0x157, Instr(Mnemonic.lhax, r1,r2,r3) },
+                { 0x173, new XfxDecoder(Mnemonic.mftb, r1,X3) },
+                { 0x177, Instr(Mnemonic.lhaux, r1,r2,r3) },
+                { 0x197, Instr(Mnemonic.sthx, r1,r2,r3) },
+                { 0x19C, Instr(Mnemonic.orc, C,r2,r1,r3) },
+                { 0x1C9, Instr(Mnemonic.divdu, C,r1,r2,r3) },
+                { 0x1CB, Instr(Mnemonic.divwu, C,r1,r2,r3) },
+                { 0x1DC, Instr(Mnemonic.nand, C,r2,r1,r3) },
+                { 0x1D3, new SprDecoder(true) },
+                { 0x1D6, Instr(Mnemonic.dcbi, r2,r3)},
+                { 0x1E9, Instr(Mnemonic.divd, C,r1,r2,r3)},
+                { 0x1EB, Instr(Mnemonic.divw, C,r1,r2,r3)},
+                { 0x207, Instr(Mnemonic.lvlx, r1,r2,r3) },
+                { 0x216, Instr(Mnemonic.lwbrx, r1,r2,r3) },
+                { 0x217, Instr(Mnemonic.lfsx, f1,r2,r3) },
+                { 0x218, Instr(Mnemonic.srw, C,r2,r1,r3) },
+                { 0x21B, Instr(Mnemonic.srd, C,r2,r1,r3) },
+                { 0x255, Instr(Mnemonic.lswi, r1,r2,I3) },
+                { 0x237, Instr(Mnemonic.lfsux, f1,r2,r3) },
+                { 0x257, Instr(Mnemonic.lfdx, f1,r2,r3) },
+                { 0x277, Instr(Mnemonic.lfdux, f1,r2,r3) },
+                { 0x256, Instr(Mnemonic.sync) },
+                { 0x296, Instr(Mnemonic.stwbrx, C,r2,r1,r3) },
+                { 0x297, Instr(Mnemonic.stfsx, f1,r2,r3) },
+                { 0x2B7, Instr(Mnemonic.stfsux, f1,r2,r3) },
+                { 0x2D5, Instr(Mnemonic.stswi, r1,r2,I3) },
+                { 0x2D7, Instr(Mnemonic.stfdx, f1,r2,r3) },
+                { 0x316, Instr(Mnemonic.lhbrx, r1,r2,r3)},
+                { 0x318, Instr(Mnemonic.sraw, C,r2,r1,r2)},
+                { 0x31A, Instr(Mnemonic.srad, C,r2,r1,r2)},
+                { 0x33A, Instr(Mnemonic.sradi, C,r2,r1,I3) },
+                { 0x338, Instr(Mnemonic.srawi, r2,r1,I3) },
+                { 0x33B, new XSDecoder(Mnemonic.sradi, C,r2,r1,I3) },
+                { 0x356, Instr(Mnemonic.eieio) },
+                { 0x39A, Instr(Mnemonic.extsh, C,r2,r1)},
+                { 0x3BA, Instr(Mnemonic.extsb, C,r2,r1)},
+                { 0x3D7, Instr(Mnemonic.stfiwx, f1,r2,r3)},
+                { 0x3D6, Instr(Mnemonic.icbi, r2,r3)},
+                { 0x3DA, Instr(Mnemonic.extsw, C,r2,r1)},
+                { 0x3F6, Instr(Mnemonic.dcbz, r2,r3) }
              });
         }
 
@@ -1034,11 +1041,11 @@ Conventions:
         {
             if (model == "750")
             {
-                return Instr(Opcode.psq_l, "f1,r2,s0:12,u21:1,u22:3");
+                return Instr(Mnemonic.psq_l, f1,r2,s0_12,u21_1,u22_3);
             }
             else
             {
-                return Instr(Opcode.lq, "r1,E2");
+                return Instr(Mnemonic.lq, Is64Bit, r1,E2);
             }
         }
 
@@ -1046,28 +1053,28 @@ Conventions:
         {
             if (model == "750")
             {
-                return Instr(Opcode.psq_lu, "f1,r2,s0:12,u21:1,u22:3");
+                return Instr(Mnemonic.psq_lu, f1,r2,s0_12,u21_1,u22_3);
             }
             else
             {
-                return new DOpRec(Opcode.lfdp, "p1,E2:2");
+                return Instr(Mnemonic.lfdp, p1,E2_2);
             }
         }
 
         private Decoder Ext3BDecoder()
         {
-            return new FpuOpRec(1, 0x1F, new Dictionary<uint, Decoder> // 3B
+            return new FpuDecoder(1, 0x1F, new Dictionary<uint, Decoder> // 3B
             {
-                { 18, new FpuOpRecAux(Opcode.fdivs, ".f1,f2,f3") },
-                { 20, new FpuOpRecAux(Opcode.fsubs, ".f1,f2,f3") },
-                { 21, new FpuOpRecAux(Opcode.fadds, ".f1,f2,f3") },
-                { 22, new FpuOpRecAux(Opcode.fsqrts, ".f1,f3") },
-                { 24, new FpuOpRecAux(Opcode.fres, ".f1,f3") },
-                { 25, new FpuOpRecAux(Opcode.fmuls, ".f1,f2,f4") },
-                { 28, new FpuOpRecAux(Opcode.fmsubs, ".f1,f2,f4,f3") },
-                { 29, new FpuOpRecAux(Opcode.fmadds, ".f1,f2,f4,f3") },
-                { 30, new FpuOpRecAux(Opcode.fnmsubs, ".f1,f2,f3,f4") },
-                { 31, new FpuOpRecAux(Opcode.fnmadds, ".f1,f2,f3,f4") },
+                { 18, Instr(Mnemonic.fdivs, C,f1,f2,f3) },
+                { 20, Instr(Mnemonic.fsubs, C,f1,f2,f3) },
+                { 21, Instr(Mnemonic.fadds, C,f1,f2,f3) },
+                { 22, Instr(Mnemonic.fsqrts, C,f1,f3) },
+                { 24, Instr(Mnemonic.fres, C,f1,f3) },
+                { 25, Instr(Mnemonic.fmuls, C,f1,f2,f4) },
+                { 28, Instr(Mnemonic.fmsubs, C,f1,f2,f4,f3) },
+                { 29, Instr(Mnemonic.fmadds, C,f1,f2,f4,f3) },
+                { 30, Instr(Mnemonic.fnmsubs, C,f1,f2,f3,f4) },
+                { 31, Instr(Mnemonic.fnmadds, C,f1,f2,f3,f4) },
             });
         }
 
@@ -1075,16 +1082,16 @@ Conventions:
         {
             if (model == "750")
             {
-                return Instr(Opcode.psq_st, "f1,r2,s0:12,u21:1,u22:3");
+                return Instr(Mnemonic.psq_st, f1,r2,s0_12,u21_1,u22_3);
             }
             else
             {
-                return new XX3OpRec(new Dictionary<uint, Decoder>                // 3C
+                return new XX3Decoder(new Dictionary<uint, Decoder>                // 3C
                 {
-                    { 0x00, new DOpRec(Opcode.xsaddsp, "v1,v2,v3") },
-                    { 0x01, new DOpRec(Opcode.xsmaddasp, "v1,v2,v3") },
-                    //{ 0x02, new DOpRec(Opcode.xxsldwi, "v1,v2,v3") },       //$TODO need extra work.
-                    { 0x09, new DOpRec(Opcode.xsmaddmsp, "v1,v2,v3") },
+                    { 0x00, Instr(Mnemonic.xsaddsp, v1,v2,v3) },
+                    { 0x01, Instr(Mnemonic.xsmaddasp, v1,v2,v3) },
+                    //{ 0x02, Instr(Opcode.xxsldwi, v1,v2,v3) },       //$TODO need extra work.
+                    { 0x09, Instr(Mnemonic.xsmaddmsp, v1,v2,v3) },
                 });
             }
         }
@@ -1093,12 +1100,11 @@ Conventions:
         {
             if (model == "750")
             {
-                return Instr(Opcode.psq_stu, "f1,r2,s0:12,u21:1,u22:3");
+                return Instr(Mnemonic.psq_stu, f1,r2,s0_12,u21_1,u22_3);
             }
             else
             {
-                return new DOpRec(Opcode.stfdp, "p1,E2:2");
-
+                return Instr(Mnemonic.stfdp, p1,E2_2);
             }
         }
     }

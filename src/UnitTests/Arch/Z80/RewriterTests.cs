@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,8 +29,8 @@ namespace Reko.UnitTests.Arch.Z80
     [TestFixture]
     class RewriterTests : RewriterTestBase
     {
-        private Z80ProcessorArchitecture arch = new Z80ProcessorArchitecture("z80");
-        private Address baseAddr = Address.Ptr16(0x0100);
+        private readonly Z80ProcessorArchitecture arch = new Z80ProcessorArchitecture("z80");
+        private readonly Address baseAddr = Address.Ptr16(0x0100);
         private MemoryArea image;
 
         public override IProcessorArchitecture Architecture
@@ -38,7 +38,7 @@ namespace Reko.UnitTests.Arch.Z80
             get { return arch; }
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             var state = (Z80ProcessorState)arch.CreateProcessorState();
             return new Z80Rewriter(arch, new LeImageReader(image, 0), state, new Frame(arch.WordWidth), host);
@@ -138,7 +138,7 @@ namespace Reko.UnitTests.Arch.Z80
         {
             BuildTest(0x10, 0xFE);
             AssertCode(
-                "0|L--|0100(2): 2 instructions",
+                "0|T--|0100(2): 2 instructions",
                 "1|L--|b = b - 0x01",
                 "2|T--|if (b != 0x00) branch 0100");
         }
@@ -286,6 +286,16 @@ namespace Reko.UnitTests.Arch.Z80
                 "3|L--|bc = bc - 1",
                 "4|T--|if (bc == 0x0000) branch 0102",
                 "5|T--|if (Test(NE,Z)) branch 0100");
+        }
+
+        [Test]
+        public void Z80rw_rla()
+        {
+            BuildTest(0x17);
+            AssertCode(
+                "0|L--|0100(1): 2 instructions",
+                "1|L--|a = __rcl(a, 0x01, C)",
+                "2|L--|C = cond(a)");
         }
     }
 }

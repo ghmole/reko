@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,20 +50,10 @@ namespace Reko.UnitTests.Typing
 			nl = Environment.NewLine;
 		}
 
-		[Test]
-		public void TrcoFactorial()
-		{
-			RunTest16("Fragments/factorial.asm", "Typing/TrcoFactorial.txt");
-		}
 
 		[Test]
-		public void TrcoFactorialReg()
-		{
-			RunTest16("Fragments/factorial_reg.asm", "Typing/TrcoFactorialReg.txt");
-		}
-
-		[Test]
-		public void TrcoFloatingPoint()
+        [Category(Categories.IntegrationTests)]
+        public void TrcoFloatingPoint()
 		{
 			RunTest16("Fragments/fpuops.asm", "Typing/TrcoFloatingPoint.txt");
 		}
@@ -93,6 +83,7 @@ namespace Reko.UnitTests.Typing
 		}
 
         [Test]
+        [Category(Categories.IntegrationTests)]
         public void TrcoReals()
         {
             RunTest16("Fragments/fpuops.asm", "Typing/TrcoReals.txt");
@@ -187,7 +178,7 @@ namespace Reko.UnitTests.Typing
 		}
 
 		[Test]
-        [Ignore("FIXME")]
+        //[Ignore("FIXME")]
 		public void TrcoGlobalArray()
 		{
             Program program = CreateProgram();
@@ -309,19 +300,6 @@ namespace Reko.UnitTests.Typing
 		}
 
         [Test]
-        public void TrcoReg00011()
-        {
-            RunTest16("Fragments/regressions/r00011.asm", "Typing/TrcoReg00011.txt");
-        }
-
-        [Test]
-        [Ignore("Re-enable when new SSA is in place")]
-        public void TrcoReg00012()
-        {
-            RunTest16("Fragments/regressions/r00012.asm", "Typing/TrcoReg00012.txt");
-        }
-
-        [Test]
 		public void TrcoIntelIndexedAddressingMode()
 		{
 			ProgramBuilder m = new ProgramBuilder();
@@ -435,7 +413,6 @@ namespace Reko.UnitTests.Typing
 				"\ttrait_primitive(bool)" + nl;
 			Assert.AreEqual(exp, sb.ToString());
 		}
-
 
         [Test]
         public void TrcoArrayAccess()
@@ -559,6 +536,7 @@ namespace Reko.UnitTests.Typing
 			Identifier ax = Local16("ax");
 			Identifier bx = Local16("bx");
 			Identifier si = Local16("si");
+            Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
 			Assign(es, SegMem(PrimitiveType.Word16, ds, Word16(0x7070)));
 			Assign(ax, 0x4A);
 			Assign(si, SMul(ax, SegMem(PrimitiveType.Word16, ds, Word16(0x1C0A))));

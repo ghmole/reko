@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2016,8 +2016,8 @@ namespace Reko.ImageLoaders.OdbgScript
                 else if (run_till_return)
                 {
                     var instr = (X86Instruction) Host.DisassembleEx(Debugger.InstructionPointer);
-                    if (instr.code == Arch.X86.Opcode.ret ||
-                       instr.code == Arch.X86.Opcode.retf)
+                    if (instr.code == Arch.X86.Mnemonic.ret ||
+                       instr.code == Arch.X86.Mnemonic.retf)
                     {
                         run_till_return = false;
                         stepcount = 0;
@@ -2033,7 +2033,7 @@ namespace Reko.ImageLoaders.OdbgScript
                     so we'll stepinto except for a few exceptions
                     */
                     var instr = (X86Instruction) Host.DisassembleEx(Debugger.InstructionPointer);
-                    if (instr.code == Arch.X86.Opcode.call || instr.repPrefix != 0)
+                    if (instr.code == Arch.X86.Mnemonic.call || instr.repPrefix != 0)
                         Debugger.StepOver(StepOverCallback);
                     else
                         Debugger.StepInto(StepIntoCallback);

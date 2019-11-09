@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,10 +50,11 @@ namespace Reko.Environments.Msdos
         {
             return new HashSet<RegisterStorage>
             {
-            Registers.cs,
-            Registers.ss,
-            Registers.sp,
-            Registers.esp,
+                Registers.cs,
+                Registers.ss,
+                Registers.sp,
+                Registers.esp,
+                Registers.Top,
             };
         }
 
@@ -68,6 +69,7 @@ namespace Reko.Environments.Msdos
                 Registers.dx,
                 Registers.bx,
                 Registers.sp,
+                Registers.Top,
             };
         }
 
@@ -86,16 +88,14 @@ namespace Reko.Environments.Msdos
         {
             if (!signature.HasVoidReturn)
             {
-                var reg = signature.ReturnValue.Storage as RegisterStorage;
-                if (reg != null)
+                if (signature.ReturnValue.Storage is RegisterStorage reg)
                 {
                     if (reg != Registers.al && reg != Registers.ax)
                         return null;
                 }
-                var seq = signature.ReturnValue.Storage as SequenceStorage;
-                if (seq != null)
+                if (signature.ReturnValue.Storage is SequenceStorage seq && seq.Elements.Length == 2)
                 {
-                    if (seq.Head != Registers.dx || seq.Tail != Registers.ax)
+                    if (seq.Elements[0] != Registers.dx || seq.Elements[1] != Registers.ax)
                         return null;
                 }
             }
@@ -148,6 +148,11 @@ namespace Reko.Environments.Msdos
             case CBasicType.Int64: return 8;
             default: throw new NotImplementedException(string.Format("C basic type {0} not supported.", cb));
             }
+        }
+
+        public override void InjectProcedureEntryStatements(Procedure proc, Address addr, CodeEmitter m)
+        {
+            m.Assign(proc.Frame.EnsureRegister(Registers.Top), 0);
         }
 
         public override ExternalProcedure LookupProcedureByName(string moduleName, string procName)

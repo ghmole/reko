@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,8 @@ namespace Reko.Core.Expressions
 	{
         public MkSequence(DataType dt, params Expression [] exprs) : base(dt)
         {
+            if (exprs.Length < 1)
+                throw new ArgumentException("A sequence must have a least one expression.");
             this.Expressions = exprs;
         }
 

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,19 +29,19 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using Opcode = Reko.Arch.Tlcs.Tlcs900.Tlcs900Opcode;
+using Opcode = Reko.Arch.Tlcs.Tlcs900.Tlcs900Mnemonic;
 
 namespace Reko.Arch.Tlcs.Tlcs900
 {
     public partial class Tlcs900Rewriter : IEnumerable<RtlInstructionCluster>
     {
-        private Tlcs900Architecture arch;
-        private EndianImageReader rdr;
-        private ProcessorState state;
-        private IStorageBinder binder;
-        private IRewriterHost host;
-        private IEnumerator<Tlcs900Instruction> dasm;
-        private RtlClass rtlc;
+        private readonly Tlcs900Architecture arch;
+        private readonly EndianImageReader rdr;
+        private readonly ProcessorState state;
+        private readonly IStorageBinder binder;
+        private readonly IRewriterHost host;
+        private readonly IEnumerator<Tlcs900Instruction> dasm;
+        private InstrClass rtlc;
         private RtlEmitter m;
         private Tlcs900Instruction instr;
 
@@ -59,18 +59,18 @@ namespace Reko.Arch.Tlcs.Tlcs900
         {
             while (dasm.MoveNext())
             {
-                rtlc = RtlClass.Linear;
+                rtlc = InstrClass.Linear;
                 var instrs = new List<RtlInstruction>();
                 m = new RtlEmitter(instrs);
                 this.instr = dasm.Current;
-                switch (instr.Opcode)
+                switch (instr.Mnemonic)
                 {
                 default:
-                    host.Error(
+                    host.Warn(
                        instr.Address,
                        string.Format(
-                           "Rewriting of TLCS-900 instruction '{0}' not implemented yet.",
-                           instr.Opcode));
+                           "TLCS-900 instruction '{0}' not supported yet.",
+                           instr.Mnemonic));
                     EmitUnitTest();
                     Invalid();
                     break;
@@ -142,7 +142,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
 
         private void Invalid()
         {
-            rtlc = RtlClass.Invalid;
+            rtlc = InstrClass.Invalid;
             m.Invalid();
         }
 
@@ -195,7 +195,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
             }
             else
             {
-                ea = arch.MakeAddressFromConstant(mem.Offset);
+                ea = arch.MakeAddressFromConstant(mem.Offset, false);
             }
 
             return ea;
@@ -210,13 +210,11 @@ namespace Reko.Arch.Tlcs.Tlcs900
                 m.Assign(id, fn(id, src));
                 return id;
             }
-            var addr = op as AddressOperand;
-            if (addr != null)
+            if (op is AddressOperand addr)
             {
                 return addr.Address;
             }
-            var mem = op as MemoryOperand;
-            if (mem != null)
+            if (op is MemoryOperand mem)
             {
                 Expression ea;
                 if (mem.Base != null)
@@ -225,7 +223,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
                 }
                 else
                 {
-                    ea = arch.MakeAddressFromConstant(mem.Offset);
+                    ea = arch.MakeAddressFromConstant(mem.Offset, false);
                 }
                 if (mem.Increment < 0)
                 {
@@ -264,12 +262,12 @@ namespace Reko.Arch.Tlcs.Tlcs900
                     break;
                 case '0':
                     m.Assign(
-                        binder.EnsureFlagGroup(arch.GetFlagGroup(mask)),
+                        binder.EnsureFlagGroup(arch.GetFlagGroup(Tlcs900Registers.f,  mask)),
                         Constant.False());
                     break;
                 case '1':
                     m.Assign(
-                        binder.EnsureFlagGroup(arch.GetFlagGroup(mask)),
+                        binder.EnsureFlagGroup(arch.GetFlagGroup(Tlcs900Registers.f, mask)),
                         Constant.True());
                     break;
                 }
@@ -278,7 +276,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
             if (grf != 0)
             {
                 m.Assign(
-                    binder.EnsureFlagGroup(arch.GetFlagGroup(grf)),
+                    binder.EnsureFlagGroup(arch.GetFlagGroup(Tlcs900Registers.f, grf)),
                     m.Cond(exp));
             }
         }
@@ -329,7 +327,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
             r2.Offset -= dasm.Current.Length;
             var bytes = r2.ReadBytes(dasm.Current.Length);
             Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void {0}{1}()", prefix, dasm.Current.Opcode);
+            Debug.WriteLine("        public void {0}{1}()", prefix, dasm.Current.Mnemonic);
             Debug.WriteLine("        {");
             Debug.Write("            BuildTest(");
             Debug.Write(string.Join(

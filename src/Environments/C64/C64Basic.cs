@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,8 @@ namespace Reko.Environments.C64
 
         public C64Basic(SortedList<ushort, C64BasicInstruction> program) : base("c64Basic")
         {
+            this.Description = "Commodore 64 Basic";
+            this.Endianness = EndianServices.Little;
             this.program = program;
             this.PointerType = PrimitiveType.Ptr16;
             this.InstructionBitSize = 8;
@@ -59,31 +61,6 @@ namespace Reko.Environments.C64
             {
                 yield return program.Values[i];
             }
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            return new LeImageReader(img, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea mem, ulong off)
-        {
-            return new LeImageReader(mem, off);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new LeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new LeImageWriter(mem, addr);
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -106,7 +83,7 @@ namespace Reko.Environments.C64
             throw new NotImplementedException();
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
             throw new NotImplementedException();
         }
@@ -121,17 +98,12 @@ namespace Reko.Environments.C64
             return new RegisterStorage[0];
         }
 
-        public override RegisterStorage GetSubregister(RegisterStorage reg, int offset, int width)
-        {
-            throw new NotImplementedException();
-        }
-
         public override bool TryGetRegister(string name, out RegisterStorage reg)
         {
             throw new NotImplementedException();
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
             throw new NotImplementedException();
         }
@@ -168,12 +140,12 @@ namespace Reko.Environments.C64
             throw new NotImplementedException();
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
             return Address.Ptr16(c.ToUInt16());
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
             throw new NotImplementedException();
         }
@@ -181,11 +153,6 @@ namespace Reko.Environments.C64
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse16(txtAddress, out addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
         }
 
         public class C64BasicState : ProcessorState
@@ -211,7 +178,7 @@ namespace Reko.Environments.C64
 
             public override Core.Expressions.Constant GetRegister(RegisterStorage r)
             {
-                throw new NotImplementedException();
+                return Constant.Invalid;
             }
 
             public override void SetRegister(RegisterStorage r, Core.Expressions.Constant v)

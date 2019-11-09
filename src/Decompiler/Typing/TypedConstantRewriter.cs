@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,15 +73,24 @@ namespace Reko.Typing
         {
             this.c = c;
             DataType dtInferred = c.DataType;
-            this.pOrig = c.DataType as PrimitiveType;
-            if (c.TypeVariable != null)
+            if (dtInferred == null)
             {
+                eventListener.Warn(new NullCodeLocation(""),
+                    $"The equivalence class {c.TypeVariable.Name} has a null data type");
                 dtInferred = c.TypeVariable.DataType;
-                this.pOrig = c.TypeVariable.OriginalDataType as PrimitiveType;
             }
-            dtInferred = dtInferred.ResolveAs<DataType>();
+            else
+            {
+                this.pOrig = c.DataType as PrimitiveType;
+                if (c.TypeVariable != null)
+                {
+                    dtInferred = c.TypeVariable.DataType;
+                    this.pOrig = c.TypeVariable.OriginalDataType as PrimitiveType;
+                }
+            }
+            var dt = dtInferred.ResolveAs<DataType>();
             this.dereferenced = dereferenced;
-            return dtInferred.Accept(this);
+            return dt.Accept(this);
         }
 
         public Expression Rewrite(Address addr, bool dereferenced)
@@ -248,23 +257,28 @@ namespace Reko.Typing
                     return np;
                 }
 
-                var addr = program.Platform.MakeAddressFromConstant(c);
+                var addr = program.Platform.MakeAddressFromConstant(c, false);
                 // An invalid pointer -- often used as sentinels in code.
                 if (!program.SegmentMap.IsValidAddress(addr))
                 {
                     //$TODO: probably should use a reinterpret_cast here.
-                    var ce = new Cast(ptr, c)
+                    e = new Cast(ptr, c)
                     {
                         TypeVariable = c.TypeVariable
                     };
-                    return ce;
+                    if (dereferenced)
+                    {
+                        e = new Dereference(ptr.Pointee, e);
+                    }
+                    return e;
                 }
                 
                 var dt = ptr.Pointee.ResolveAs<DataType>();
-                if (IsCharPtrToReadonlySection(c, dt))
+                var charType = MaybeCharType(dt);
+                if (charType != null && IsPtrToReadonlySection(c, dt))
                 {
-                    PromoteToCString(c, dt);
-                    return ReadNullTerminatedString(c, dt);
+                    PromoteToCString(c, charType);
+                    return ReadNullTerminatedString(c, charType);
                 }
                 StructureField f = EnsureFieldAtOffset(GlobalVars, dt, c.ToInt32());
                 var ptrGlobals = new Pointer(GlobalVars, platform.PointerType.BitSize);
@@ -275,8 +289,7 @@ namespace Reko.Typing
                 }
                 else
                 {
-                    var array = f.DataType as ArrayType;
-                    if (array != null) // C language rules 'promote' arrays to pointers.
+                    if (f.DataType is ArrayType array) // C language rules 'promote' arrays to pointers.
                     {
                         e.DataType = program.TypeFactory.CreatePointer(
                             array.ElementType, 
@@ -291,9 +304,23 @@ namespace Reko.Typing
 			return e;
 		}
 
-        public Expression VisitQualifiedType(QualifiedType qt)
+        /// <summary>
+        /// Drill into dt to see if it could be the beginning of a character string.
+        /// </summary>
+        private PrimitiveType MaybeCharType(DataType dt)
         {
-            return qt.DataType.Accept(this);
+            var pr = dt as PrimitiveType;
+            if (pr == null)
+            {
+                if (!(dt is ArrayType at))
+                    return null;
+                pr = at.ElementType as PrimitiveType;
+                if (pr == null)
+                    return null;
+            }
+            if (pr.Domain != Domain.Character)
+                return null;
+            return pr;
         }
 
         public Expression VisitReference(ReferenceTo refTo)
@@ -301,23 +328,19 @@ namespace Reko.Typing
             throw new NotImplementedException();
         }
 
-        private bool IsCharPtrToReadonlySection(Constant c, DataType dt)
+        private bool IsPtrToReadonlySection(Constant c, DataType dt)
         {
-            var pr = dt as PrimitiveType;
-            if (pr == null || pr.Domain != Domain.Character)
-                return false;
-            var addr = platform.MakeAddressFromConstant(c);
+            var addr = platform.MakeAddressFromConstant(c, false);
             if (addr == null)
                 return false;
-            ImageSegment seg;
-            if (!program.SegmentMap.TryFindSegment(addr, out seg))
+            if (!program.SegmentMap.TryFindSegment(addr, out ImageSegment seg))
                 return false;
             return (seg.Access & AccessMode.ReadWrite) == AccessMode.Read;
         }
 
         private Expression ReadNullTerminatedString(Constant c, DataType dt)
         {
-            var rdr = program.CreateImageReader(platform.MakeAddressFromConstant(c));
+            var rdr = program.CreateImageReader(program.Architecture, platform.MakeAddressFromConstant(c, false));
             return rdr.ReadCString(dt, program.TextEncoding);
         }
 

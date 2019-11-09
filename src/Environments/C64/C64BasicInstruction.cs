@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Core;
 using Reko.Core.Machine;
 using System;
 using System.Collections.Generic;
@@ -39,24 +40,14 @@ namespace Reko.Environments.C64
         internal const int TokenMin = 0x80;
         internal const int TokenMax = 0xCC;
 
-        public override bool IsValid { get { return true; } }
+        public C64BasicInstruction()
+        {
+            this.InstructionClass = InstrClass.Linear;
+        }
 
         public override int OpcodeAsInteger
         {
             get { throw new NotImplementedException(); }
-        }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            return null;
-        }
-
-        public override InstructionClass InstructionClass
-        {
-            get
-            {
-                return InstructionClass.Linear;
-            }
         }
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)

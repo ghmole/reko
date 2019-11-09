@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Assemblers.x86;
@@ -30,7 +31,6 @@ using Reko.Core.Services;
 using Reko.Loading;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.IO;
@@ -77,20 +77,17 @@ namespace Reko.UnitTests.Arch.Intel
 
         private void DoRewriteCore()
         {
-            var cfgSvc = MockRepository.GenerateStub<IConfigurationService>();
-            var env = MockRepository.GenerateStub<OperatingEnvironment>();
-            var tlSvc = MockRepository.GenerateStub<ITypeLibraryLoaderService>();
+            var cfgSvc = new Mock<IConfigurationService>();
+            var env = new Mock<PlatformDefinition>();
+            var tlSvc = new Mock<ITypeLibraryLoaderService>();
             var eventListener = new FakeDecompilerEventListener();
-            cfgSvc.Stub(c => c.GetEnvironment("ms-dos")).Return(env);
-            cfgSvc.Replay();
-            env.Stub(e => e.TypeLibraries).Return(new List<ITypeLibraryElement>());
-            env.Stub(e => e.CharacteristicsLibraries).Return(new List<ITypeLibraryElement>());
-            env.Replay();
-            tlSvc.Replay();
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            cfgSvc.Setup(c => c.GetEnvironment("ms-dos")).Returns(env.Object);
+            env.Setup(e => e.TypeLibraries).Returns(new List<TypeLibraryDefinition>());
+            env.Setup(e => e.CharacteristicsLibraries).Returns(new List<TypeLibraryDefinition>());
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
             sc.AddService<DecompilerEventListener>(eventListener);
-            sc.AddService<IConfigurationService>(cfgSvc);
-            sc.AddService<ITypeLibraryLoaderService>(tlSvc);
+            sc.AddService<IConfigurationService>(cfgSvc.Object);
+            sc.AddService<ITypeLibraryLoaderService>(tlSvc.Object);
 
             Project project = LoadProject();
             project.Programs.Add(this.program);
@@ -98,12 +95,12 @@ namespace Reko.UnitTests.Arch.Intel
                 this.program, 
                 new ImportResolver(project, this.program, eventListener),
                 sc);
-            var ep = new ImageSymbol(baseAddress);
+            var ep = ImageSymbol.Procedure(this.program.Architecture, baseAddress);
             this.program.EntryPoints.Add(ep.Address, ep);
             var program =  project.Programs[0];
             foreach (Procedure_v1 sp in program.User.Procedures.Values)
             {
-                scanner.EnqueueUserProcedure(sp);
+                scanner.EnqueueUserProcedure(program.Architecture, sp);
             }
             scanner.ScanImage();
         }
@@ -167,9 +164,9 @@ namespace Reko.UnitTests.Arch.Intel
 			Assert.AreEqual(3, proc.ControlGraph.Blocks.Count);		// Entry, code, Exit
 
             Block block = new List<Block>(proc.ControlGraph.Successors(proc.EntryBlock))[0];
-			Assert.AreEqual(6, block.Statements.Count);
+			Assert.AreEqual(5, block.Statements.Count);
 			Assignment instr1 = (Assignment) block.Statements[0].Instruction;
-			Assert.AreEqual("ax = 0x0000", block.Statements[1].Instruction.ToString());
+			Assert.AreEqual("ax = 0x0000", block.Statements[0].Instruction.ToString());
 
 			Assert.AreSame(new List<Block>(proc.ControlGraph.Successors(block))[0], proc.ExitBlock);
 		}

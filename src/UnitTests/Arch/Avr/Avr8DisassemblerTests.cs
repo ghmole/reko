@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ namespace Reko.UnitTests.Arch.Avr
     [TestFixture]
     public class Avr8DisassemblerTests : DisassemblerTestBase<AvrInstruction>
     {
-        private Avr8Architecture arch;
+        private readonly Avr8Architecture arch;
 
         public Avr8DisassemblerTests()
         {

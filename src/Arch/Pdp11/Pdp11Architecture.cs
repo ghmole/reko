@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -92,6 +92,7 @@ namespace Reko.Arch.Pdp11
             };
             this.flagGroups = new Dictionary<uint, FlagGroupStorage>();
 
+            Endianness = EndianServices.Little;
             InstructionBitSize = 16;
             StackRegister = Registers.sp;
             //CarryFlagMask  = { get { throw new NotImplementedException(); } }
@@ -105,31 +106,6 @@ namespace Reko.Arch.Pdp11
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
         {
             return new Pdp11Disassembler(rdr, this);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
-        {
-            return new LeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            return new LeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new LeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new LeImageWriter(mem, addr);
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -147,7 +123,15 @@ namespace Reko.Arch.Pdp11
             throw new NotImplementedException();
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
+        {
+            int i = domain - StorageDomain.Register;
+            return (0 <= i && i < regs.Length)
+                ? regs[i]
+                : null;
+        }
+
+        public RegisterStorage GetRegister(int i)
         {
             return (0 <= i && i < regs.Length)
                 ? regs[i]
@@ -163,8 +147,8 @@ namespace Reko.Arch.Pdp11
 
         public override SortedList<string, int> GetOpcodeNames()
         {
-            return Enum.GetValues(typeof(Opcode))
-                .Cast<Opcode>()
+            return Enum.GetValues(typeof(Mnemonic))
+                .Cast<Mnemonic>()
                 .ToSortedList(
                     v => v.ToString(),
                     v => (int)v);
@@ -172,7 +156,7 @@ namespace Reko.Arch.Pdp11
 
         public override int? GetOpcodeNumber(string name)
         {
-            if (!Enum.TryParse(name, true, out Opcode result))
+            if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;
             return (int)result;
         }
@@ -211,14 +195,14 @@ namespace Reko.Arch.Pdp11
             return reg;
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
 		{
             FlagGroupStorage f;
             if (flagGroups.TryGetValue(grf, out f))
                 return f;
 
 			PrimitiveType dt = Bits.IsSingleBitSet(grf) ? PrimitiveType.Bool : PrimitiveType.Byte;
-            var fl = new FlagGroupStorage(Registers.psw, grf, GrfToString(grf), dt);
+            var fl = new FlagGroupStorage(flagRegister, grf, GrfToString(flagRegister, "", grf), dt);
 			flagGroups.Add(grf, fl);
 			return fl;
 		}
@@ -240,7 +224,16 @@ namespace Reko.Arch.Pdp11
             return new FlagGroupStorage(Registers.psw, grf, name, dt);
         }
 
-        public override string GrfToString(uint grf)
+        public override IEnumerable<FlagGroupStorage> GetSubFlags(FlagGroupStorage flags)
+        {
+            uint grf = flags.FlagGroupBits;
+            if ((grf & Registers.N.FlagGroupBits) != 0) yield return Registers.N;
+            if ((grf & Registers.Z.FlagGroupBits) != 0) yield return Registers.Z;
+            if ((grf & Registers.V.FlagGroupBits) != 0) yield return Registers.V;
+            if ((grf & Registers.C.FlagGroupBits) != 0) yield return Registers.C;
+        }
+
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
 			var s = new StringBuilder();
 			foreach (var r in flagRegs)
@@ -256,9 +249,12 @@ namespace Reko.Arch.Pdp11
             return new Pdp11Rewriter(this, new Pdp11Disassembler(rdr, this), binder, host);
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr16(c.ToUInt16());
+            var uAddr = c.ToUInt16();
+            if (codeAlign)
+                uAddr &= unchecked((ushort)~1u);
+            return Address.Ptr16(uAddr);
         }
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
@@ -276,11 +272,6 @@ namespace Reko.Arch.Pdp11
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse16(txtAddress, out addr);
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
         }
         #endregion
     }

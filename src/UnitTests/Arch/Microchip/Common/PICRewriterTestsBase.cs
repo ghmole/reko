@@ -1,8 +1,8 @@
 ﻿#region License
 /* 
- * Copyright (C) 2017-2018 Christian Hostelet.
+ * Copyright (C) 2017-2019 Christian Hostelet.
  * inspired by work of:
- * Copyright (C) 1999-2017 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ namespace Reko.UnitTests.Arch.Microchip.Common
 
         public override IProcessorArchitecture Architecture => arch;
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder frame, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder frame, IRewriterHost host)
         {
             var disasm = picModel.CreateDisassembler(arch, new LeImageReader(image, 0));
             var rwtr = picModel.CreateRewriter(arch, disasm, (PICProcessorState)arch.CreateProcessorState(), frame, host);
@@ -82,7 +82,7 @@ namespace Reko.UnitTests.Arch.Microchip.Common
             int i = 0;
             var frame = Architecture.CreateFrame();
             var host = CreateRewriterHost();
-            var rewriter = GetInstructionStream(frame, host).GetEnumerator();
+            var rewriter = GetRtlStream(frame, host).GetEnumerator();
             while (i < expected.Length && rewriter.MoveNext())
             {
                 Assert.AreEqual(expected[i], $"{i}|{RtlInstruction.FormatClass(rewriter.Current.Class)}|{rewriter.Current}", mesg);

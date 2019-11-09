@@ -180,6 +180,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Absyn\AbsynCase.cs" />
+    <Compile Include="Absyn\AbsynCompoundAssignment.cs" />
     <Compile Include="Absyn\AbsynContinue.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -189,6 +190,7 @@
     <Compile Include="Absyn\AbsynDoWhile.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Absyn\AbsynFor.cs" />
     <Compile Include="Absyn\AbsynGoto.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -235,6 +237,7 @@
     <Compile Include="Assemblers\Emitter.cs" />
     <Compile Include="Assemblers\Symbol.cs" />
     <Compile Include="BinaryReaderExtensions.cs" />
+    <Compile Include="BitRange.cs" />
     <Compile Include="CallingConvention.cs" />
     <Compile Include="CharacteristicsLibrary.cs" />
     <Compile Include="CLanguage\CBasicType.cs" />
@@ -261,28 +264,30 @@
     <Compile Include="Code\CriticalInstruction.cs" />
     <Compile Include="Code\GotoInstruction.cs" />
     <Compile Include="Code\SwitchInstruction.cs" />
-    <Compile Include="Configuration\ArchitectureElement.cs" />
-    <Compile Include="Configuration\AssemblerElement.cs" />
-    <Compile Include="Configuration\PlatformArchitectureElement.cs" />
+    <Compile Include="Configuration\ArchitectureDefinition.cs" />
+    <Compile Include="Configuration\AssemblerDefinition.cs" />
+    <Compile Include="Configuration\PlatformArchitectureDefinition.cs" />
     <Compile Include="Configuration\PropertyOption.cs" />
     <Compile Include="Configuration\RekoConfigurationService.cs" />
-    <Compile Include="Configuration\LoaderElement.cs" />
-    <Compile Include="Configuration\OperatingEnvironmentElement.cs" />
-    <Compile Include="Configuration\RawFileElement.cs" />
+    <Compile Include="Configuration\LoaderDefinition.cs" />
+    <Compile Include="Configuration\PlatformDefinition.cs" />
+    <Compile Include="Configuration\RawFileDefinition.cs" />
     <Compile Include="Configuration\RekoConfiguration_v1.cs" />
-    <Compile Include="Configuration\SignatureFileElement.cs" />
-    <Compile Include="Configuration\SymbolSource.cs" />
-    <Compile Include="Configuration\TypeLibraryElement.cs" />
+    <Compile Include="Configuration\SignatureFileDefinition.cs" />
+    <Compile Include="Configuration\SymbolSourceDefinition.cs" />
+    <Compile Include="Configuration\TypeLibraryDefinition.cs" />
     <Compile Include="Configuration\UiPreferencesConfiguration.cs" />
-    <Compile Include="Configuration\UiStyleElement.cs" />
+    <Compile Include="Configuration\UiStyleDefinition.cs" />
     <Compile Include="DebugEx.cs" />
     <Compile Include="Dfa\Automaton.cs" />
     <Compile Include="Dfa\DfaBuilder.cs" />
     <Compile Include="Dfa\PatternParser.cs" />
     <Compile Include="Dfa\State.cs" />
     <Compile Include="Dfa\TreeNode.cs" />
+    <Compile Include="DispatchProcedure.cs" />
     <Compile Include="EndianImageReader.cs" />
     <Compile Include="Endianness.cs" />
+    <Compile Include="EndianServices.cs" />
     <Compile Include="EnumerableEx.cs" />
     <Compile Include="EvaluationContext.cs" />
     <Compile Include="EventEx.cs" />
@@ -300,6 +305,7 @@
     <Compile Include="Expressions\ExpressionEmitter.cs" />
     <Compile Include="Expressions\ExpressionMatcher.cs" />
     <Compile Include="Expressions\ExpressionReplacer.cs" />
+    <Compile Include="Expressions\ExpressionTree.cs" />
     <Compile Include="Expressions\ExpressionValueComparer.cs" />
     <Compile Include="Expressions\ExpressionVisitor.cs" />
     <Compile Include="Expressions\FieldAccess.cs" />
@@ -328,18 +334,30 @@
     <Compile Include="IRFormat\IRToken.cs" />
     <Compile Include="IStorageBinder.cs" />
     <Compile Include="Lib\ArticulationPointFinder.cs" />
+    <Compile Include="Lib\Bitfield.cs" />
+    <Compile Include="Lib\ConcurrentBTreeDictionary.cs" />
+    <Compile Include="Lib\BTreeDictionary.cs" />
+    <Compile Include="Lib\BTreeDictionaryEx.cs" />
     <Compile Include="Lib\Dijkstra.cs" />
     <Compile Include="Lib\FibonacciHeap.cs" />
+    <Compile Include="Lib\Float16.cs" />
     <Compile Include="Lib\LinqAlgorithms.cs" />
     <Compile Include="Lib\LTDominatorGraph.cs" />
     <Compile Include="Lib\PatternCollector.cs" />
     <Compile Include="Lib\PerfectHash.cs" />
     <Compile Include="Lib\Float80.cs" />
     <Compile Include="Lib\SuffixArray.cs" />
+    <Compile Include="Lib\SuffixArray2.cs" />
     <Compile Include="Lib\UbjsonReader.cs" />
     <Compile Include="Lib\UbjsonMarker.cs" />
     <Compile Include="Lib\UbjsonWriter.cs" />
     <Compile Include="Lib\WildPatternMatcher.cs" />
+    <Compile Include="Machine\BitfieldDecoder.cs" />
+    <Compile Include="Machine\ConditionalDecoder.cs" />
+    <Compile Include="Machine\Decoder.cs" />
+    <Compile Include="Machine\MaskDecoder.cs" />
+    <Compile Include="Machine\Mutator.cs" />
+    <Compile Include="Machine\NyiDecoder.cs" />
     <Compile Include="NativeInterface\CustomAnsiStringMarshaler.cs" />
     <Compile Include="NativeInterface\ILibraryLoader.cs" />
     <Compile Include="NativeInterface\INativeArchitecture.cs" />
@@ -373,6 +391,7 @@
     <Compile Include="Pascal\PascalSyntax.cs" />
     <Compile Include="Pascal\SymbolTable.cs" />
     <Compile Include="Pascal\Token.cs" />
+    <Compile Include="FrameApplicationBuilder.cs" />
     <Compile Include="Rational.cs" />
     <Compile Include="CustomDecoderFallback.cs" />
     <Compile Include="Rtl\RtlIf.cs" />
@@ -393,11 +412,12 @@
     <Compile Include="IScriptInterpreter.cs" />
     <Compile Include="Lib\Bits.cs" />
     <Compile Include="Lib\DiGraph.cs" />
+    <Compile Include="Lib\IntervalTree.cs" />
     <Compile Include="Lib\ObservableRangeCollection.cs" />
     <Compile Include="Lib\Trie.cs" />
     <Compile Include="Lib\UndirectedGraph.cs" />
     <Compile Include="Lib\UndirectedGraphImpl.cs" />
-    <Compile Include="Machine\InstructionClass.cs" />
+    <Compile Include="InstrClass.cs" />
     <Compile Include="Machine\MachineInstructionWriter.cs" />
     <Compile Include="Machine\InstructionComparer.cs" />
     <Compile Include="MetadataLoader.cs" />
@@ -449,6 +469,7 @@
     <Compile Include="Serialization\Json\JsonSymbols.cs" />
     <Compile Include="Serialization\MemberPointer_v1.cs" />
     <Compile Include="Serialization\MemoryMap_v1.cs" />
+    <Compile Include="NamingPolicy.cs" />
     <Compile Include="Serialization\ProgramOptions_v2.cs" />
     <Compile Include="Serialization\ProjectLoader.cs" />
     <Compile Include="Serialization\ProjectPersister.cs" />
@@ -457,8 +478,8 @@
     <Compile Include="Serialization\Project_v3.cs" />
     <Compile Include="Serialization\Project_v2.cs" />
     <Compile Include="Serialization\ArrayType_v1.cs" />
+    <Compile Include="Serialization\Project_v5.cs" />
     <Compile Include="Serialization\Project_v4.cs" />
-    <Compile Include="Serialization\QualifiedType_v1.cs" />
     <Compile Include="Serialization\ReferenceType_v1.cs" />
     <Compile Include="Serialization\SerializedEnumType.cs" />
     <Compile Include="Serialization\SerializedProject.cs" />
@@ -486,9 +507,6 @@
     </Compile>
     <Compile Include="BlockGraph.cs" />
     <Compile Include="CallGraph.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="CallRewriter.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="CodeEmitter.cs">
@@ -527,7 +545,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Diagnostic.cs" />
-    <Compile Include="DisassemblerBase.cs">
+    <Compile Include="Machine\DisassemblerBase.cs">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Dumper.cs">
@@ -733,6 +751,7 @@
     <Compile Include="StatementCorrelatedException.cs" />
     <Compile Include="StatementList.cs" />
     <Compile Include="StorageBinder.cs" />
+    <Compile Include="StorageFactory.cs" />
     <Compile Include="StridedInterval.cs" />
     <Compile Include="StructureReader.cs" />
     <Compile Include="TypedDataDumper.cs" />
@@ -749,6 +768,7 @@
     <Compile Include="TypedServiceProvider.cs" />
     <Compile Include="TypeLibraryDeserializer.cs" />
     <Compile Include="TypeLibraryLoader.cs" />
+    <Compile Include="TypeNamingPolicy.cs" />
     <Compile Include="Types\ArrayType.cs">
       <SubType>Code</SubType>
     </Compile>
@@ -785,7 +805,7 @@
     <Compile Include="Types\PrimitiveType.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="Types\QualifiedType.cs" />
+    <Compile Include="Types\Qualifier.cs" />
     <Compile Include="Types\ReferenceTo.cs" />
     <Compile Include="Types\StringType.cs" />
     <Compile Include="Types\StructureField.cs">

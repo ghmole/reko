@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,12 +28,12 @@ using System.Linq;
 
 namespace Reko.Core.Serialization
 {
-	/// <summary>
-	/// Helper class that serializes and deserializes procedures with their signatures.
-	/// </summary>
-	public sealed class ProcedureSerializer
+    /// <summary>
+    /// Helper class that serializes and deserializes procedures with their signatures.
+    /// </summary>
+    public sealed class ProcedureSerializer
 	{
-        private IPlatform platform;
+        private readonly IPlatform platform;
         private ArgumentDeserializer argDeser;
 
         public ProcedureSerializer(
@@ -86,7 +86,7 @@ namespace Reko.Core.Serialization
         {
             if (ss == null)
                 return null;
-            var retAddrSize = this.Architecture.PointerType.Size;   //$TODO: deal with near/far calls in x86-realmode
+            var retAddrSize = this.Architecture.ReturnAddressOnStack;
             if (!ss.ParametersValid)
             {
                 return new FunctionType
@@ -137,7 +137,7 @@ namespace Reko.Core.Serialization
             }
             else
             {
-                var dtRet = ss.ReturnValue != null
+                var dtRet = ss.ReturnValue != null && ss.ReturnValue.Type != null
                     ? ss.ReturnValue.Type.Accept(TypeLoader)
                     : null;
                 var dtThis = ss.EnclosingType != null
@@ -154,6 +154,16 @@ namespace Reko.Core.Serialization
                 // parameters
 
                 var cc = platform.GetCallingConvention(ss.Convention);
+                if (cc == null)
+                {
+                    // It was impossible to determine a calling convention,
+                    // so we don't know how to decode this signature accurately.
+                    return new FunctionType
+                    {
+                        StackDelta = ss.StackDelta,
+                        ReturnAddressOnStack = retAddrSize,
+                    };
+                }
                 var res = new CallingConventionEmitter();
                 cc.Generate(res, dtRet, dtThis, dtParameters);
                 if (res.Return != null)
@@ -197,9 +207,8 @@ namespace Reko.Core.Serialization
         }
 
         /// <summary>
-        /// If the user has specified the storage on all
-        /// parameters, and the return value, no heed is taken of any calling 
-        /// convention.
+        /// If the user has specified the storage on all parameters, and the
+        /// return value, no heed is taken of any calling convention.
         /// </summary>
         /// <param name="ss"></param>
         /// <returns></returns>
@@ -219,16 +228,17 @@ namespace Reko.Core.Serialization
         {
             if (!string.IsNullOrEmpty(name))
                 return name;
-            var stack = storage as StackStorage;
-            if (stack != null)
-                return Frame.FormatStackAccessName(dataType, "Arg", stack.StackOffset, name);
-            var seq = storage as SequenceStorage;
-            if (seq != null)
-                return seq.Name;
-            var reg = storage as RegisterStorage;
-            if (reg != null)
+            switch (storage)
+            {
+            case RegisterStorage reg:
                 return reg.Name;
-            throw new NotImplementedException();
+            case StackStorage stack:
+                return NamingPolicy.Instance.StackArgumentName(dataType, stack.StackOffset, name);
+            case SequenceStorage seq:
+                return seq.Name;
+            default:
+                throw new NotImplementedException();
+            }
         }
 
         public SerializedSignature Serialize(FunctionType sig)
@@ -239,7 +249,7 @@ namespace Reko.Core.Serialization
                 ssig.ParametersValid = false;
                 return ssig;
             }
-            ArgumentSerializer argSer = new ArgumentSerializer(Architecture);
+            var argSer = new ArgumentSerializer(Architecture);
             ssig.ReturnValue = argSer.Serialize(sig.ReturnValue);
             ssig.Arguments = new Argument_v1[sig.Parameters.Length];
             for (int i = 0; i < sig.Parameters.Length; ++i)

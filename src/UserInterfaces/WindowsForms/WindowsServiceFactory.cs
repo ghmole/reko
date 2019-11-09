@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2017 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -116,7 +116,7 @@ namespace Reko.UserInterfaces.WindowsForms
 
         public IProjectBrowserService CreateProjectBrowserService()
         {
-            return new ProjectBrowserService(services, mainForm.ProjectBrowser);
+            return new ProjectBrowserService(services, mainForm.ProjectBrowserTab, mainForm.ProjectBrowser);
         }
 
         public ISearchResultService CreateSearchResultService()
@@ -138,9 +138,11 @@ namespace Reko.UserInterfaces.WindowsForms
         {
             var srSvc = services.RequireService<ISearchResultService>();
             var diagnosticsSvc = services.RequireService<IDiagnosticsService>();
+            var callHierSvc = services.RequireService<ICallHierarchyService>();
             var tchSvc = new TabControlHost(services, mainForm.TabControl);
             tchSvc.Attach((IWindowPane)srSvc, mainForm.FindResultsPage);
             tchSvc.Attach((IWindowPane)diagnosticsSvc, mainForm.DiagnosticsPage);
+            tchSvc.Attach((IWindowPane) callHierSvc, mainForm.CallHierarchyPage);
 
             return tchSvc;
         }
@@ -185,6 +187,24 @@ namespace Reko.UserInterfaces.WindowsForms
         public ISelectionService CreateSelectionService()
         {
             return new SelectionService();
+        }
+
+        public IProcedureListService CreateProcedureListService()
+        {
+            return new ProcedureListService(services, mainForm.ProcedureListTab, mainForm.ProcedureFilter, mainForm.ProcedureList);
+        }
+
+        public ICallHierarchyService CreateCallHierarchyService()
+        {
+            var svc = new CallHierarchyInteractor(mainForm.CallHierarchy);
+            return svc;
+        }
+
+        public IDecompiledFileService CreateDecompiledFileService()
+        {
+            var fsSvc = services.RequireService<IFileSystemService>();
+            var svc = new DecompiledFileService(fsSvc);
+            return svc;
         }
     }
 }

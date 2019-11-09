@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,49 +29,29 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Reko.Core.Serialization;
+using Reko.Core.Operators;
 
 namespace Reko.Arch.Mos6502
 {
     public class Mos6502ProcessorArchitecture : ProcessorArchitecture
     {
+        private Dictionary<uint, FlagGroupStorage> flagGroups;
+
         public Mos6502ProcessorArchitecture(string archId) : base(archId)
         {
             CarryFlagMask = (uint)FlagM.CF;
+            Endianness = EndianServices.Little;
             InstructionBitSize = 8;
             FramePointerType = PrimitiveType.Byte;       // Yup, stack pointer is a byte register (!)
             PointerType = PrimitiveType.Ptr16;
             StackRegister = Registers.s;
             WordWidth = PrimitiveType.Byte;       // 8-bit, baby!
+            flagGroups = new Dictionary<uint, FlagGroupStorage>();
         }
 
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader imageReader)
         {
             return new Disassembler((LeImageReader)imageReader);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
-        {
-            return new LeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            return new LeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new LeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new LeImageWriter(mem, addr);
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -96,8 +76,8 @@ namespace Reko.Arch.Mos6502
 
         public override SortedList<string, int> GetOpcodeNames()
         {
-            return Enum.GetValues(typeof(Opcode))
-                .Cast<Opcode>()
+            return Enum.GetValues(typeof(Mnemonic))
+                .Cast<Mnemonic>()
                 .ToSortedList(
                     v => v.ToString(),
                     v => (int)v);
@@ -105,15 +85,15 @@ namespace Reko.Arch.Mos6502
 
         public override int? GetOpcodeNumber(string name)
         {
-            Opcode result;
+            Mnemonic result;
             if (!Enum.TryParse(name, true, out result))
                 return null;
             return (int)result;
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
-            throw new NotImplementedException();
+            return Registers.All[(int) domain];
         }
 
         public override RegisterStorage GetRegister(string name)
@@ -133,12 +113,31 @@ namespace Reko.Arch.Mos6502
 
         public override RegisterStorage GetSubregister(RegisterStorage reg, int offset, int width)
         {
-            throw new NotImplementedException();
+            return reg;
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override IEnumerable<FlagGroupStorage> GetSubFlags(FlagGroupStorage flags)
         {
-            throw new NotImplementedException();
+            foreach (var flag in Registers.Flags)
+            {
+                if ((flags.FlagGroupBits & flag.FlagGroupBits) != 0)
+                    yield return flag;
+            }
+        }
+
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
+        {
+            if (flagGroups.TryGetValue(grf, out var fstg))
+                return fstg;
+            var sb = new StringBuilder();
+            foreach (var flag in Registers.Flags)
+            {
+                if ((grf & flag.FlagGroupBits) != 0)
+                    sb.Append(flag.Name);
+            }
+            fstg = new FlagGroupStorage(flagRegister, grf, sb.ToString(), PrimitiveType.Byte);
+            this.flagGroups.Add(grf, fstg);
+            return fstg;
         }
 
         public override FlagGroupStorage GetFlagGroup(string name)
@@ -149,10 +148,15 @@ namespace Reko.Arch.Mos6502
         public override Expression CreateStackAccess(IStorageBinder binder, int cbOffset, DataType dataType)
         {
             //$TODO: the M6502 stack pointer is an 8-bit offset into the fixed memory area $0100-$01FF.
-            throw new NotImplementedException();
+            return new MemoryAccess(new BinaryExpression(
+                Operator.IAdd,
+                PrimitiveType.Ptr16,
+                binder.EnsureRegister(Registers.s),
+                Constant.Int16((short) cbOffset)),
+                dataType);
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
             return Address.Ptr16(c.ToUInt16());
         }
@@ -169,23 +173,24 @@ namespace Reko.Arch.Mos6502
             }
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
-            throw new NotImplementedException();
+            var sb = new StringBuilder();
+            foreach (var flag in Registers.Flags)
+            {
+                if ((flag.FlagGroupBits & grf) != 0)
+                    sb.Append(flag.Name);
+            }
+            return sb.ToString();
         }
 
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse16(txtAddress, out addr);
         }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            return mem.TryReadLe(addr, dt, out value);
-        }
     }
 
-    public  static class Registers
+    public static class Registers
     {
         public static readonly RegisterStorage a = RegisterStorage.Reg8("a", 0);
         public static readonly RegisterStorage x = RegisterStorage.Reg8("x", 1);
@@ -194,14 +199,16 @@ namespace Reko.Arch.Mos6502
 
         public static readonly RegisterStorage p = new RegisterStorage("p", 10, 0, PrimitiveType.Byte);
 
-        public static readonly RegisterStorage N = new RegisterStorage("N", 4, 0, PrimitiveType.Byte);
-        public static readonly RegisterStorage V = new RegisterStorage("V", 5, 0, PrimitiveType.Byte);
-        public static readonly RegisterStorage C = new RegisterStorage("C", 6, 0, PrimitiveType.Byte);
-        public static readonly RegisterStorage Z = new RegisterStorage("Z", 7, 0, PrimitiveType.Byte);
-        public static readonly RegisterStorage I = new RegisterStorage("I", 8, 0, PrimitiveType.Byte);
-        public static readonly RegisterStorage D = new RegisterStorage("D", 9, 0, PrimitiveType.Byte);
-        
+        public static readonly FlagGroupStorage N = new FlagGroupStorage(p, (uint)FlagM.NF, "N", PrimitiveType.Bool);
+        public static readonly FlagGroupStorage V = new FlagGroupStorage(p, (uint)FlagM.VF, "V", PrimitiveType.Bool);
+        public static readonly FlagGroupStorage I = new FlagGroupStorage(p, (uint)FlagM.IF, "I", PrimitiveType.Bool);
+        public static readonly FlagGroupStorage D = new FlagGroupStorage(p, (uint)FlagM.DF, "D", PrimitiveType.Bool);
+        public static readonly FlagGroupStorage Z = new FlagGroupStorage(p, (uint)FlagM.ZF, "Z", PrimitiveType.Bool);
+        public static readonly FlagGroupStorage C = new FlagGroupStorage(p, (uint)FlagM.CF, "C", PrimitiveType.Bool);
+
         internal static RegisterStorage[] All;
+
+        internal static FlagGroupStorage[] Flags;
 
         public static RegisterStorage GetRegister(int reg)
         {
@@ -216,13 +223,15 @@ namespace Reko.Arch.Mos6502
                 x,
                 y,
                 s,
-
+            };
+            Flags = new FlagGroupStorage[]
+            {
                 N,
                 V,
-                C,
-                Z,
                 I,
                 D,
+                Z,
+                C,
             };
         }
     }

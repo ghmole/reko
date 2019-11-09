@@ -1,8 +1,8 @@
 ﻿#region License
 /* 
- * Copyright (C) 2017-2018 Christian Hostelet.
+ * Copyright (C) 2017-2019 Christian Hostelet.
  * inspired by work from:
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,9 +106,9 @@ namespace Reko.Arch.MicrochipPIC.Common
         private static List<UserRegisterValue> registersAtPOR
             = new List<UserRegisterValue>();
 
-        public static MemoryIdentifier GlobalStack = new MemoryIdentifier("Stack", PrimitiveType.Ptr32);
-        public static MemoryIdentifier GlobalData = new MemoryIdentifier("Data", PrimitiveType.Byte);
-        public static MemoryIdentifier GlobalCode = new MemoryIdentifier("Code", PrimitiveType.Ptr32);
+        public static MemoryIdentifier GlobalStack = new MemoryIdentifier("Stack", PrimitiveType.Ptr32, MemoryStorage.Instance);
+        public static MemoryIdentifier GlobalData = new MemoryIdentifier("Data", PrimitiveType.Byte, MemoryStorage.Instance);
+        public static MemoryIdentifier GlobalCode = new MemoryIdentifier("Code", PrimitiveType.Ptr32, MemoryStorage.Instance);
 
 
         /// <summary>

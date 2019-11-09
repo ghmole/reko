@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,9 +31,9 @@ namespace Reko.Arch.PowerPC
 {
     public class PowerPcCallingConvention : CallingConvention
     {
-        private PowerPcArchitecture arch;
-        private RegisterStorage[] iregs;
-        private RegisterStorage[] fregs;
+        private readonly PowerPcArchitecture arch;
+        private readonly RegisterStorage[] iregs;
+        private readonly RegisterStorage[] fregs;
 
         public PowerPcCallingConvention(PowerPcArchitecture arch)
         {
@@ -60,8 +60,7 @@ namespace Reko.Arch.PowerPC
             for (int iArg = 0; iArg < dtParams.Count; ++iArg)
             {
                 var dtArg = dtParams[iArg];
-                var prim = dtArg as PrimitiveType;
-                if (prim != null && prim.Domain == Domain.Real)
+                if (dtArg is PrimitiveType prim && prim.Domain == Domain.Real)
                 {
                     if (fr >= fregs.Length)
                     {
@@ -115,6 +114,21 @@ namespace Reko.Arch.PowerPC
             {
                 ccr.RegReturn(iregs[0]);
             }
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return iregs.Contains(reg) || fregs.Contains(reg);
+            }
+            //$TODO: handle stack args.
+            return false;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            return iregs[0] == stg || fregs[0] == stg;
         }
     }
 }

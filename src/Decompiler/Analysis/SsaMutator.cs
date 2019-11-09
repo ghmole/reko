@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,37 +79,30 @@ namespace Reko.Analysis
             int delta)
         {
             // Locate the post-call definition of the register, if any
-            var defRegBinding = call.Definitions
-                .Where(d => d.Identifier is Identifier idDef &&
-                            idDef.Storage == register)
+            var defRegBinding = call.Definitions.Where(
+                u => u.Storage == register)
                 .FirstOrDefault();
             if (defRegBinding == null)
                 return;
-            var defRegId = defRegBinding.Identifier as Identifier;
+            var defRegId = defRegBinding.Expression as Identifier;
             if (defRegId == null)
                 return;
             var usedRegExp = call.Uses
-                .Select(u => u.Expression)
-                .OfType<Identifier>()
                 .Where(u => u.Storage == register)
+                .Select(u => u.Expression)
                 .FirstOrDefault();
+
             if (usedRegExp == null)
                 return;
-
-            // Generate an instruction that adjusts the register according to
+            var src = m.AddSubSignedInt(usedRegExp, delta);
+            // Generate a statement that adjusts the register according to
             // the specified delta.
-            var src = m.AddConstantWord(usedRegExp, register.DataType, delta);
             var ass = new Assignment(defRegId, src);
             var defSid = ssa.Identifiers[defRegId];
-
-            // Insert the instruction after the call statement.
             var adjustRegStm = InsertStatementAfter(ass, stm);
-
-            // Remove the bypassed register definition from
-            // the call instructions.
-            call.Definitions.Remove(defRegBinding);
             defSid.DefExpression = src;
             defSid.DefStatement = adjustRegStm;
+            call.Definitions.Remove(defRegBinding);
             ssa.AddUses(adjustRegStm);
         }
 
@@ -126,6 +119,50 @@ namespace Reko.Analysis
             var iPos = block.Statements.IndexOf(stmAfter);
             var linAddr = stmAfter.LinearAddress;
             return block.Statements.Insert(iPos + 1, linAddr, instr);
+        }
+
+        /// <summary>
+        /// After CallInstruction to Application rewriting some identifiers
+        /// defined in CallInstruction can become undefined. Create
+        /// '<id> = Constant.Invalid' instruction for each of undefined
+        /// identifier to avoid losing information about their place of
+        /// definition. Normally these instruction should be eliminated as
+        /// 'dead' code. If they are not then it means that there are uses of
+        /// <id> after call. So signanture of Application is incorrect.
+        /// Assignment to 'Constant.Invalid' is good way to draw attention of
+        /// user and developer.
+        /// </summary>
+        public void DefineUninitializedIdentifiers(
+            Statement stm,
+            CallInstruction call)
+        {
+            var trashedSids = call.Definitions.Select(d => (Identifier) d.Expression)
+                .Select(id => ssa.Identifiers[id])
+                .Where(sid => sid.DefStatement == null);
+            foreach (var sid in trashedSids)
+            {
+                DefineUninitializedIdentifier(stm, sid);
+            }
+        }
+
+        private void DefineUninitializedIdentifier(
+            Statement stm,
+            SsaIdentifier sid)
+        {
+            var value = Constant.Invalid;
+            var ass = new Assignment(sid.Identifier, value);
+            var newStm = InsertStatementAfter(ass, stm);
+            sid.DefExpression = value;
+            sid.DefStatement = newStm;
+        }
+
+        public void AdjustSsa(Statement stm, CallInstruction call)
+        {
+            ssa.ReplaceDefinitions(stm, null);
+            ssa.RemoveUses(stm);
+            ssa.AddDefinitions(stm);
+            ssa.AddUses(stm);
+            DefineUninitializedIdentifiers(stm, call);
         }
     }
 }

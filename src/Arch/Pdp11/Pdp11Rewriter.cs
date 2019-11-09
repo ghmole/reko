@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,14 +32,14 @@ namespace Reko.Arch.Pdp11
 {
     public partial class Pdp11Rewriter : IEnumerable<RtlInstructionCluster>
     {
-        private Pdp11Architecture arch;
-        private IEnumerator<Pdp11Instruction> dasm;
+        private readonly Pdp11Architecture arch;
+        private readonly IEnumerator<Pdp11Instruction> dasm;
+        private readonly IStorageBinder binder;
+        private readonly IRewriterHost host;
         private Pdp11Instruction instr;
-        private IStorageBinder binder;
-        private RtlClass rtlc;
+        private InstrClass rtlc;
         private List<RtlInstruction> rtlInstructions;
         private RtlEmitter m;
-        private IRewriterHost host;
 
         public Pdp11Rewriter(
             Pdp11Architecture arch,
@@ -59,87 +59,87 @@ namespace Reko.Arch.Pdp11
             {
                 this.instr = dasm.Current;
                 this.rtlInstructions = new List<RtlInstruction>();
-                this.rtlc = RtlClass.Linear;
+                this.rtlc = instr.InstructionClass;
                 m = new RtlEmitter(this.rtlInstructions);
-                switch (instr.Opcode)
+                switch (instr.Mnemonic)
                 {
                 default:
                     host.Warn(
                         instr.Address,
-                        "Rewriting of PDP-11 instruction {0} not supported yet.", 
-                        instr.Opcode);
-                    rtlc = RtlClass.Invalid;
+                        "PDP-11 instruction {0} is not supported yet.", 
+                        instr.Mnemonic);
+                    rtlc = InstrClass.Invalid;
                     m.Invalid();
                     break;
-                case Opcode.illegal: rtlc = RtlClass.Invalid; m.Invalid(); break;
-                case Opcode.adc: RewriteAdcSbc(m.IAdd); break;
-                case Opcode.add: RewriteAdd(); break;
-                case Opcode.addb: RewriteAdd(); break;
-                case Opcode.ash: RewriteShift(); break;
-                case Opcode.ashc: RewriteAshc(); break;
-                case Opcode.asl: RewriteAsl(); break;
-                case Opcode.asr: RewriteAsr(); break;
-                case Opcode.bcc: RewriteBxx(ConditionCode.UGE, FlagM.CF); break;
-                case Opcode.bcs: RewriteBxx(ConditionCode.ULT, FlagM.CF); break;
-                case Opcode.beq: RewriteBxx(ConditionCode.EQ, FlagM.ZF); break;
-                case Opcode.bge: RewriteBxx(ConditionCode.GE, FlagM.VF|FlagM.NF); break;
-                case Opcode.bgt: RewriteBxx(ConditionCode.GT, FlagM.ZF|FlagM.NF|FlagM.VF); break;
-                case Opcode.bhi: RewriteBxx(ConditionCode.UGT, FlagM.ZF|FlagM.CF); break;
-                case Opcode.bvs: RewriteBxx(ConditionCode.OV, FlagM.VF); break;
-                case Opcode.bic: RewriteBic(); break;
-                case Opcode.bis: RewriteBis(); break;
-                case Opcode.bisb: RewriteBis(); break;
-                case Opcode.bit: RewriteBit(); break;
-                case Opcode.bitb: RewriteBit(); break;
-                case Opcode.ble: RewriteBxx(ConditionCode.LE, FlagM.ZF|FlagM.NF|FlagM.VF); break;
-                case Opcode.blos: RewriteBxx(ConditionCode.ULE, FlagM.ZF | FlagM.CF); break;
-                case Opcode.blt: RewriteBxx(ConditionCode.LT, FlagM.NF|FlagM.VF); break;
-                case Opcode.bmi: RewriteBxx(ConditionCode.LT, FlagM.NF); break;
-                case Opcode.bne: RewriteBxx(ConditionCode.NE, FlagM.ZF); break;
-                case Opcode.bpl: RewriteBxx(ConditionCode.GT, FlagM.NF); break;
-                case Opcode.bpt: RewriteBpt(); break;
-                case Opcode.br: RewriteBr(); break;
-                case Opcode.clr: RewriteClr(instr, m.Word16(0)); break;
-                case Opcode.clrb: RewriteClr(instr, m.Byte(0)); break;
-                case Opcode.clrflags: RewriteClrSetFlags(Constant.False); break;
-                case Opcode.cmp: RewriteCmp(); break;
-                case Opcode.com: RewriteCom(); break;
-                case Opcode.dec: RewriteIncDec(m.ISub); break;
-                case Opcode.div: RewriteDiv(); break;
-                case Opcode.emt: RewriteEmt(); break;
-                case Opcode.halt: RewriteHalt(); break;
-                case Opcode.iot: RewriteIot(); break;
-                case Opcode.inc: RewriteIncDec(m.IAdd); break;
-                case Opcode.jmp: RewriteJmp(); break;
-                case Opcode.jsr: RewriteJsr(); break;
-                case Opcode.mark: RewriteMark(); break;
-                case Opcode.mfpd: RewriteMfpd(); break;
-                case Opcode.mfpi: RewriteMfpi(); break;
-                case Opcode.mov: RewriteMov(); break;
-                case Opcode.movb: RewriteMov(); break;
-                case Opcode.mtpi: RewriteMtpi(); break;
-                case Opcode.mul: RewriteMul(); break;
-                case Opcode.neg: RewriteNeg(); break;
-                case Opcode.nop: m.Nop(); break;
-                case Opcode.reset: RewriteReset(); break;
-                case Opcode.rol: RewriteRotate(PseudoProcedure.Rol); break;
-                case Opcode.ror: RewriteRotate(PseudoProcedure.Ror); break;
-                case Opcode.rti: RewriteRti(); break;
-                case Opcode.rts: RewriteRts(); break;
-                case Opcode.rtt: RewriteRtt(); break;
-                case Opcode.sbc: RewriteAdcSbc(m.ISub); break;
-                case Opcode.setflags: RewriteClrSetFlags(Constant.True); break;
-                case Opcode.stcdi: RewriteStcdi(); break;
-                case Opcode.sob: RewriteSob(); break;
-                case Opcode.stexp: RewriteStexp(); break;
-                case Opcode.sub: RewriteSub(); break;
-                case Opcode.swab: RewriteSwab(); break;
-                case Opcode.sxt: RewriteSxt(); break;
-                case Opcode.trap: RewriteTrap(); break;
-                case Opcode.tst: RewriteTst(); break;
-                case Opcode.tstb: RewriteTst(); break;
-                case Opcode.wait: RewriteWait(); break;
-                case Opcode.xor: RewriteXor(); break;
+                case Mnemonic.illegal: rtlc = InstrClass.Invalid; m.Invalid(); break;
+                case Mnemonic.adc: RewriteAdcSbc(m.IAdd); break;
+                case Mnemonic.add: RewriteAdd(); break;
+                case Mnemonic.addb: RewriteAdd(); break;
+                case Mnemonic.ash: RewriteShift(); break;
+                case Mnemonic.ashc: RewriteAshc(); break;
+                case Mnemonic.asl: RewriteAsl(); break;
+                case Mnemonic.asr: RewriteAsr(); break;
+                case Mnemonic.bcc: RewriteBxx(ConditionCode.UGE, FlagM.CF); break;
+                case Mnemonic.bcs: RewriteBxx(ConditionCode.ULT, FlagM.CF); break;
+                case Mnemonic.beq: RewriteBxx(ConditionCode.EQ, FlagM.ZF); break;
+                case Mnemonic.bge: RewriteBxx(ConditionCode.GE, FlagM.VF|FlagM.NF); break;
+                case Mnemonic.bgt: RewriteBxx(ConditionCode.GT, FlagM.ZF|FlagM.NF|FlagM.VF); break;
+                case Mnemonic.bhi: RewriteBxx(ConditionCode.UGT, FlagM.ZF|FlagM.CF); break;
+                case Mnemonic.bvs: RewriteBxx(ConditionCode.OV, FlagM.VF); break;
+                case Mnemonic.bic: RewriteBic(); break;
+                case Mnemonic.bis: RewriteBis(); break;
+                case Mnemonic.bisb: RewriteBis(); break;
+                case Mnemonic.bit: RewriteBit(); break;
+                case Mnemonic.bitb: RewriteBit(); break;
+                case Mnemonic.ble: RewriteBxx(ConditionCode.LE, FlagM.ZF|FlagM.NF|FlagM.VF); break;
+                case Mnemonic.blos: RewriteBxx(ConditionCode.ULE, FlagM.ZF | FlagM.CF); break;
+                case Mnemonic.blt: RewriteBxx(ConditionCode.LT, FlagM.NF|FlagM.VF); break;
+                case Mnemonic.bmi: RewriteBxx(ConditionCode.LT, FlagM.NF); break;
+                case Mnemonic.bne: RewriteBxx(ConditionCode.NE, FlagM.ZF); break;
+                case Mnemonic.bpl: RewriteBxx(ConditionCode.GT, FlagM.NF); break;
+                case Mnemonic.bpt: RewriteBpt(); break;
+                case Mnemonic.br: RewriteBr(); break;
+                case Mnemonic.clr: RewriteClr(instr, m.Word16(0)); break;
+                case Mnemonic.clrb: RewriteClr(instr, m.Byte(0)); break;
+                case Mnemonic.clrflags: RewriteClrSetFlags(Constant.False); break;
+                case Mnemonic.cmp: RewriteCmp(); break;
+                case Mnemonic.com: RewriteCom(); break;
+                case Mnemonic.dec: RewriteIncDec(m.ISub); break;
+                case Mnemonic.div: RewriteDiv(); break;
+                case Mnemonic.emt: RewriteEmt(); break;
+                case Mnemonic.halt: RewriteHalt(); break;
+                case Mnemonic.iot: RewriteIot(); break;
+                case Mnemonic.inc: RewriteIncDec(m.IAdd); break;
+                case Mnemonic.jmp: RewriteJmp(); break;
+                case Mnemonic.jsr: RewriteJsr(); break;
+                case Mnemonic.mark: RewriteMark(); break;
+                case Mnemonic.mfpd: RewriteMfpd(); break;
+                case Mnemonic.mfpi: RewriteMfpi(); break;
+                case Mnemonic.mov: RewriteMov(); break;
+                case Mnemonic.movb: RewriteMov(); break;
+                case Mnemonic.mtpi: RewriteMtpi(); break;
+                case Mnemonic.mul: RewriteMul(); break;
+                case Mnemonic.neg: RewriteNeg(); break;
+                case Mnemonic.nop: m.Nop(); break;
+                case Mnemonic.reset: RewriteReset(); break;
+                case Mnemonic.rol: RewriteRotate(PseudoProcedure.Rol); break;
+                case Mnemonic.ror: RewriteRotate(PseudoProcedure.Ror); break;
+                case Mnemonic.rti: RewriteRti(); break;
+                case Mnemonic.rts: RewriteRts(); break;
+                case Mnemonic.rtt: RewriteRtt(); break;
+                case Mnemonic.sbc: RewriteAdcSbc(m.ISub); break;
+                case Mnemonic.setflags: RewriteClrSetFlags(Constant.True); break;
+                case Mnemonic.stcdi: RewriteStcdi(); break;
+                case Mnemonic.sob: RewriteSob(); break;
+                case Mnemonic.stexp: RewriteStexp(); break;
+                case Mnemonic.sub: RewriteSub(); break;
+                case Mnemonic.swab: RewriteSwab(); break;
+                case Mnemonic.sxt: RewriteSxt(); break;
+                case Mnemonic.trap: RewriteTrap(); break;
+                case Mnemonic.tst: RewriteTst(); break;
+                case Mnemonic.tstb: RewriteTst(); break;
+                case Mnemonic.wait: RewriteWait(); break;
+                case Mnemonic.xor: RewriteXor(); break;
                 }
                 yield return new RtlInstructionCluster(instr.Address, instr.Length, this.rtlInstructions.ToArray())
                 {
@@ -163,7 +163,7 @@ namespace Reko.Arch.Pdp11
             uint uChanged = (uint)changed;
             if (uChanged != 0)
             {
-                var grfChanged = binder.EnsureFlagGroup(this.arch.GetFlagGroup(uChanged));
+                var grfChanged = binder.EnsureFlagGroup(this.arch.GetFlagGroup(Registers.psw, uChanged));
                 m.Assign(grfChanged, m.Cond(e));
             }
             uint grfMask = 1;
@@ -171,7 +171,7 @@ namespace Reko.Arch.Pdp11
             {
                 if ((grfMask & (uint)zeroed) != 0)
                 {
-                    var grfZeroed = binder.EnsureFlagGroup(this.arch.GetFlagGroup(grfMask));
+                    var grfZeroed = binder.EnsureFlagGroup(this.arch.GetFlagGroup(Registers.psw, grfMask));
                     m.Assign(grfZeroed, 0);
                 }
                 grfMask <<= 1;
@@ -181,7 +181,7 @@ namespace Reko.Arch.Pdp11
             {
                 if ((grfMask & (uint)set) != 0)
                 {
-                    var grfZeroed = binder.EnsureFlagGroup(this.arch.GetFlagGroup(grfMask));
+                    var grfZeroed = binder.EnsureFlagGroup(this.arch.GetFlagGroup(Registers.psw, grfMask));
                     m.Assign(grfZeroed, 1);
                 }
                 grfMask <<= 1;
@@ -276,9 +276,25 @@ namespace Reko.Arch.Pdp11
 
         private Expression RewriteSrc(MachineOperand op)
         {
-            var memOp = op as MemoryOperand;
-            if (memOp != null)
+            switch (op)
             {
+            case RegisterOperand regOp:
+                if (regOp.Register == Registers.pc)
+                    return instr.Address + instr.Length;
+                else
+                    return binder.EnsureRegister(regOp.Register);
+            case ImmediateOperand immOp:
+                if (dasm.Current.DataWidth.Size == 1)
+                {
+                    return Constant.Byte((byte) immOp.Value.ToInt32());
+                }
+                else
+                {
+                    return immOp.Value;
+                }
+            case AddressOperand addrOp:
+                return addrOp.Address;
+            case MemoryOperand memOp:
                 var r = binder.EnsureRegister(memOp.Register);
                 var tmp = binder.CreateTemporary(op.Width);
                 switch (memOp.Mode)
@@ -338,40 +354,19 @@ namespace Reko.Arch.Pdp11
                         m.Mem(
                             PrimitiveType.Ptr16,
                             m.IAdd(r, Constant.Word16(memOp.EffectiveAddress))));
-                }
+                    }
                 }
                 return tmp;
-            }
-            var regOp = op as RegisterOperand;
-            if (regOp != null)
-            {
-                return binder.EnsureRegister(regOp.Register);
-            }
-            var immOp = op as ImmediateOperand;
-            if (immOp != null)
-            {
-                if (dasm.Current.DataWidth.Size == 1)
-                {
-                    return Constant.Byte((byte)immOp.Value.ToInt32());
-                }
-                else
-                {
-                    return immOp.Value;
-                }
-            }
-            var addrOp = op as AddressOperand;
-            if (addrOp != null)
-            {
-                return addrOp.Address;
             }
             throw new NotImplementedException();
         }
 
+        // Rewrites a destination operand when the source is unary.
         private Expression RewriteDst(MachineOperand op, Expression src, Func<Expression, Expression> gen)
         {
-            var regOp = op as RegisterOperand;
-            if (regOp != null)
+            switch (op)
             {
+            case RegisterOperand regOp:
                 var dst = binder.EnsureRegister(regOp.Register);
                 src = gen(src);
                 if (src.DataType.Size < dst.DataType.Size)
@@ -380,12 +375,9 @@ namespace Reko.Arch.Pdp11
                 }
                 m.Assign(dst, src);
                 return dst;
-            }
-            var memOp = op as MemoryOperand;
-            if (memOp != null)
-            {
+            case MemoryOperand memOp:
                 var r = binder.EnsureRegister(memOp.Register);
-                var tmp = binder.CreateTemporary(dasm.Current.DataWidth);
+                Expression tmp = MaybeAssignTmp(gen(src));
                 switch (memOp.Mode)
                 {
                 default:
@@ -398,25 +390,22 @@ namespace Reko.Arch.Pdp11
                         m.Mem(
                             dasm.Current.DataWidth,
                             Address.Ptr16(memOp.EffectiveAddress)),
-                        gen(src));
+                        tmp);
                     break;
                 case AddressMode.RegDef:
-                    m.Assign(tmp, gen(src));
                     m.Assign(m.Mem(tmp.DataType, r), tmp);
                     break;
                 case AddressMode.AutoIncr:
-                    m.Assign(tmp, gen(src));
                     m.Assign(m.Mem(tmp.DataType, r), tmp);
                     m.Assign(r, m.IAdd(r, tmp.DataType.Size));
                     break;
                 case AddressMode.AutoIncrDef:
-                    m.Assign(tmp, gen(src));
                     m.Assign(m.Mem(PrimitiveType.Ptr16, m.Mem(tmp.DataType, r)), tmp);
                     m.Assign(r, m.IAdd(r, tmp.DataType.Size));
                     break;
                 case AddressMode.AutoDecr:
                     m.Assign(r, m.ISub(r, tmp.DataType.Size));
-                    m.Assign(m.Mem(tmp.DataType, r), gen(src));
+                    m.Assign(m.Mem(tmp.DataType, r), tmp);
                     break;
                 case AddressMode.AutoDecrDef:
                     m.Assign(r, m.ISub(r, tmp.DataType.Size));
@@ -424,7 +413,7 @@ namespace Reko.Arch.Pdp11
                         m.Mem(
                             tmp.DataType, 
                             m.Mem(PrimitiveType.Ptr16, r)),
-                        gen(src));
+                        tmp);
                     break;
                 case AddressMode.Indexed:
                     if (r.Storage == Registers.pc)
@@ -432,7 +421,7 @@ namespace Reko.Arch.Pdp11
                         var addr = dasm.Current.Address + dasm.Current.Length + memOp.EffectiveAddress;
                         m.Assign(
                             m.Mem(dasm.Current.DataWidth, addr),
-                            gen(src));
+                            tmp);
                     }
                     else
                     {
@@ -442,7 +431,7 @@ namespace Reko.Arch.Pdp11
                                 m.IAdd(
                                     r,
                                     Constant.Word16(memOp.EffectiveAddress))),
-                            gen(src));
+                            tmp);
                     }
                     break;
                 case AddressMode.IndexedDef:
@@ -450,12 +439,13 @@ namespace Reko.Arch.Pdp11
                     {
                         //$REVIEW: what if there are two of these?
                         var addr = dasm.Current.Address + dasm.Current.Length + memOp.EffectiveAddress;
+                        var deferred = binder.CreateTemporary(PrimitiveType.Ptr16);
                         m.Assign(
-                            tmp,
+                            deferred,
                             m.Mem(PrimitiveType.Ptr16, addr));
                         m.Assign(
-                            m.Mem(dasm.Current.DataWidth, tmp),
-                            gen(src));
+                            m.Mem(dasm.Current.DataWidth, deferred),
+                            tmp);
                     }
                     else
                     {
@@ -467,7 +457,7 @@ namespace Reko.Arch.Pdp11
                                     m.IAdd(
                                         r,
                                         Constant.Word16(memOp.EffectiveAddress)))),
-                            gen(src));
+                            tmp);
                     }
                     break;
                 }
@@ -476,18 +466,24 @@ namespace Reko.Arch.Pdp11
             return null;
         }
 
+        private Expression MaybeAssignTmp(Expression exp)
+        {
+            if (exp is Constant || exp is Identifier || exp is Address)
+                return exp;
+            var tmp = binder.CreateTemporary(exp.DataType);
+            m.Assign(tmp, exp);
+            return tmp;
+        }
+
         private Expression RewriteDst(MachineOperand op, Expression src, Func<Expression, Expression, Expression> gen)
         {
-            var regOp = op as RegisterOperand;
-            if (regOp != null)
+            switch (op)
             {
+            case RegisterOperand regOp:
                 var dst = binder.EnsureRegister(regOp.Register);
                 m.Assign(dst, gen(dst, src));
                 return dst;
-            }
-            var memOp = op as MemoryOperand;
-            if (memOp != null)
-            {
+            case MemoryOperand memOp:
                 var r = binder.EnsureRegister(memOp.Register);
                 var tmp = binder.CreateTemporary(dasm.Current.DataWidth);
                 switch (memOp.Mode)
@@ -596,7 +592,7 @@ namespace Reko.Arch.Pdp11
         private void Invalid()
         {
             rtlInstructions.Clear();
-            rtlc = RtlClass.Invalid;
+            rtlc = InstrClass.Invalid;
             m.Invalid();
         }
     }

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.PowerPC;
 using Reko.Arch.X86;
@@ -32,7 +33,6 @@ using Reko.Environments.SysV;
 using Reko.Environments.Windows;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Text;
@@ -42,7 +42,6 @@ namespace Reko.UnitTests.Scanning
     [TestFixture]
     public class VarargsFormatScannerTests
     {
-        private MockRepository mr;
         private ProcedureBuilder m;
         private Win32Platform win32;
         private Win_x86_64_Platform win_x86_64;
@@ -63,15 +62,12 @@ namespace Reko.UnitTests.Scanning
         [SetUp]
         public void Setup()
         {
-            this.mr = new MockRepository();
             this.sc = new ServiceContainer();
-            var cfg = mr.Stub<IConfigurationService>();
-            var env = mr.Stub<OperatingEnvironment>();
-            cfg.Stub(c => c.GetEnvironment("")).IgnoreArguments().Return(env);
-            env.Stub(e => e.Architectures).Return(new List<IPlatformArchitectureElement>());
-            cfg.Replay();
-            env.Replay();
-            sc.AddService<IConfigurationService>(cfg);
+            var cfg = new Mock<IConfigurationService>();
+            var env = new Mock<PlatformDefinition>();
+            cfg.Setup(c => c.GetEnvironment(It.IsAny<string>())).Returns(env.Object);
+            env.Setup(e => e.Architectures).Returns(new List<PlatformArchitectureDefinition>());
+            sc.AddService<IConfigurationService>(cfg.Object);
             this.win32 = new Win32Platform(sc, new X86ArchitectureFlat32("x86-protected-32"));
             this.win_x86_64 = new Win_x86_64_Platform(sc, new X86ArchitectureFlat64("x86-protected-64"));
             this.sysV_ppc = new SysVPlatform(sc, new PowerPcBe32Architecture("ppc-be-32"));
@@ -120,13 +116,13 @@ namespace Reko.UnitTests.Scanning
 
         private void WriteString32(Program program, uint uiAddr, string str)
         {
-            var imgW = program.CreateImageWriter(Address.Ptr32(uiAddr));
+            var imgW = program.CreateImageWriter(program.Architecture, Address.Ptr32(uiAddr));
             imgW.WriteString(str, Encoding.ASCII);
         }
 
         private void WriteString64(Program program, uint uiAddr, string str)
         {
-            var imgW = program.CreateImageWriter(Address.Ptr64(uiAddr));
+            var imgW = program.CreateImageWriter(program.Architecture, Address.Ptr64(uiAddr));
             imgW.WriteString(str, Encoding.ASCII);
         }
 
@@ -238,7 +234,7 @@ namespace Reko.UnitTests.Scanning
             Given_StackString(4, "%d %f");
             Assert.IsTrue(vafs.TryScan(addrInstr, dummyPc, x86PrintfSig, printfChr));
             var c = Constant.Word32(666);
-            var instr = vafs.BuildInstruction(c, new CallSite(4, 0));
+            var instr = vafs.BuildInstruction(c, new CallSite(4, 0), printfChr);
             Assert.AreEqual(
                 "0x0000029A(Mem0[esp:(ptr32 char)], Mem0[esp + 4:int32], " +
                            "Mem0[esp + 8:real64])",
@@ -253,7 +249,7 @@ namespace Reko.UnitTests.Scanning
             Assert.IsTrue(vafs.TryScan(addrInstr, dummyPc, x86SprintfSig, printfChr));
             var ep = new ExternalProcedure("sprintf", x86SprintfSig);
             var pc = new ProcedureConstant(new CodeType(), ep);
-            var instr = vafs.BuildInstruction(pc, new CallSite(4, 0));
+            var instr = vafs.BuildInstruction(pc, new CallSite(4, 0), printfChr);
             Assert.AreEqual(
                 "sprintf(Mem0[esp:(ptr32 char)], Mem0[esp + 4:(ptr32 char)], " +
                         "Mem0[esp + 8:char])",
@@ -272,7 +268,7 @@ namespace Reko.UnitTests.Scanning
             Given_RegString64("rcx", "%d %f %s %u %x");
             Assert.IsTrue(vafs.TryScan(addrInstr, dummyPc, win_x86_64PrintfSig, printfChr));
             var c = Constant.Word32(666);
-            var instr = vafs.BuildInstruction(c, new CallSite(8, 0));
+            var instr = vafs.BuildInstruction(c, new CallSite(8, 0), printfChr);
             Assert.AreEqual(
                 "0x0000029A(rcx, rdx, xmm2, r9, Mem0[rsp + 32:uint64], Mem0[rsp + 40:uint64])",
                 instr.ToString());
@@ -285,7 +281,7 @@ namespace Reko.UnitTests.Scanning
             Given_RegString32("r3", "%d%d");
             Assert.IsTrue(vafs.TryScan(addrInstr, dummyPc, ppcPrintfSig, printfChr));
             var c = Constant.Word32(0x123);
-            var instr = vafs.BuildInstruction(c, new CallSite(4, 0));
+            var instr = vafs.BuildInstruction(c, new CallSite(4, 0), printfChr);
             Assert.AreEqual(
                 "0x00000123(r3, r4, r5)",
                 instr.ToString());
@@ -294,20 +290,19 @@ namespace Reko.UnitTests.Scanning
         [Test]
         public void Vafs_ReplaceArgs()
         {
-            var platform = mr.Stub<IPlatform>();
+            var platform = new Mock<IPlatform>();
             var cc = new X86CallingConvention(4, 4, 4, false, false);
-            platform.Stub(p => p.GetCallingConvention("")).Return(cc);
-            mr.ReplayAll();
+            platform.Setup(p => p.GetCallingConvention("")).Returns(cc);
 
             var newSig = VarargsFormatScanner.ReplaceVarargs(
-                platform,
+                platform.Object,
                 x86PrintfSig, 
                 new DataType[] { PrimitiveType.Int16, new Pointer(PrimitiveType.Char, 32) });
             System.Diagnostics.Debug.Print("{0}", DumpSignature("test", newSig));
             Assert.AreEqual(
                 "void test(Stack +0004 (ptr32 char), Stack +0008 int16, Stack +000C (ptr32 char))",
                 DumpSignature("test", newSig));
-        }
+    }
 
         [Test(Description = "If it is impossible to obtain a constant string for the format string " +
             "warn the user")]
@@ -318,7 +313,7 @@ namespace Reko.UnitTests.Scanning
                 "Should fail because there is no constant-valued format string");
             Assert.AreEqual(
                 "WarningDiagnostic - 00123400 - Unable to determine format string for call to 'dummy'.", listener.LastDiagnostic);
-        }
+    }
     }
 }
 

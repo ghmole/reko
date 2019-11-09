@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -237,7 +237,7 @@ namespace Reko.UnitTests.Typing
         [Test]
         public void ExdApplication()
         {
-            var sig = FunctionType.Action(new[] { Id("r", PrimitiveType.Real32) });
+            var sig = FunctionType.Action(Id("r", PrimitiveType.Real32));
             var ep = new ExternalProcedure("test", sig);
             RunTest(
                 "Typing/ExdApplication.txt",
@@ -306,6 +306,16 @@ namespace Reko.UnitTests.Typing
                 m.Conditional(PrimitiveType.Word32, id, id1, id2),
                 PrimitiveType.Word32,
                 "Typing/ExdConditional.txt");
+        }
+
+        [Test]
+        public void ExdWideningFMul()
+        {
+            var idLeft = Id("idLeft", PrimitiveType.Word64);
+            var idRight = Id("idRight", PrimitiveType.Word64);
+            var fmul = m.FMul(idLeft, idRight);
+            fmul.DataType = PrimitiveType.Real96;
+            RunTest(fmul, PrimitiveType.Real96, "Typing/ExdWideningFMul.txt");
         }
     }
 }

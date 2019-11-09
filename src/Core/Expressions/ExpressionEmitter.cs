@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,25 +60,40 @@ namespace Reko.Core.Expressions
         }
 
         /// <summary>
-        /// Convenience method for addition. The addend is converted to a Constant.
+        /// Convenience method for addition. The addend is converted to a Constant
+        /// of the same size as the augend.
         /// </summary>
         /// <param name="left">Augend</param>
         /// <param name="right">Addend</param>
         /// <returns>A binary expression for the sum.</returns>
         public BinaryExpression IAdd(Expression left, int right)
         {
-            return new BinaryExpression(Operator.IAdd, left.DataType, left, Constant.Create(left.DataType, right));
+            return IAdd(left, Word(left.DataType.BitSize, right));
+        }
+
+        /// <summary>
+        /// Convenience method for addition. The addend is converted to a
+        /// signed integer Constant of the same size as the augend.
+        /// </summary>
+        /// <param name="left">Augend</param>
+        /// <param name="right">Addend</param>
+        /// <returns>A binary expression for the sum.</returns>
+        public BinaryExpression IAddS(Expression left, int right)
+        {
+            return IAdd(left, Constant.Int(left.DataType, right));
         }
 
         /// <summary>
         /// Creates an offset sum of <paramref name="e"/> and the
-        /// signed integer <paramref name="c"/> interpreted as a word.
+        /// signed integer <paramref name="c"/>
         /// </summary>
         /// <param name="e">Expression forming the base of offset sum.</param>
-        /// <param name="size">Used only to determine the size of the constant to add.</param>
         /// <param name="c">Signed offset</param>
-        /// <returns></returns>
-        public Expression AddConstantWord(Expression e, DataType size, long c)
+        /// <returns>
+        /// Return addition if <paramref name="c"/> is positive
+        /// Return subtraction if <paramref name="c"/> is negative
+        /// </returns>
+        public Expression AddSubSignedInt(Expression e, int c)
         {
             if (c == 0)
             {
@@ -86,22 +101,23 @@ namespace Reko.Core.Expressions
             }
             else if (c > 0)
             {
-                return IAdd(e, Constant.Word(size.BitSize, c));
+                return IAddS(e, c);
             }
             else
             {
-                return ISub(e, Constant.Word(size.BitSize, -c));
+                return ISubS(e, -c);
             }
         }
 
         /// <summary>
         /// Takes the address of the expression (which must be an l-value).
         /// </summary>
-        /// <param name="e">L-value </param>
+        /// <param name="e">L-value</param>
+        /// <param name="ptType">Type of the resulting pointer.</param>
         /// <returns>A unary expresssion representing the address-of operation.</returns>
-        public UnaryExpression AddrOf(Expression e)
+        public UnaryExpression AddrOf(DataType ptType, Expression e)
         {
-            return new UnaryExpression(UnaryOperator.AddrOf, PrimitiveType.Ptr32, e);
+            return new UnaryExpression(UnaryOperator.AddrOf, ptType, e);
         }
 
         /// <summary>
@@ -515,8 +531,7 @@ namespace Reko.Core.Expressions
         /// ('>' in the C language family).
         /// </summary>
         /// <returns>Signed integer comparison.</returns>
-
-        public Expression Gt(Expression a, Expression b)
+        public BinaryExpression Gt(Expression a, Expression b)
         {
             return new BinaryExpression(Operator.Gt, PrimitiveType.Bool, a, b);
         }
@@ -527,7 +542,7 @@ namespace Reko.Core.Expressions
         /// to a Constant.
         /// </summary>
         /// <returns>Signed integer comparison.</returns>
-        public Expression Gt(Expression a, int b)
+        public BinaryExpression Gt(Expression a, int b)
         {
             return Gt(a, Int32(b));
         }
@@ -583,17 +598,17 @@ namespace Reko.Core.Expressions
         }
 
         /// <summary>
-        /// Generates a signed 16-bit integer constant.
+        /// Generates a signed 32-bit integer constant.
         /// </summary>
-        /// <param name="n">16-bit signed integer.</param>
-        /// <returns>Constant representing a signed 16-bit integer.</returns>
+        /// <param name="n">32-bit signed integer.</param>
+        /// <returns>Constant representing a signed 32-bit integer.</returns>
         public Constant Int32(int n)
         {
             return Constant.Int32(n);
         }
 
         /// <summary>
-        /// Generates a memory access to the specified effective address.
+        /// Generates a memory access to the specified effective address, 
         /// <paramref name="ea"/>.
         /// </summary>
         /// <param name="dt">Data type of the memory access.</param>
@@ -605,12 +620,23 @@ namespace Reko.Core.Expressions
         }
 
         /// <summary>
+        /// Generates a memory access of the data of type <paramref name="dt"/> at the specified effective address
+        /// <paramref name="ea"/> in the address space identified by <paramref name="mid" />.
+        /// </summary>
+        /// <param name="ea">The address of the memory being accessed.</param>
+        /// <returns>A memory access expression.</returns>
+        public MemoryAccess Mem(MemoryIdentifier mid, DataType dt, Expression ea)
+        {
+            return new MemoryAccess(mid, ea, dt);
+        }
+
+        /// <summary>
         /// Generates a memory access of the byte at the specified effective address
         /// <paramref name="ea"/>.
         /// </summary>
         /// <param name="ea">The address of the memory being accessed.</param>
         /// <returns>A memory access expression.</returns>
-        public Expression Mem8(Expression ea)
+        public virtual MemoryAccess Mem8(Expression ea)
         {
             return new MemoryAccess(MemoryIdentifier.GlobalMemory, ea, PrimitiveType.Byte);
         }
@@ -621,7 +647,7 @@ namespace Reko.Core.Expressions
         /// </summary>
         /// <param name="ea">The address of the memory being accessed.</param>
         /// <returns>A memory access expression.</returns>
-        public MemoryAccess Mem16(Expression ea)
+        public virtual MemoryAccess Mem16(Expression ea)
         {
             return new MemoryAccess(MemoryIdentifier.GlobalMemory, ea, PrimitiveType.Word16);
         }
@@ -895,7 +921,7 @@ namespace Reko.Core.Expressions
         /// <returns>A segmented memory access expression.</returns>
         public SegmentedAccess SegMem8(Expression basePtr, Expression ptr)
         {
-            return new SegmentedAccess(MemoryIdentifier.GlobalMemory, basePtr, ptr, PrimitiveType.Byte);
+            return SegMem(PrimitiveType.Byte, basePtr, ptr);
         }
 
         /// <summary>
@@ -907,7 +933,7 @@ namespace Reko.Core.Expressions
         /// <returns>A segmented memory access expression.</returns>
         public SegmentedAccess SegMem16(Expression basePtr, Expression ptr)
         {
-            return new SegmentedAccess(MemoryIdentifier.GlobalMemory, basePtr, ptr, PrimitiveType.Word16);
+            return SegMem(PrimitiveType.Word16, basePtr, ptr);
         }
 
         /// <summary>
@@ -1140,7 +1166,7 @@ namespace Reko.Core.Expressions
 
         /// <summary>
         /// Convenience method to generate an integer subtraction expression. 
-        /// The subtrahend is converted to a Constant.
+        /// The subtrahend is converted to a Constant of the same size as the augend.
         /// </summary>
         /// <param name="left">Minuend.</param>
         /// <param name="right">Subtrahend</param>
@@ -1151,7 +1177,20 @@ namespace Reko.Core.Expressions
         }
 
         /// <summary>
-        /// Generates a bit-slice of type <paramref name="primitiveType"/> of 
+        /// Convenience method to generate an integer subtraction expression. 
+        /// The subtrahend is converted to a signed integer Constant of the same 
+        /// size as the minuend.
+        /// </summary>
+        /// <param name="left">Minuend.</param>
+        /// <param name="right">Subtrahend</param>
+        /// <returns>An integer subtraction expression.</returns>
+        public BinaryExpression ISubS(Expression left, int right)
+        {
+            return ISub(left, Constant.Int(left.DataType, right));
+        }
+
+        /// <summary>
+        /// Generates a bit-slice of type <paramref name="dataType"/> of 
         /// an expression <paramref name="value"/>, starting at bit position
         /// <paramref name="bitOffset"/>.
         /// </summary>
@@ -1159,9 +1198,9 @@ namespace Reko.Core.Expressions
         /// <param name="value">The value being sliced</param>
         /// <param name="bitOffset">Slice offset from least significant bit.</param>
         /// <returns>A bit-slice expression.</returns>
-        public Slice Slice(PrimitiveType primitiveType, Expression value, int bitOffset)
+        public Slice Slice(DataType dataType, Expression value, int bitOffset)
         {
-            return new Slice(primitiveType, value, bitOffset);
+            return new Slice(dataType, value, bitOffset);
         }
 
         /// <summary>

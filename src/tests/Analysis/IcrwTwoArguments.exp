@@ -1,69 +1,71 @@
-a:Stack +0004
-    def:  def a
-    uses: a_1 = a
-          ecx_6 = Mem0[a:word32]
-a_1: orig: a
-    def:  a_1 = a
-    uses: eax_4 = a_1
 fp:fp
     def:  def fp
-    uses: esp_3 = fp
-          esp_7 = fp - 0x00000004
-          esp_9 = fp - 0x00000008
-esp_3: orig: esp
-    def:  esp_3 = fp
-eax_4: orig: eax
-    def:  eax_4 = a_1
-Mem0:Global memory
+    uses: r63_2 = fp
+          r63_6 = fp - 0x00000004
+          r63_8 = fp - 0x00000008
+          r63_10 = fp - 0x00000008 + 8
+          Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+          Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+r63_2: orig: r63
+    def:  r63_2 = fp
+Mem0:Mem
     def:  def Mem0
-    uses: ecx_6 = Mem0[a:word32]
-          Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-ecx_6: orig: ecx
-    def:  ecx_6 = Mem0[a:word32]
-    uses: Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-esp_7: orig: esp
-    def:  esp_7 = fp - 0x00000004
-dwLoc04_8: orig: dwLoc04
-    def:  dwLoc04_8 = 0x0000000B
-esp_9: orig: esp
-    def:  esp_9 = fp - 0x00000008
-    uses: esp_11 = esp_9 + 0x00000008
-          Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-          Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-dwLoc08_10: orig: dwLoc08
-    def:  dwLoc08_10 = 0x0000000A
-esp_11: orig: esp
-    def:  esp_11 = esp_9 + 0x00000008
-eax_12: orig: eax
-    def:  eax_12 = <invalid>
-ecx_13: orig: ecx
-    def:  ecx_13 = <invalid>
-Mem14: orig: Mem0
-    uses: Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-Mem15: orig: Mem0
-    uses: Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-// test
-// Return size: 4
-void test(str * a)
-fn0C00_0000_entry:
-	def a
+    uses: ecx_5 = Mem0[eax_4:word32]
+eax_4: orig: eax
+    def:  eax_4 = dwArg04_14
+    uses: ecx_5 = Mem0[eax_4:word32]
+ecx_5: orig: ecx
+    def:  ecx_5 = Mem0[eax_4:word32]
+    uses: Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+r63_6: orig: r63
+    def:  r63_6 = fp - 0x00000004
+Mem7: orig: Mem0
+r63_8: orig: r63
+    def:  r63_8 = fp - 0x00000008
+Mem9: orig: Mem0
+    uses: Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+r63_10: orig: r63
+    def:  r63_10 = fp - 0x00000008 + 8
+eax_11: orig: eax
+    def:  eax_11 = <invalid>
+ecx_12: orig: ecx
+    def:  ecx_12 = <invalid>
+a:Stack +0004
+    def:  def a
+    uses: dwArg04_14 = a
+dwArg04_14: orig: dwArg04
+    def:  dwArg04_14 = a
+    uses: eax_4 = dwArg04_14
+dwLoc04_15: orig: dwLoc04
+    def:  dwLoc04_15 = 0x0000000B
+dwLoc08_16: orig: dwLoc08
+    def:  dwLoc08_16 = 0x0000000A
+Mem17: orig: Mem0
+    uses: Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+Mem18: orig: Mem0
+    uses: Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+// ProcedureBuilder
+// Return size: 0
+void ProcedureBuilder(struct <anonymous> * a)
+ProcedureBuilder_entry:
 	def fp
 	def Mem0
-	// succ:  l0C00_0000
-l0C00_0000:
-	a_1 = a
-	esp_3 = fp
-	eax_4 = a_1
-	ecx_6 = Mem0[a:word32]
-	esp_7 = fp - 0x00000004
-	dwLoc04_8 = 0x0000000B
-	esp_9 = fp - 0x00000008
-	dwLoc08_10 = 0x0000000A
-	Mem0[ecx_6 + 0x00000008:word32](Mem14[esp_9:int32], Mem15[esp_9 + 4:int32])
-	ecx_13 = <invalid>
-	eax_12 = <invalid>
-	esp_11 = esp_9 + 0x00000008
+	def a
+	dwArg04_14 = a
+	// succ:  l1
+l1:
+	r63_2 = fp
+	eax_4 = dwArg04_14
+	ecx_5 = Mem0[eax_4:word32]
+	r63_6 = fp - 0x00000004
+	dwLoc04_15 = 0x0000000B
+	r63_8 = fp - 0x00000008
+	dwLoc08_16 = 0x0000000A
+	Mem9[ecx_5 + 0x00000008:word32](Mem17[fp - 0x00000008:int32], Mem18[fp - 0x00000008 + 4:int32])
+	ecx_12 = <invalid>
+	eax_11 = <invalid>
+	r63_10 = fp - 0x00000008 + 8
 	return
-	// succ:  fn0C00_0000_exit
-fn0C00_0000_exit:
+	// succ:  ProcedureBuilder_exit
+ProcedureBuilder_exit:
 

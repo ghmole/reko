@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,9 +41,10 @@ namespace Reko.UnitTests.Fragments
         protected override void BuildBody()
         {
             Identifier frame = Declare(new StructureType("frame_t", 0), "frame");
-            Identifier fp = Local32("fp");
-            Assign(fp, AddrOf(frame));
-            MStore(IAdd(fp, 4), Mem(PrimitiveType.Word32, IAdd(fp, 8)));
+            Identifier framep = Local32("framep");
+            Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
+            Assign(framep, AddrOf(PrimitiveType.Ptr32, frame));
+            MStore(IAdd(framep, 4), Mem(PrimitiveType.Word32, IAdd(framep, 8)));
         }
     }
 }

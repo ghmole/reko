@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,28 +24,29 @@ using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
 using NUnit.Framework;
-using Rhino.Mocks;
+using Moq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using CommonMockFactory = Reko.UnitTests.Mocks.CommonMockFactory;
+using Reko.Core.Code;
+using System.ComponentModel.Design;
 
 namespace Reko.UnitTests.Core
 {
     [TestFixture]
     public class ImportResolverTests
     {
-        private MockRepository mr;
-        private MockFactory mockFactory;
-        private IPlatform platform;
+        private CommonMockFactory mockFactory;
+        private Mock<IPlatform> platform;
         private Program program;
 
         [SetUp]
         public void Setup()
         {
-            this.mr = new MockRepository();
-            this.mockFactory = new MockFactory(mr);
-            this.platform = mockFactory.CreatePlatform();
+            this.mockFactory = new CommonMockFactory();
+            this.platform = mockFactory.CreateMockPlatform();
             this.program = mockFactory.CreateProgram();
         }
 
@@ -84,7 +85,7 @@ namespace Reko.UnitTests.Core
             program.EnvironmentMetadata.Modules.Add("foo", module);
 
             var impres = new ImportResolver(proj, program, new FakeDecompilerEventListener());
-            var ep = impres.ResolveProcedure("foo", "bar@4", platform);
+            var ep = impres.ResolveProcedure("foo", "bar@4", platform.Object);
             Assert.AreEqual("bar", ep.Name);
         }
 
@@ -123,7 +124,7 @@ namespace Reko.UnitTests.Core
             program.EnvironmentMetadata.Modules.Add(module.ModuleName, module);
 
             var impres = new ImportResolver(proj, program, new FakeDecompilerEventListener());
-            var ep = impres.ResolveProcedure("foo", 9, platform);
+            var ep = impres.ResolveProcedure("foo", 9, platform.Object);
             Assert.AreEqual("bar", ep.Name);
         }
 
@@ -177,7 +178,7 @@ namespace Reko.UnitTests.Core
             });
 
             var impres = new ImportResolver(proj, program, new FakeDecompilerEventListener());
-            var ep = impres.ResolveProcedure("foo", "bar", platform);
+            var ep = impres.ResolveProcedure("foo", "bar", platform.Object);
             Assert.AreEqual("bar", ep.Name);
 
             var sigExp =
@@ -211,26 +212,25 @@ namespace Reko.UnitTests.Core
                 {
                     {
                         "bar",
-                        new ImageSymbol
-                        {
-                            Name = "bar",
-                            Type = SymbolType.Data,
-                            DataType = new StructureType
+                        ImageSymbol.DataObject(
+                            program.Architecture,
+                            null,
+                            "bar",
+                            new StructureType
                             {
                                 Fields =
                                 {
                                     { 0, new Pointer(PrimitiveType.Char, 32), "name" },
                                     { 4, PrimitiveType.Int32, "age" }
                                 }
-                            }
-                        }
+                            })
                     }
                 }
             };
             program.EnvironmentMetadata.Modules.Add(module.ModuleName, module);
 
             var impres = new ImportResolver(proj, program, new FakeDecompilerEventListener());
-            var dt = impres.ResolveImport("foo", "bar", platform);
+            var dt = impres.ResolveImport("foo", "bar", platform.Object);
             Assert.AreEqual("&bar", dt.ToString());
         }
 
@@ -239,16 +239,66 @@ namespace Reko.UnitTests.Core
         {
             var proj = new Project();
             var impres = new ImportResolver(proj, program, new FakeDecompilerEventListener());
-            platform.Stub(p => p.ResolveImportByName(null, null)).
-                IgnoreArguments().Return(null);
+            platform.Setup(p => p.ResolveImportByName(
+                It.IsAny<string>(),
+                It.IsAny<string>()))
+              .Returns((Expression)null);
             SerializedType nullType = null;
-            platform.Stub(p => p.DataTypeFromImportName("??_7Scope@@6B@")).
-                Return(Tuple.Create("`vftable'", nullType, nullType));
+            platform.Setup(p => p.DataTypeFromImportName("??_7Scope@@6B@")).
+                Returns(Tuple.Create("`vftable'", nullType, nullType));
 
-            var id = impres.ResolveImport("foo", "??_7Scope@@6B@", platform);
+            var id = impres.ResolveImport("foo", "??_7Scope@@6B@", platform.Object);
 
             Assert.AreEqual("`vftable'", id.ToString());
             Assert.IsInstanceOf<UnknownType>(id.DataType);
+        }
+
+        /// <summary>
+        /// In certain binaries, like ELF, the binary format can be 32-bit while the ABI
+        /// is 64-bit.
+        /// </summary>
+        [Test]
+        public void Impres_LP32_weirdness()
+        {
+            var memText = new MemoryArea(Address.Ptr64(0x00123400), new byte[100]);
+            var memGot = new MemoryArea(Address.Ptr64(0x00200000), new byte[100]);
+            var wr = new LeImageWriter(memGot.Bytes);
+            wr.WriteLeUInt32(0x00300000);
+            wr.WriteLeUInt32(0x00300004);
+            var arch = new FakeArchitecture64();
+            //var arch = new Mock<IProcessorArchitecture>();
+            //arch.Setup(a => a.Endianness).Returns(EndianServices.Little);
+            //arch.Setup(a => a.Name).Returns("fakeArch");
+            //arch.Setup(a => a.PointerType).Returns(PrimitiveType.Ptr64);
+            //arch.Setup(a => a.MakeAddressFromConstant(
+            //    It.IsAny<Constant>(),
+            //    It.IsAny<bool>())).Returns((Constant c, bool b) =>
+            //        Address.Ptr64(c.ToUInt32()));
+            var project = new Project();
+            var sc = new ServiceContainer();
+            var program = new Program
+            {
+                Architecture = arch,
+                Platform = new DefaultPlatform(sc, arch),
+                SegmentMap = new SegmentMap(memGot.BaseAddress, 
+                    new ImageSegment(".text", memText, AccessMode.ReadExecute),
+                    new ImageSegment(".got", memGot, AccessMode.Read)),
+            };
+            program.ImportReferences.Add(
+                Address.Ptr32(0x00200000),
+                new NamedImportReference(
+                    Address.Ptr32(0x00200000), null, "my_global_var", SymbolType.Data));
+
+            var impres = new ImportResolver(project, program, new FakeDecompilerEventListener());
+
+            var m = new ExpressionEmitter();
+            var proc = program.EnsureProcedure(program.Architecture, Address.Ptr64(0x00123000), "foo_proc");
+            var block = new Block(proc, "foo");
+            var stm = new Statement(0x00123400, new Store(m.Word64(0x00123400), Constant.Real32(1.0F)), block);
+
+            var result = impres.ResolveToImportedValue(stm, Constant.Word32(0x00200000));
+
+            Assert.AreEqual("0x0000000000300000", result.ToString());
         }
     }
 }

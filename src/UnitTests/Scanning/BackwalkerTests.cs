@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,6 +62,10 @@ namespace Reko.UnitTests.Scanning
             {
                 this.arch = arch;
             }
+
+            public IProcessorArchitecture Architecture => arch;
+
+            public Program Program => null;
 
             public SegmentMap SegmentMap => throw new NotImplementedException();
 
@@ -139,6 +143,11 @@ namespace Reko.UnitTests.Scanning
                 return block.Statements.Select(s => s.Instruction);
             }
 
+            public int BlockInstructionCount(Block block)
+            {
+                return block.Statements.Count;
+            }
+
             #endregion
         }
 
@@ -171,7 +180,7 @@ namespace Reko.UnitTests.Scanning
                 program = asm.Assemble(Address.Ptr32(0x10000000), rdr);
             }
             var scanner = new Scanner(program, null, sc);
-            scanner.EnqueueImageSymbol(new ImageSymbol(program.ImageMap.BaseAddress), true);
+            scanner.EnqueueImageSymbol(ImageSymbol.Procedure(program.Architecture, program.ImageMap.BaseAddress), true);
             scanner.ScanImage();
             using (var fut = new FileUnitTester(outputFile))
             {
@@ -214,7 +223,7 @@ namespace Reko.UnitTests.Scanning
             m.Assign(CVZN, m.Cond(v40));
             m.BranchIf(m.Test(ConditionCode.GT, VZN), "lDefault");
             m.Assign(a5, m.Mem32(m.IAdd(Address.Ptr32(0x0000C046), d0)));
-            var xfer = new RtlCall(a5, 4, RtlClass.Transfer);
+            var xfer = new RtlCall(a5, 4, InstrClass.Transfer);
 
             var bw = new Backwalker<Block, Instruction>(host, xfer, expSimp);
             Assert.IsTrue(bw.CanBackwalk());
@@ -229,7 +238,7 @@ namespace Reko.UnitTests.Scanning
         {
             var r1 = m.Reg32("r1", 1);
             m.Assign(r1, m.Mem32(Constant.Word32(0x00123400)));
-            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00113300), m.IMul(r1, 8))), RtlClass.Transfer);
+            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00113300), m.IMul(r1, 8))), InstrClass.Transfer);
 
             var bw = new Backwalker<Block, Instruction>(host, xfer, expSimp);
             Assert.IsTrue(bw.CanBackwalk());
@@ -251,7 +260,7 @@ namespace Reko.UnitTests.Scanning
             m.Assign(CZ, m.Cond(m.ISub(al, 0x78)));
             m.BranchIf(m.Test(ConditionCode.UGT, CZ), "ldefault");
             m.Assign(ecx, m.Cast(PrimitiveType.Word32, al));
-            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00411F40), m.IMul(ecx, 8))), RtlClass.Transfer);
+            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00411F40), m.IMul(ecx, 8))), InstrClass.Transfer);
 
             var bw = new Backwalker<Block, Instruction>(host, xfer, expSimp);
             Assert.IsTrue(bw.CanBackwalk());
@@ -277,47 +286,7 @@ namespace Reko.UnitTests.Scanning
             m.Label("do_switch");
             m.Assign(eax, 0);
             var block = m.CurrentBlock;
-            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00123400), m.IMul(ebx, 4))), RtlClass.Transfer);
-
-            m.Label("default_case");
-            m.Return();
-
-            var bw = new Backwalker<Block, Instruction>(host, xfer, expSimp);
-            Assert.IsTrue(bw.CanBackwalk());
-            var ops = bw.BackWalk(block);
-            Assert.AreEqual(3, ops.Count);
-            Assert.AreEqual("cmp 48", ops[0].ToString());
-            Assert.AreEqual("branch UGT", ops[1].ToString());
-            Assert.AreEqual("* 4", ops[2].ToString());
-        }
-
-        [Test(Description = "Handle m68k-style sign extensions.")]
-        [Category(Categories.UnitTests)]
-        [Ignore(Categories.FailedTests)]
-        public void BwSignExtension()
-        {
-            var CVZNX = m.Flags("CVZNS");
-            var CVZN = m.Flags("CVZN");
-            var VZN = m.Flags("VZN");
-            var d1 = m.Reg32("d1", 1);
-            var v80 = m.Temp(PrimitiveType.Word32, "v80");
-            var v82 = m.Temp(PrimitiveType.Word16, "v82");
-
-            m.Assign(v80, m.ISub(d1, 0x28));
-            m.Assign(CVZN, m.Cond(v80));
-            m.BranchIf(m.Test(ConditionCode.GT, VZN), "default_label");
-
-            m.Assign(d1, m.IAdd(d1, d1));
-            m.Assign(CVZNX, m.Cond(d1));
-            m.Assign(v82, m.Mem16(m.IAdd(m.Word32(0x001066A4), d1)));
-            m.Assign(d1, m.Dpb(d1, v82, 0));
-            m.Assign(CVZN, m.Cond(v82));
-            var block = m.CurrentBlock;
-            var xfer = new RtlGoto(
-                m.IAdd(
-                    m.Word32(0x001066A2),
-                    m.Cast(PrimitiveType.Int32, m.Cast(PrimitiveType.Int16, d1))),
-                RtlClass.Transfer);
+            var xfer = new RtlGoto(m.Mem32(m.IAdd(Constant.Word32(0x00123400), m.IMul(ebx, 4))), InstrClass.Transfer);
 
             m.Label("default_case");
             m.Return();

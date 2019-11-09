@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -92,7 +92,7 @@ namespace Reko.Analysis
         {
             foreach (var di in ci.Definitions)
             {
-                if (di.Identifier == sid.Identifier)
+                if (di.Expression == sid.Identifier)
                 {
                     defExpr = new Application(ci.Callee, new UnknownType());
                     return;
@@ -100,7 +100,7 @@ namespace Reko.Analysis
             }
         }
 
-        public override void VisitIdentifier(Identifier id)
+		public override void VisitIdentifier(Identifier id)
 		{
 			sid = ssaIds[id];
 			stm = sid.DefStatement;
@@ -125,7 +125,12 @@ namespace Reko.Analysis
 			defExpr = phi;
 		}
 
-		public override void VisitUnaryExpression(UnaryExpression unary)
+        public override void VisitSlice(Slice slice)
+        {
+            base.VisitSlice(slice);
+        }
+
+        public override void VisitUnaryExpression(UnaryExpression unary)
 		{
 			if (unary != null && unary.Operator == Operator.Not)
 			{

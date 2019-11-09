@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ namespace Reko.Core.Services
 
         void ShowStatus(string caption);
         void ShowProgress(string caption, int numerator, int denominator);
+        void Advance(int count);
         bool IsCanceled();
     }
 
@@ -112,12 +113,16 @@ namespace Reko.Core.Services
 
         public void ShowStatus(string caption)
         {
-            //$TODO: show something
+            Debug.Print("Status: {0}", caption);
         }
 
         public void ShowProgress(string caption, int numerator, int denominator)
         {
             //$TODO: show progress
+        }
+
+        public void Advance(int advance)
+        {
         }
 
         public ICodeLocation CreateAddressNavigator(Program program, Address address)
@@ -137,7 +142,7 @@ namespace Reko.Core.Services
 
         public ICodeLocation CreateStatementNavigator(Program program, Statement stm)
         {
-            return new NullCodeLocation(program.SegmentMap.MapLinearAddressToAddress(stm.LinearAddress).ToString());
+            return new NullCodeLocation(stm.LinearAddress.ToString());
         }
 
         public ICodeLocation CreateJumpTableNavigator(Program program, Address addrIndirectJump, Address addrVector, int stride)

@@ -1,4 +1,4 @@
-﻿using Reko.Core;
+using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
@@ -18,6 +18,7 @@ namespace Reko.Arch.Tms7000
         
         public Tms7000Architecture(string archId) : base(archId)
         {
+            this.Endianness = EndianServices.Big;
             this.GpRegs = Enumerable.Range(0, 256)
                 .Select(n => RegisterStorage.Reg8($"r{n}", n))
                 .ToArray();
@@ -47,31 +48,6 @@ namespace Reko.Arch.Tms7000
             return new Tms7000Disassembler(this, rdr);
         }
 
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addr)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, Address addrBegin, Address addrEnd)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea img, ulong off)
-        {
-            return new BeImageReader(img, off);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            throw new NotImplementedException();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea img, Address addr)
-        {
-            throw new NotImplementedException();
-        }
-
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
         {
             throw new NotImplementedException();
@@ -98,12 +74,12 @@ namespace Reko.Arch.Tms7000
             throw new NotImplementedException();
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage st, uint grf)
         {
             if (flagGroups.TryGetValue(grf, out var flagGroup))
                 return flagGroup;
             var dt = Bits.IsSingleBitSet(grf) ? PrimitiveType.Bool : PrimitiveType.Byte;
-            var fl = new FlagGroupStorage(this.st, grf, GrfToString(grf), dt);
+            var fl = new FlagGroupStorage(this.st, grf, GrfToString(this.st, "", grf), dt);
             flagGroups.Add(grf, fl);
             return fl;
         }
@@ -123,7 +99,7 @@ namespace Reko.Arch.Tms7000
             throw new NotImplementedException();
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
             throw new NotImplementedException();
         }
@@ -138,7 +114,7 @@ namespace Reko.Arch.Tms7000
             throw new NotImplementedException();
         }
 
-        public override string GrfToString(uint grf)
+        public override string GrfToString(RegisterStorage st, string str, uint grf)
         {
             StringBuilder s = new StringBuilder();
             if ((grf & (uint)FlagM.CF) != 0) s.Append('C');
@@ -148,9 +124,10 @@ namespace Reko.Arch.Tms7000
             return s.ToString();
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            throw new NotImplementedException();
+            var uAddr = c.ToUInt16();
+            return Address.Ptr16(uAddr);
         }
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
@@ -164,11 +141,6 @@ namespace Reko.Arch.Tms7000
         }
 
         public override bool TryParseAddress(string txtAddr, out Address addr)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
         {
             throw new NotImplementedException();
         }

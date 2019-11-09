@@ -1,4 +1,4 @@
-﻿using NUnit.Framework;
+using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Serialization.Json;
@@ -90,7 +90,7 @@ namespace Reko.UnitTests.Core.Serialization.Json
                     "{'name':'Mem0','stg':{'kind':'mem'}}," +
                     "{'name':'r1','type':'w32','stg':{'kind':'reg','name':'r1'}}," + 
                     "{'name':'r9','type':'w32','stg':{'kind':'reg','name':'r9'}}," + 
-                    "{'name':'SZ','type':'u8','stg':{'kind':'flg','grf':5,'reg':'flags'}}" + 
+                    "{'name':'SZ','type':'u8','stg':{'kind':'flg','grf':3,'reg':'flags'}}" + 
                 "]," +
                 "'blocks':[" +
                     "{'name':'JpsTest_entry'," +
@@ -103,8 +103,8 @@ namespace Reko.UnitTests.Core.Serialization.Json
                     "{'name':'l_nonneg','linaddr':4,'stms':[" +
                           "[0,['st',['m','Mem0',['+','r9',[8,'w32']],'r64'],['*f','f3',[2,'r64']]]]," +
                           "[1,'ret']]," +
-                   "'succ':['JpsTest_exit']}," +
-                "{'name':'l_neg','linaddr':2,'stms':[" +
+                     "'succ':['JpsTest_exit']}," +
+                   "{'name':'l_neg','linaddr':2,'stms':[" +
                           "[0,'=','f3',[0,'r64']]," +
                           "[1,'=','r1',['neg','r1']]]," +
                   "'succ':['l_nonneg']}]}";

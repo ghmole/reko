@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,8 +35,8 @@ namespace Reko.Arch.Z80
         {
             var a = (Z80Instruction)x;
             var b = (Z80Instruction)y;
-            return CompareOp(a.Op1, b.Op1) &&
-                CompareOp(a.Op2, b.Op2);
+            return CompareOp(a.Operands[0], b.Operands[0]) &&
+                CompareOp(a.Operands[1], b.Operands[1]);
         }
 
         private bool CompareOp(MachineOperand opA, MachineOperand opB)
@@ -94,8 +94,8 @@ namespace Reko.Arch.Z80
             var instr = (Z80Instruction)i;
 
             return
-                HashOp(instr.Op1) ^
-                HashOp(instr.Op2) * 17;
+                HashOp(instr.Operands[0]) ^
+                HashOp(instr.Operands[1]) * 17;
         }
 
         private int HashOp(MachineOperand op)

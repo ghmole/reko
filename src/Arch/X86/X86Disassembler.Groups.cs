@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,239 +18,323 @@
  */
 #endregion
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using Reko.Core;
 
 namespace Reko.Arch.X86
 {
     public partial class X86Disassembler
     {
-        private static OpRec [] CreateGroupOprecs()
+        private static Decoder [] CreateGroupDecoders()
         {
-            return new OpRec[] 
-			{
+            return new Decoder[]
+            {
 				// group 1
-				new SingleByteOpRec(Opcode.add),
-				new SingleByteOpRec(Opcode.or),
-				new SingleByteOpRec(Opcode.adc),
-				new SingleByteOpRec(Opcode.sbb),
-				new SingleByteOpRec(Opcode.and),
-				new SingleByteOpRec(Opcode.sub),
-				new SingleByteOpRec(Opcode.xor),
-				new SingleByteOpRec(Opcode.cmp),
+				Instr(Mnemonic.add),
+                Instr(Mnemonic.or),
+                Instr(Mnemonic.adc),
+                Instr(Mnemonic.sbb),
+                Instr(Mnemonic.and),
+                Instr(Mnemonic.sub),
+                Instr(Mnemonic.xor),
+                Instr(Mnemonic.cmp),
 
 				// group 2
-				new SingleByteOpRec(Opcode.rol),
-				new SingleByteOpRec(Opcode.ror),
-				new SingleByteOpRec(Opcode.rcl),
-				new SingleByteOpRec(Opcode.rcr),
-				new SingleByteOpRec(Opcode.shl),
-				new SingleByteOpRec(Opcode.shr),
-				new SingleByteOpRec(Opcode.shl),
-				new SingleByteOpRec(Opcode.sar),
+				Instr(Mnemonic.rol),
+                Instr(Mnemonic.ror),
+                Instr(Mnemonic.rcl),
+                Instr(Mnemonic.rcr),
+                Instr(Mnemonic.shl),
+                Instr(Mnemonic.shr),
+                Instr(Mnemonic.shl),
+                Instr(Mnemonic.sar),
 
 				// group 3
-				new SingleByteOpRec(Opcode.test, ",Ix"),
-				new SingleByteOpRec(Opcode.test, ",Ix"),
-				new SingleByteOpRec(Opcode.not),
-				new SingleByteOpRec(Opcode.neg),
-				new SingleByteOpRec(Opcode.mul),
-				new SingleByteOpRec(Opcode.imul),
-				new SingleByteOpRec(Opcode.div),
-				new SingleByteOpRec(Opcode.idiv),
+				Instr(Mnemonic.test, Ix),
+                Instr(Mnemonic.test, Ix),
+                Instr(Mnemonic.not),
+                Instr(Mnemonic.neg),
+                Instr(Mnemonic.mul),
+                Instr(Mnemonic.imul),
+                Instr(Mnemonic.div),
+                Instr(Mnemonic.idiv),
 				
 				// group 4
-				new SingleByteOpRec(Opcode.inc, "Eb"),
-				new SingleByteOpRec(Opcode.dec, "Eb"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal), 
+				Instr(Mnemonic.inc, Eb),
+                Instr(Mnemonic.dec, Eb),
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid, 
 
 				// group 5
-				new SingleByteOpRec(Opcode.inc, "Ev"),
-				new SingleByteOpRec(Opcode.dec, "Ev"),
-				new Alternative64OpRec(
-                    new SingleByteOpRec(Opcode.call, "Ev"),
-                    new SingleByteOpRec(Opcode.call, "Eq")),
-                new SingleByteOpRec(Opcode.call, "Ep"),
-                new Alternative64OpRec(
-				    new SingleByteOpRec(Opcode.jmp, "Ev"),
-				    new SingleByteOpRec(Opcode.jmp, "Eq")),
-				new SingleByteOpRec(Opcode.jmp, "Ep"),
-                new Alternative64OpRec(
-				    new SingleByteOpRec(Opcode.push, "Ev"),
-				    new SingleByteOpRec(Opcode.push, "Eq")),
-                new SingleByteOpRec(Opcode.illegal),
+				Instr(Mnemonic.inc, Ev),
+                Instr(Mnemonic.dec, Ev),
+                new Alternative64Decoder(
+                    Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Ev),
+                    Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Eq)),
+                Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Ep),
+                new Alternative64Decoder(
+                    Instr(Mnemonic.jmp, InstrClass.Transfer, Ev),
+                    Instr(Mnemonic.jmp, InstrClass.Transfer, Eq)),
+                Instr(Mnemonic.jmp, InstrClass.Transfer, Ep),
+                new Alternative64Decoder(
+                    Instr(Mnemonic.push, Ev),
+                    Instr(Mnemonic.push, Eq)),
+                s_invalid,
 
 				// group 6
-				new SingleByteOpRec(Opcode.sldt, "Ew"),
-				new SingleByteOpRec(Opcode.str, "Ew"),
-				new SingleByteOpRec(Opcode.lldt, "Ew"),
-				new SingleByteOpRec(Opcode.ltr, "Ew"),
-				new SingleByteOpRec(Opcode.verr, "Ew"),
-				new SingleByteOpRec(Opcode.verw, "Ew"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				new Group6Decoder(
+                    Instr(Mnemonic.sldt, InstrClass.System, Ew),
+                    Instr(Mnemonic.sldt, InstrClass.System, Rv)),
+                new Group6Decoder(
+                    Instr(Mnemonic.str, Ew),
+                    Instr(Mnemonic.str, Rv)),
+                Instr(Mnemonic.lldt, InstrClass.System, Ms),
+                Instr(Mnemonic.ltr, Ew),
+                Instr(Mnemonic.verr, Ew),
+                Instr(Mnemonic.verw, Ew),
+                s_invalid,
+                s_invalid,
 
 				// group 7
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new Group7OpRec(
-                    new SingleByteOpRec(Opcode.illegal),
+				new Group7Decoder(
+                    Instr(Mnemonic.sgdt, Ms),
+                    s_invalid,
+                    Instr(Mnemonic.vmcall),
+                    Instr(Mnemonic.vmlaunch),
+                    Instr(Mnemonic.vmresume),
+                    Instr(Mnemonic.vmxoff),
+                    s_invalid,
+                    s_invalid,
+                    s_invalid),
+                new Group7Decoder(
+                    Instr(Mnemonic.sidt, Ms),
+                    Instr(Mnemonic.monitor),
+                    Instr(Mnemonic.mwait),
+                    Instr(Mnemonic.clac),
+                    Instr(Mnemonic.stac),
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    s_invalid),
+                new Group7Decoder(
+                    Instr(Mnemonic.lgdt, InstrClass.System, Ms),
 
-                    new SingleByteOpRec(Opcode.xgetbv),
-                    new SingleByteOpRec(Opcode.xsetbv),
-                    new SingleByteOpRec(Opcode.illegal),
-                    new SingleByteOpRec(Opcode.illegal),
+                    Instr(Mnemonic.xgetbv),
+                    Instr(Mnemonic.xsetbv),
+                    s_invalid,
+                    s_invalid,
 
-                    new SingleByteOpRec(Opcode.vmfunc),
-                    new SingleByteOpRec(Opcode.xend),
-                    new SingleByteOpRec(Opcode.xtest),
-                    new SingleByteOpRec(Opcode.illegal)),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+                    Instr(Mnemonic.vmfunc),
+                    Instr(Mnemonic.xend),
+                    Instr(Mnemonic.xtest),
+                    s_invalid),
+                new Group6Decoder(
+                    Instr(Mnemonic.lidt, InstrClass.System, Ms),
+                    s_invalid),
+
+                new Group6Decoder(
+                    Instr(Mnemonic.smsw, Ew),
+                    Instr(Mnemonic.smsw, Rv)),
+                new Group7Decoder(
+                    s_invalid,
+
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    Instr(Mnemonic.rdpkru),
+                    Instr(Mnemonic.wrpkru)),
+                Instr(Mnemonic.lmsw, Ew),
+                new Group7Decoder(
+                    Instr(Mnemonic.invlpg, Mb),
+
+                    Instr(Mnemonic.swapgs),
+                    Instr(Mnemonic.rdtscp),
+                    Instr(Mnemonic.monitorx),
+                    Instr(Mnemonic.mwaitx),
+
+                    s_invalid,
+                    s_invalid,
+                    s_invalid,
+                    s_invalid),
 
 				// group 8
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.bt),
-				new SingleByteOpRec(Opcode.bts),
-				new SingleByteOpRec(Opcode.btr),
-				new SingleByteOpRec(Opcode.btc),
+				s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                Instr(Mnemonic.bt),
+                Instr(Mnemonic.bts),
+                Instr(Mnemonic.btr),
+                Instr(Mnemonic.btc),
 
 				// group 9
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_invalid,
+                new Group6Decoder(
+                    new PrefixedDecoder(
+                        new Alternative64Decoder(
+                            Instr(Mnemonic.cmpxchg8b, Mq),
+                            Instr(Mnemonic.cmpxchg16b, Mdq))),
+                    s_invalid),
+                s_invalid,
+                s_invalid,
+
+                s_invalid,
+                s_invalid,
+                new Group6Decoder(
+                    new PrefixedDecoder(
+                        Instr(Mnemonic.vmptrld, Mq),
+                        dec66:Instr(Mnemonic.vmclear, Mq),
+                        decF3:Instr(Mnemonic.vmxon, Mq)),
+                    Instr(Mnemonic.rdrand, Rv)),
+                new Group6Decoder(
+                    new PrefixedDecoder(
+                        dec:Instr(Mnemonic.vmptrst, Mq),
+                        decF3:Instr(Mnemonic.vmptrst, Mq)),
+                    Instr(Mnemonic.rdseed, Rv)),
 
 				// group 10
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
 
 				// group 11
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
+                s_nyi,
 
 				// group 12
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_invalid,
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrlw, Nq,Ib),
+                    Instr(Mnemonic.vpsrlw, Hx,Ux,Ib)),
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psraw, Nq,Ib),
+                    Instr(Mnemonic.vpsraw, Hx,Ux,Ib)),
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psllw, Nq,Ib),
+                    Instr(Mnemonic.vpsllw, Hx,Ux,Ib)),
+                s_invalid,
 
 				// group 13
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_invalid,
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrld, Nq,Ib),
+                    Instr(Mnemonic.vpsrld, Hx,Ux,Ib)),
+                s_invalid,
+
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrad, Nq,Ib),
+                    Instr(Mnemonic.vpsrad, Hx,Ux,Ib)),
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.pslld, Nq,Ib),
+                    Instr(Mnemonic.vpslld, Hx,Ux,Ib)),
+                s_invalid,
 
 				// group 14
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_invalid,
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psrlq, Nq,Ib),
+                    Instr(Mnemonic.vpsrlq, Hx,Ux,Ib)),
+                new PrefixedDecoder(
+                    s_invalid,
+                    Instr(Mnemonic.vpsrldq, Hx,Ux,Ib)),
+
+                s_invalid,
+                s_invalid,
+                new PrefixedDecoder(
+                    Instr(Mnemonic.psllq, Nq,Ib),
+                    Instr(Mnemonic.vpsllq, Hx,Ux,Ib)),
+                new PrefixedDecoder(
+                    s_invalid,
+                    Instr(Mnemonic.vpslldq, Hx,Ux,Ib)),
 
 				// group 15
-				new Group7OpRec(new SingleByteOpRec(Opcode.fxsave)),
-				new Group7OpRec(new SingleByteOpRec(Opcode.fxrstor)),
-				new SingleByteOpRec(Opcode.ldmxcsr, "Md"),
-				new SingleByteOpRec(Opcode.stmxcsr, "Md"),
-				new SingleByteOpRec(Opcode.illegal),
-				new Group7OpRec(
-                    new SingleByteOpRec(Opcode.xrstor, "Md"),
+				new Group7Decoder(Instr(Mnemonic.fxsave)),
+                new Group7Decoder(Instr(Mnemonic.fxrstor)),
+                Instr(Mnemonic.ldmxcsr, Md),
+                Instr(Mnemonic.stmxcsr, Md),
 
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, ""),
+                new Alternative64Decoder(
+                    Instr(Mnemonic.xsave, Mb),
+                    Instr(Mnemonic.xsave64, Mb)),
+				new Group7Decoder(
+                    Instr(Mnemonic.xrstor, Md),
 
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, ""),
-                    new SingleByteOpRec(Opcode.lfence, "")),
-                new Group7OpRec(
-                    new SingleByteOpRec(Opcode.xsaveopt, "Md"),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence),
 
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, ""),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence),
+                    Instr(Mnemonic.lfence)),
+                new Group7Decoder(
+                    Instr(Mnemonic.xsaveopt, Md),
 
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, ""),
-                    new SingleByteOpRec(Opcode.mfence, "")),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence),
 
-                new Group7OpRec(
-                    new SingleByteOpRec(Opcode.clflush, "Md"),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence),
+                    Instr(Mnemonic.mfence)),
+                new Group7Decoder(
+                    Instr(Mnemonic.clflush, Md),
 
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, ""),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence),
 
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, ""),
-                    new SingleByteOpRec(Opcode.sfence, "")),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence),
+                    Instr(Mnemonic.sfence)),
 
 				// group 16
-				new SingleByteOpRec(Opcode.prefetchnta, "Mb"),
-				new SingleByteOpRec(Opcode.prefetcht0, "Mb"),
-				new SingleByteOpRec(Opcode.prefetcht1, "Mb"),
-				new SingleByteOpRec(Opcode.prefetcht2, "Mb"),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				Instr(Mnemonic.prefetchnta, Mb),
+				Instr(Mnemonic.prefetcht0, Mb),
+				Instr(Mnemonic.prefetcht1, Mb),
+				Instr(Mnemonic.prefetcht2, Mb),
+                s_invalid,
+                s_invalid,
+                s_invalid,
+                s_invalid,
 
 				// group 17
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
-				new SingleByteOpRec(Opcode.illegal),
+				s_invalid,
+				s_nyi,
+				s_nyi,
+				s_nyi,
+				s_invalid,
+				s_invalid,
+				s_invalid,
+				s_invalid,
 			};
         }
     }

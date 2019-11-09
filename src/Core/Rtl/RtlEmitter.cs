@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,12 +32,13 @@ namespace Reko.Core.Rtl
     /// </summary>
     public class RtlEmitter : ExpressionEmitter
     {
-        public List<RtlInstruction> Instructions { get; set; }
-
         public RtlEmitter(List<RtlInstruction> instrs)
         {
             this.Instructions = instrs;
         }
+
+        public List<RtlInstruction> Instructions { get; set; }
+
 
         /// <summary>
         /// Generates a RtlAssignment ('dst = src' in the C language family).
@@ -75,9 +76,22 @@ namespace Reko.Core.Rtl
         /// <param name="target">Control goes to this address if condition is true</param>
         /// <param name="rtlClass">Describes details the branch instruction</param>
         /// <returns>A reference to this RtlEmitter.</returns>
-        public RtlEmitter Branch(Expression condition, Address target, RtlClass rtlClass)
+        public RtlEmitter Branch(Expression condition, Address target, InstrClass rtlClass)
         {
             Instructions.Add(new RtlBranch(condition, target, rtlClass));
+            return this;
+        }
+
+        /// <summary>
+        /// Generates a non-delayed RtlBranch instruction which jumps to the address <paramref name="target"/>
+        /// if the boolean expression <paramref name="condition" /> is true. 
+        /// </summary>
+        /// <param name="condition">Boolean expression</param>
+        /// <param name="target">Control goes to this address if condition is true</param>
+        /// <returns>A reference to this RtlEmitter.</returns>
+        public RtlEmitter Branch(Expression condition, Address target)
+        {
+            Instructions.Add(new RtlBranch(condition, target, InstrClass.ConditionalTransfer));
             return this;
         }
 
@@ -90,7 +104,7 @@ namespace Reko.Core.Rtl
         /// <param name="target">Control goes to this address if condition is true</param>
         /// <param name="rtlClass">Describes details the branch instruction</param>
         /// <returns>A reference to this RtlEmitter.</returns>
-        public RtlBranch BranchInMiddleOfInstruction(Expression condition, Address target, RtlClass rtlClass)
+        public RtlBranch BranchInMiddleOfInstruction(Expression condition, Address target, InstrClass rtlClass)
         {
             var branch = new RtlBranch(condition, target, rtlClass);
             branch.NextStatementRequiresLabel = true;
@@ -105,10 +119,29 @@ namespace Reko.Core.Rtl
         /// </summary>
         /// <param name="target">Destination of the call.</param>
         /// <param name="retSize">Size in bytes of return address on stack</param>
+        /// <param name="iclass">The <see cref="InstrClass" /> of the call.</param>
+        /// <returns>A reference to this RtlEmitter.</returns>
+        public RtlEmitter Call(Expression target, byte retSize, InstrClass iclass)
+        {
+            var requiredBits = InstrClass.Transfer | InstrClass.Call;
+            if ((iclass & requiredBits) != requiredBits)
+                throw new ArgumentException(nameof(iclass), "InstrClass bits must be consistent with a call.");
+            Instructions.Add(new RtlCall(target, retSize, iclass));
+            return this;
+        }
+
+        /// <summary>
+        /// Called to generate a RtlCall instruction with no delay slot. The
+        /// <paramref name="retSize"/> is the size of the return value as placed on
+        /// the stack. It will be 0 on machines which use link registers to store 
+        /// the return address at a function call.
+        /// </summary>
+        /// <param name="target">Destination of the call.</param>
+        /// <param name="retSize">Size in bytes of return address on stack</param>
         /// <returns>A reference to this RtlEmitter.</returns>
         public RtlEmitter Call(Expression target, byte retSize)
         {
-            Instructions.Add(new RtlCall(target, retSize, RtlClass.Transfer | RtlClass.Call));
+            Instructions.Add(new RtlCall(target, retSize, InstrClass.Transfer | InstrClass.Call));
             return this;
         }
 
@@ -123,9 +156,26 @@ namespace Reko.Core.Rtl
         /// <returns>A reference to this RtlEmitter.</returns>
         public RtlEmitter CallD(Expression target, byte retSize)
         {
-            Instructions.Add(new RtlCall(target, retSize, RtlClass.Transfer | RtlClass.Call | RtlClass.Delay));
+            Instructions.Add(new RtlCall(target, retSize, InstrClass.Transfer | InstrClass.Call | InstrClass.Delay));
             return this;
         }
+
+        /// <summary>
+        /// Called to generate a RtlCall instruction and switch to the given processor 
+        /// architecture <paramref name="arch"/>. The <paramref name="retSize"/> is the
+        /// size of the return value as placed on the stack. It will be 0 on machines
+        /// which use link registers to store the return address at a function call. 
+        /// </summary>
+        /// <param name="target">Destination of the call.</param>
+        /// <param name="retSize">Size in bytes of return address on stack</param>
+        /// <param name="arch">The processor architecture to switch to.</param>
+        /// <returns>A reference to this RtlEmitter.</returns>
+        public RtlEmitter CallX(Expression target, byte retSize, IProcessorArchitecture arch)
+        {
+            Instructions.Add(new RtlCall(target, retSize, InstrClass.Transfer | InstrClass.Call, arch));
+            return this;
+        }
+
 
         /// <summary>
         /// Emit the RTL instruction <paramref name="instr"/> to the RTL 
@@ -144,7 +194,7 @@ namespace Reko.Core.Rtl
         /// <returns>A reference to this RtlEmitter.</returns>
         public RtlEmitter Goto(Expression target)
         {
-            Instructions.Add(new RtlGoto(target, RtlClass.Transfer));
+            Instructions.Add(new RtlGoto(target, InstrClass.Transfer));
             return this;
         }
 
@@ -154,7 +204,7 @@ namespace Reko.Core.Rtl
         /// <param name="target">Destination of the goto</param>
         /// <param name="rtlClass">Details of the goto instruction</param>
         /// <returns>A reference to this RtlEmitter.</returns>
-        public RtlEmitter Goto(Expression target, RtlClass rtlClass)
+        public RtlEmitter Goto(Expression target, InstrClass rtlClass)
         {
             Instructions.Add(new RtlGoto(target, rtlClass));
             return this;
@@ -167,7 +217,7 @@ namespace Reko.Core.Rtl
         /// <returns>A reference to this RtlEmitter.</returns>
         public RtlEmitter GotoD(Expression target)
         {
-            Instructions.Add(new RtlGoto(target, RtlClass.Transfer|RtlClass.Delay));
+            Instructions.Add(new RtlGoto(target, InstrClass.Transfer|InstrClass.Delay));
             return this;
         }
 
@@ -188,7 +238,26 @@ namespace Reko.Core.Rtl
         /// <returns>A reference to this RtlEmitter.</returns>
         public RtlEmitter Nop()
         {
-            Instructions.Add(new RtlNop { Class = RtlClass.Linear });
+            Instructions.Add(new RtlNop { Class = InstrClass.Linear });
+            return this;
+        }
+
+        /// <summary>
+        /// Generates an RTL Return instruction with the specified instruction class
+        /// </summary>
+        /// <param name="returnAddressBytes">How large the return address is on the stack.</param>
+        /// <param name="extraBytesPopped">Some architectures (like x86) pop the caller's extra
+        /// bytes off the stack.</param>
+        /// <param name="iclass">Instruction class of the created return statement</param>
+        /// <returns>A reference to this RtlEmitter.</returns>
+        public RtlEmitter Return(
+            int returnAddressBytes,
+            int extraBytesPopped,
+            InstrClass iclass)
+        {
+            if ((iclass & InstrClass.Transfer) != InstrClass.Transfer)
+                throw new ArgumentException(nameof(iclass), "Instruction class must be a transfer.");
+            Instructions.Add(new RtlReturn(returnAddressBytes, extraBytesPopped, iclass));
             return this;
         }
 
@@ -203,7 +272,7 @@ namespace Reko.Core.Rtl
             int returnAddressBytes,
             int extraBytesPopped)
         {
-            Instructions.Add(new RtlReturn(returnAddressBytes, extraBytesPopped, RtlClass.Transfer));
+            Instructions.Add(new RtlReturn(returnAddressBytes, extraBytesPopped, InstrClass.Transfer));
             return this;
         }
 
@@ -218,7 +287,7 @@ namespace Reko.Core.Rtl
             int returnAddressBytes,
             int extraBytesPopped)
         {
-            var ret = new RtlReturn(returnAddressBytes, extraBytesPopped, RtlClass.Transfer | RtlClass.Delay);
+            var ret = new RtlReturn(returnAddressBytes, extraBytesPopped, InstrClass.Transfer | InstrClass.Delay);
             Instructions.Add(ret);
             return this;
         }
@@ -231,7 +300,7 @@ namespace Reko.Core.Rtl
         /// <param name="sideEffect">Expression which when evaluated causes the side effect.</param>
         /// <param name="rtlc"></param>
         /// <returns>A reference to this RtlEmitter.</returns>
-        public RtlEmitter SideEffect(Expression sideEffect, RtlClass rtlc = RtlClass.Linear)
+        public RtlEmitter SideEffect(Expression sideEffect, InstrClass rtlc = InstrClass.Linear)
         {
             var se = new RtlSideEffect(sideEffect);
             se.Class = rtlc;

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,6 @@
  */
 #endregion
 
-using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Types;
@@ -31,6 +30,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Reko.Core.Lib;
 
 namespace Reko.Core
 {
@@ -43,16 +43,21 @@ namespace Reko.Core
     /// A Decompiler project may consist of several of these Programs.
     /// </remarks>
     [Designer("Reko.Gui.Design.ProgramDesigner,Reko.Gui")]
-    public class Program
+    public class Program : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        private IProcessorArchitecture archDefault;
         private Identifier globals;
         private Encoding encoding;
 
+
         public Program()
         {
+            this.Architectures = new Dictionary<string, IProcessorArchitecture>();
             this.EntryPoints = new SortedList<Address, ImageSymbol>();
             this.ImageSymbols = new SortedList<Address, ImageSymbol>();
-            this.Procedures = new SortedList<Address, Procedure>();
+            this.Procedures = new BTreeDictionary<Address, Procedure>();
             this.CallGraph = new CallGraph();
             this.EnvironmentMetadata = new TypeLibrary();
             this.ImportReferences = new Dictionary<Address, ImportReference>(new Address.Comparer());		// uint (offset) -> string
@@ -64,6 +69,8 @@ namespace Reko.Core
             this.Resources = new ProgramResourceGroup();
             this.User = new UserData();
             this.GlobalFields = TypeFactory.CreateStructureType("Globals", 0);
+            this.NamingPolicy = new NamingPolicy();
+
             // Most binary images don't have procedure information left.
             this.NeedsScanning = true;
             // Most binary images are not in SSA form.
@@ -85,7 +92,11 @@ namespace Reko.Core
         /// <summary>
         /// The processor architecture to use for decompilation.
         /// </summary>
-		public IProcessorArchitecture Architecture { get; set; }
+		public IProcessorArchitecture Architecture
+        {
+            get { return archDefault; }
+            set { SetDefaultArchitecture(value); }
+        }
 
         public IPlatform Platform { get; set; }
 
@@ -114,7 +125,7 @@ namespace Reko.Core
         public CallGraph CallGraph { get; private set; }
 
         /// <summary>
-        /// Represents a _pointer_ to a structure that contains all the 
+        /// Represents a _fictitious_ pointer to a structure that contains all the 
         /// global variables of the program. 
         /// </summary>
         /// <remarks>
@@ -204,14 +215,16 @@ namespace Reko.Core
         /// </returns>
         public virtual SymbolTable CreateSymbolTable()
         {
+            var dtSer = new DataTypeSerializer();
+            var primitiveTypes = PrimitiveType.AllTypes
+                .ToDictionary(d => d.Key, d => (PrimitiveType_v1) d.Value.Accept(dtSer));
             var namedTypes = new Dictionary<string, SerializedType>();
             var typedefs = EnvironmentMetadata.Types;
-            var dtSer = new DataTypeSerializer();
             foreach (var typedef in typedefs)
             {
-                namedTypes.Add(typedef.Key, typedef.Value.Accept(dtSer));
+                namedTypes[typedef.Key] = typedef.Value.Accept(dtSer);
             }
-            return new SymbolTable(Platform, namedTypes);
+            return new SymbolTable(Platform, primitiveTypes, namedTypes);
         }
 
         public ProcedureSerializer CreateProcedureSerializer()
@@ -224,6 +237,15 @@ namespace Reko.Core
         {
             return new TypeLibraryDeserializer(Platform, true, EnvironmentMetadata.Clone());
         }
+
+
+        /// The processor architectures that exist in the Program. 
+        /// <remarks>
+        /// Normally there is only one architecture. But there are examples
+        /// of binaries that have two or more processor architectures. E.g.
+        /// "fat binaries" on MacOS, or ELF binaries with both ARM32 and 
+        /// Thumb instructions.</remarks>
+        public Dictionary<string, IProcessorArchitecture> Architectures { get; }
 
         /// <summary>
         /// The entry points to the program.
@@ -268,9 +290,9 @@ namespace Reko.Core
         public Dictionary<Identifier, LinearInductionVariable> InductionVariables { get; private set; }
 
         /// <summary>
-        /// The program's decompiled procedures, indexed by address.
+        /// The program's decompiled procedures, ordereds by address.
         /// </summary>
-        public SortedList<Address, Procedure> Procedures { get; private set; }
+        public BTreeDictionary<Address, Procedure> Procedures { get; private set; }
 
         /// <summary>
         /// The program's pseudo procedures, indexed by name and by signature.
@@ -293,68 +315,90 @@ namespace Reko.Core
         public UserData User { get; set; }
 
         /// <summary>
-        /// The name of the file in which disassemblies are dumped.
+        /// The name of the directory into which disassemblies are dumped.
         /// </summary>
-        public string DisassemblyFilename { get; set; }
+        public string DisassemblyDirectory { get; set; }
 
         /// <summary>
-        /// The nsame of the file in which intermediate results are stored.
+        /// The name of the directory into which final source code is stored
         /// </summary>
-        public string IntermediateFilename { get; set; }
+        public string SourceDirectory { get; set; }
 
         /// <summary>
-        /// The name of the file in which final output is stored
+        /// The name of the directory into which type definitions are stored.
         /// </summary>
-        public string OutputFilename { get; set; }
+        public string IncludeDirectory { get; set; }
 
         /// <summary>
-        /// The name of the file in which recovered types are written.
+        /// The name of the directory in which embedded resources will be written.
         /// </summary>
-        public string TypesFilename { get; set; }
+        public string ResourcesDirectory { get; set; }
 
         /// <summary>
-        /// The name of the file in which the global variables are written.
+        /// Given the absolute file name of a binary being decompiled, make sure that 
+        /// absolute file names for each of the output directories.
         /// </summary>
-        public string GlobalsFilename { get; set; }
-
-        public void EnsureFilenames(string fileName)
+        /// <param name="absFileName">Absolute file name of the binary being decompiled.</param>
+        public void EnsureDirectoryNames(string absFileName)
         {
-            this.DisassemblyFilename = DisassemblyFilename ?? Path.ChangeExtension(fileName, ".asm");
-            this.IntermediateFilename = IntermediateFilename ?? Path.ChangeExtension(fileName, ".dis");
-            this.OutputFilename = OutputFilename ?? Path.ChangeExtension(fileName, ".c");
-            this.TypesFilename = TypesFilename ?? Path.ChangeExtension(fileName, ".h");
-            this.GlobalsFilename = GlobalsFilename ?? Path.ChangeExtension(fileName, ".globals.c");
+            var dir = Path.GetDirectoryName(absFileName) ?? "";
+            var filename = Path.GetFileName(absFileName);
+            var outputDir = Path.Combine(dir, Path.ChangeExtension(filename, ".reko"));
+            this.DisassemblyDirectory = DisassemblyDirectory ?? outputDir;
+            this.SourceDirectory = SourceDirectory ?? outputDir;
+            this.IncludeDirectory = IncludeDirectory ?? outputDir;
+            this.ResourcesDirectory = ResourcesDirectory ?? Path.Combine(outputDir, "resources");
         }
-       
+
+        /// <summary>
+        /// Policy to use when giving names to things.
+        /// </summary>
+        public NamingPolicy NamingPolicy { get; set; }
+
         // Convenience functions.
-        public EndianImageReader CreateImageReader(Address addr)
+        public EndianImageReader CreateImageReader(IProcessorArchitecture arch, Address addr)
         {
             if (!SegmentMap.TryFindSegment(addr, out var segment))
                  throw new ArgumentException(string.Format("The address {0} is invalid.", addr));
-            return Architecture.CreateImageReader(segment.MemoryArea, addr);
+            return arch.CreateImageReader(segment.MemoryArea, addr);
         }
 
-        public ImageWriter CreateImageWriter(Address addr)
+        public ImageWriter CreateImageWriter(IProcessorArchitecture arch, Address addr)
         {
             if (!SegmentMap.TryFindSegment(addr, out var segment))
                 throw new ArgumentException(string.Format("The address {0} is invalid.", addr));
-            return Architecture.CreateImageWriter(segment.MemoryArea, addr);
+            return arch.CreateImageWriter(segment.MemoryArea, addr);
         }
 
-        public IEnumerable<MachineInstruction> CreateDisassembler(Address addr)
+        public IEnumerable<MachineInstruction> CreateDisassembler(IProcessorArchitecture arch, Address addr)
         {
             if (!SegmentMap.TryFindSegment(addr, out var segment))
                 throw new ArgumentException(string.Format("The address {0} is invalid.", addr));
-            return Architecture.CreateDisassembler(
-                Architecture.CreateImageReader(segment.MemoryArea, addr));
-        }
-
-        public ProcessorState CreateProcessorState()
-        {
-            return Architecture.CreateProcessorState();
+            return arch.CreateDisassembler(
+                arch.CreateImageReader(segment.MemoryArea, addr));
         }
 
         // Mutators /////////////////////////////////////////////////////////////////
+
+        public IProcessorArchitecture EnsureArchitecture(string archLabel, Func<string,IProcessorArchitecture> getter)
+        {
+            if (Architectures.TryGetValue(archLabel, out var arch))
+                return arch;
+            arch = getter(archLabel);
+            Architectures[arch.Name] = arch;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Architectures)));
+            return arch;
+        }
+
+        private void SetDefaultArchitecture(IProcessorArchitecture arch)
+        {
+            this.archDefault = arch;
+            if (arch != null && !Architectures.ContainsKey(arch.Name))
+            {
+                Architectures.Add(arch.Name, arch);
+            }
+            //$REVIEW: raise an event if this option becomes user-available.
+        }
 
         /// <summary>
         /// This method is called when the user has created a global item.
@@ -362,11 +406,11 @@ namespace Reko.Core
         /// <param name="address"></param>
         /// <param name="dataType"></param>
         /// <returns></returns>
-        public ImageMapItem AddUserGlobalItem(Address address, DataType dataType)
+        public ImageMapItem AddUserGlobalItem(IProcessorArchitecture arch, Address address, DataType dataType)
         {
             //$TODO: if user enters a segmented address, we need to 
             // place the item in the respective globals struct.
-            var size = GetDataSize(address, dataType);
+            var size = GetDataSize(arch, address, dataType);
             var item = new ImageMapItem
             {
                 Address = address,
@@ -395,7 +439,7 @@ namespace Reko.Core
                 return;
             this.ImageMap = SegmentMap.CreateImageMap();
             foreach (var sym in this.ImageSymbols.Values.Where(
-                s => s.Type == SymbolType.Data && s.Size != 0))
+                s => s.Type == SymbolType.Data && s.DataType.BitSize != 0))
             {
                 this.ImageMap.AddItemWithSize(
                     sym.Address,
@@ -403,14 +447,15 @@ namespace Reko.Core
                     {
                         Address = sym.Address,
                         DataType = sym.DataType,
-                        Size = sym.Size,
+                        Size = (uint) sym.DataType.Size,
                     });
             }
             var tlDeser = CreateTypeLibraryDeserializer();
             foreach (var kv in User.Globals)
             {
                 var dt = kv.Value.DataType.Accept(tlDeser);
-                var item = new ImageMapItem((uint)dt.Size)
+                var size = GetDataSize(Architecture, kv.Key, dt);
+                var item = new ImageMapItem(size)
                 {
                     Address = kv.Key,
                     DataType = dt,
@@ -430,15 +475,14 @@ namespace Reko.Core
             }
         }
 
-        public uint GetDataSize(Address addr, DataType dt)
+        public uint GetDataSize(IProcessorArchitecture arch, Address addr, DataType dt)
         {
-            var strDt = dt as StringType;
-            if (strDt == null)
-                return (uint)dt.Size;
+            if (!(dt is StringType strDt))
+                return (uint) dt.Size;
             if (strDt.LengthPrefixType == null)
             {
                 // Zero-terminated string.
-                var rdr = this.CreateImageReader(addr);
+                var rdr = this.CreateImageReader(arch, addr);
                 while (rdr.IsValid && !rdr.ReadNullCharTerminator(strDt.ElementType))
                     ;
                 return (uint)(rdr.Address - addr);
@@ -447,13 +491,6 @@ namespace Reko.Core
             {
                 return (uint)(strDt.Size + strDt.Size);
             }
-        }
-
-        public Address GetProcedureAddress(Procedure proc)
-        {
-            return Procedures.Where(de => de.Value == proc)
-                .Select(de => de.Key)
-                .FirstOrDefault();
         }
 
         public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, params Expression[] args)
@@ -475,6 +512,55 @@ namespace Reko.Core
             var stg = id?.Storage;
             return new Identifier("", arg.DataType, stg);
         }
+
+        /// <summary>
+        /// Ensure that there is a procedure at address <paramref name="addr"/>.
+        /// </summary>
+        /// <param name="addr">The address at which there must be a procedure after 
+        /// this method returns.
+        /// </param>
+        /// <param name="procedureName">The name of the procedure. If null,
+        /// this method will synthesize a new name.</param>
+        /// <returns>
+        /// The procedure, located at address <paramref name="addr"/>.
+        /// </returns>
+        public Procedure EnsureProcedure(IProcessorArchitecture arch, Address addr, string procedureName)
+        {
+            if (this.Procedures.TryGetValue(addr, out Procedure proc))
+                return proc;
+
+            var generatedName = procedureName ?? this.NamingPolicy.ProcedureName(addr);
+            proc = Procedure.Create(arch, generatedName, addr, arch.CreateFrame());
+            if (procedureName == null && this.ImageSymbols.TryGetValue(addr, out ImageSymbol sym))
+            {
+                procedureName = sym.Name;
+                if (sym.Signature != null)
+                {
+                    var sser = this.CreateProcedureSerializer();
+                    proc.Signature = sser.Deserialize(sym.Signature, proc.Frame);
+                }
+            }
+            if (procedureName != null)
+            {
+                var sProc = this.Platform.SignatureFromName(procedureName);
+                if (sProc != null)
+                {
+                    var loader = this.CreateTypeLibraryDeserializer();
+                    var exp = loader.LoadExternalProcedure(sProc);
+                    proc.Name = exp.Name;
+                    proc.Signature = exp.Signature;
+                    proc.EnclosingType = exp.EnclosingType;
+                }
+                else
+                {
+                    proc.Name = procedureName;
+                }
+            }
+            this.Procedures.Add(addr, proc);
+            this.CallGraph.AddProcedure(proc);
+            return proc;
+        }
+
 
         public PseudoProcedure EnsurePseudoProcedure(string name, FunctionType sig)
         {
@@ -506,7 +592,7 @@ namespace Reko.Core
             return up;
         }
 
-        public GlobalDataItem_v2 ModifyUserGlobal(Address address, SerializedType dataType, string name)
+        public GlobalDataItem_v2 ModifyUserGlobal(IProcessorArchitecture arch, Address address, SerializedType dataType, string name)
         {
             if (!User.Globals.TryGetValue(address, out var gbl))
             {
@@ -524,7 +610,7 @@ namespace Reko.Core
 
             var tlDeser = CreateTypeLibraryDeserializer();
             var dt = dataType.Accept(tlDeser);
-            var size = GetDataSize(address, dt);
+            var size = GetDataSize(arch, address, dt);
             var item = new ImageMapItem
             {
                 Address = address,

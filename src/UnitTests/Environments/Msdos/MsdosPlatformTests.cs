@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Core;
@@ -26,7 +27,6 @@ using Reko.Core.Expressions;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using Reko.Environments.Msdos;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -36,7 +36,6 @@ namespace Reko.UnitTests.Environments.Msdos
     [TestFixture]
     public class MsDosPlatformTests
     {
-        private MockRepository mr;
         private ServiceContainer sc;
         private X86ArchitectureReal arch;
         private MsdosPlatform platform;
@@ -45,17 +44,16 @@ namespace Reko.UnitTests.Environments.Msdos
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
-            var cfgSvc = mr.Stub<IConfigurationService>();
-            var tlSvc = mr.Stub<ITypeLibraryLoaderService>();
-            var env = mr.Stub<OperatingEnvironment>();
-            env.Stub(e => e.TypeLibraries).Return(new List<ITypeLibraryElement>());
-            env.Stub(e => e.CharacteristicsLibraries).Return(new List<ITypeLibraryElement>());
-            cfgSvc.Stub(c => c.GetEnvironment("ms-dos")).Return(env);
+            var cfgSvc = new Mock<IConfigurationService>();
+            var tlSvc = new Mock<ITypeLibraryLoaderService>();
+            var env = new Mock<PlatformDefinition>();
+            env.Setup(e => e.TypeLibraries).Returns(new List<TypeLibraryDefinition>());
+            env.Setup(e => e.CharacteristicsLibraries).Returns(new List<TypeLibraryDefinition>());
+            cfgSvc.Setup(c => c.GetEnvironment("ms-dos")).Returns(env.Object);
             sc = new ServiceContainer();
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
-            sc.AddService<IConfigurationService>(cfgSvc);
-            sc.AddService<ITypeLibraryLoaderService>(tlSvc);
+            sc.AddService<IConfigurationService>(cfgSvc.Object);
+            sc.AddService<ITypeLibraryLoaderService>(tlSvc.Object);
         }
 
         private void Given_MsdosPlatform()
@@ -72,7 +70,6 @@ namespace Reko.UnitTests.Environments.Msdos
         [Test]
         public void MspRealModeServices()
         {
-            mr.ReplayAll();
             Given_MsdosPlatform();
 
             var state = arch.CreateProcessorState();
@@ -93,8 +90,8 @@ namespace Reko.UnitTests.Environments.Msdos
             Assert.AreEqual("msdos_get_disk_transfer_area_address", svc.Name);
             Assert.AreEqual(0, svc.Signature.Parameters.Length);
             SequenceStorage seq = (SequenceStorage)svc.Signature.ReturnValue.Storage;
-            Assert.AreEqual("es", seq.Head.Name);
-            Assert.AreEqual("bx", seq.Tail.Name);
+            Assert.AreEqual("es", seq.Elements[0].Name);
+            Assert.AreEqual("bx", seq.Elements[1].Name);
         }
 
         [Test]
@@ -119,7 +116,7 @@ namespace Reko.UnitTests.Environments.Msdos
         {
             Given_MsdosPlatform();
             Given_Procedure();
-            var dx_ax = proc.Frame.EnsureSequence(Registers.dx, Registers.ax, PrimitiveType.Word32);
+            var dx_ax = proc.Frame.EnsureSequence(PrimitiveType.Word32, Registers.dx, Registers.ax);
             var arg06 = proc.Frame.EnsureStackArgument(6, PrimitiveType.Word16);
             var sb = new SignatureBuilder(proc.Frame, arch);
             sb.AddOutParam(dx_ax);

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Reko.Core.Types;
+using Reko.Core.Machine;
 
 namespace Reko.Core
 {
@@ -34,13 +35,13 @@ namespace Reko.Core
     public interface IStorageBinder
     {
         Identifier EnsureIdentifier(Storage stgForeign);
-        Identifier EnsureRegister(RegisterStorage stgForeign);
+        Identifier EnsureRegister(RegisterStorage reg);
         Identifier EnsureFlagGroup(FlagGroupStorage grf);
         Identifier EnsureFlagGroup(RegisterStorage flagRegister, uint flagGroupBits, string name, DataType dataType);
         Identifier EnsureFpuStackVariable(int v, DataType dataType);
         Identifier EnsureOutArgument(Identifier idOrig, DataType outArgumentPointer);
-        Identifier EnsureSequence(Storage head, Storage tail, DataType dataType);
-        Identifier EnsureSequence(string name, Storage head, Storage tail, DataType dataType);
+        Identifier EnsureSequence(DataType dataType, params Storage[] elements);
+        Identifier EnsureSequence(DataType dataType, string name, params Storage [] elements);
         Identifier EnsureStackVariable(int offset, DataType dataType);
         Identifier CreateTemporary(DataType dt);
         Identifier CreateTemporary(string name, DataType dt);

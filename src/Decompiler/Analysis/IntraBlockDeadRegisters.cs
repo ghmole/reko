@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -298,7 +298,7 @@ namespace Reko.Analysis
 
         public bool VisitDeclaration(Declaration decl)
         {
-            throw new NotImplementedException();
+            return false;
         }
 
         public bool VisitDefInstruction(DefInstruction def)
@@ -345,7 +345,7 @@ namespace Reko.Analysis
 
         public bool VisitUseInstruction(UseInstruction use)
         {
-            throw new NotImplementedException();
+            return false;
         }
 
         public bool VisitFlagGroupStorage(FlagGroupStorage grf, bool defining)
@@ -396,8 +396,10 @@ namespace Reko.Analysis
 
         public bool VisitSequenceStorage(SequenceStorage seq, bool defining)
         {
-            seq.Head.Accept(this, defining);
-            seq.Tail.Accept(this, defining);
+            foreach (var e in seq.Elements)
+            {
+                e.Accept(this, defining);
+            }
             return true;
         }
 

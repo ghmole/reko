@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ namespace Reko.UnitTests.Core
 		[Test]
 		public void ExtpBind()
 		{
-			var sig = new FunctionType(
+			var sig = FunctionType.Func(
 				new Identifier(Registers.ax.Name, PrimitiveType.Word16, Registers.ax),
 				new Identifier [] {
 					new Identifier(Registers.bx.Name, PrimitiveType.Word16, Registers.bx),
@@ -46,8 +46,8 @@ namespace Reko.UnitTests.Core
 			var fn = new ProcedureConstant(PrimitiveType.Ptr32, ep);
             var arch = new FakeArchitecture();
             var frame = arch.CreateFrame();
-			var ab = new ApplicationBuilder(new FakeArchitecture(), frame, new CallSite(0, 0), fn, ep.Signature, false);
-            var instr = ab.CreateInstruction();
+			var ab = arch.CreateFrameApplicationBuilder(frame, new CallSite(0, 0), fn);
+            var instr = ab.CreateInstruction(ep.Signature, ep.Characteristics);
 			Assert.AreEqual("ax = foo(bx, cl)", instr.ToString());
 		}
 	}

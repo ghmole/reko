@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,21 +28,25 @@ using System.Diagnostics;
 
 namespace Reko.Arch.Avr
 {
+    using Decoder = Decoder<Avr8Disassembler, Mnemonic, AvrInstruction>;
+
     // Opcode map: http://lyons42.com/AVR/Opcodes/AVRAllOpcodes.html
     // Opcode map: https://en.wikipedia.org/wiki/Atmel_AVR_instruction_set
     public class Avr8Disassembler : DisassemblerBase<AvrInstruction>
     {
-        private static OpRec[] oprecs;
-        private static HashSet<ushort> seen = new HashSet<ushort>();
+        private readonly static Decoder[] decoders;
+        private readonly static Decoder invalid;
 
-        private Avr8Architecture arch;
+        private readonly Avr8Architecture arch;
+        private readonly EndianImageReader rdr;
         private Address addr;
-        private EndianImageReader rdr;
+        private readonly List<MachineOperand> ops;
 
         public Avr8Disassembler(Avr8Architecture arch, EndianImageReader rdr)
         {
             this.arch = arch;
             this.rdr = rdr;
+            this.ops = new List<MachineOperand>();
         }
 
         public override AvrInstruction DisassembleInstruction()
@@ -50,140 +54,256 @@ namespace Reko.Arch.Avr
             this.addr = rdr.Address;
             if (!rdr.TryReadUInt16(out ushort wInstr))
                 return null;
-            var instr = oprecs[wInstr >> 12].Decode(this, wInstr);
+            ops.Clear();
+            var instr = decoders[wInstr >> 12].Decode(wInstr, this);
             instr.Address = addr;
             var length = rdr.Address - addr;
-            instr.Length = (int)length;
+            instr.Length = (int) length;
+
 #if DEBUG
-            if (instr.opcode == Opcode.invalid) EmitUnitTest(wInstr);
+            if (instr.opcode == Mnemonic.invalid) EmitUnitTest(wInstr);
 #endif
             return instr;
         }
 
-        public AvrInstruction Decode(ushort wInstr, Opcode opcode, string fmt)
+        protected override AvrInstruction CreateInvalidInstruction()
         {
-            var ops = new List<MachineOperand>();
-            int offset;
-            ushort w2;
-            for (int i = 0; i < fmt.Length; ++i)
-            {
-                MachineOperand op;
-                switch (fmt[i++])
-                {
-                case ',':
-                    continue;
-                case '+':
-                    op = IncDec(true, fmt[i++]);
-                    break;
-                case '-':
-                    op = IncDec(false, fmt[i++]);
-                    break;
-                case 'A': // I/O location
-                    op = ImmediateOperand.Byte((byte)(((wInstr >> 5) & 0x30) | (wInstr & 0xF)));
-                    break;
-                case 'B': // 8-bit immediate at bits 8..11 and 0..3
-                    op = ImmediateOperand.Byte((byte)(((wInstr >> 4) & 0xF0) | (wInstr & 0x0F)));
-                    break;
-                case 'g': // 4-bit field in sgis
-                    op = ImmediateOperand.Byte((byte)((wInstr >> 3) & 0x0F));
-                    break;
-                case 'h': // 3-bit field in sgis, indicating bit nr.
-                    op = ImmediateOperand.Byte((byte)(wInstr & 7));
-                    break;
-                case 'I': // 4-bit immediate at bit 0
-                    op = ImmediateOperand.Byte((byte)(wInstr & 0x0F));
-                    break;
-                case 'i': // 4-bit immediate at bit 4
-                    op = ImmediateOperand.Byte((byte)((wInstr >> 4) & 0x0F));
-                    break;
-                case 'J': // Relative jump
-                    offset = (short)((wInstr & 0xFFF) << 4);
-                    offset = offset >> 3;
-                    op = AddressOperand.Create(this.addr + 2 + offset);
-                    break;
-                case 'D': // Destination register
-                    op = Register((wInstr >> 4) & 0x1F);
-                    break;
-                case 'd': // Destination register (r16-r31)
-                    op = Register(0x10 | (wInstr >> 4) & 0x0F);
-                    break;
-                case 'R': // source register (5 bits)
-                    op = Register((wInstr >> 5) & 0x10 | (wInstr) & 0x0F);
-                    break;
-                case 'r': 
-                    if (i < fmt.Length && fmt[i] == '4')
-                    {
-                        ++i;
-                        // source register (r16-r31)
-                        op = Register(0x10 | wInstr & 0x0F);
-                    }
-                    else
-                    {
-                        // source register (5 bits)
-                        op = Register((wInstr >> 4) & 0x10 | (wInstr >> 4) & 0x0F);
-                    }
-                    break;
-                case 'K':
-                    op = ImmediateOperand.Byte((byte)(((wInstr >> 4) & 0xF0) | (wInstr & 0xF)));
-                    break;
-                case 'P': // register pair source
-                    op = Register((wInstr << 1) & ~1);
-                    break;
-                case 'p': // register pair destination
-                    op = Register((wInstr >> 3) & ~1);
-                    break;
-                case 'Q':   // absolute address used by jump and call.
-                    if (!rdr.TryReadLeUInt16(out w2))
-                        return null;
-                    op = AddressOperand.Ptr32(
-                        (uint)(((wInstr >> 4) & 0x1F) << 18) |
-                        (uint)((wInstr & 1) << 17) |
-                        (uint)(w2 << 1));
-                    break;
-                case 'q':   // register pair used by adiw
-                    op = Register(24 + ((wInstr >> 3) & 6));
-                    break;
-                case 's':   // immediate used by adiw/sbiw
-                    op = ImmediateOperand.Byte((byte)(((wInstr >> 2) & 0x30) | (wInstr & 0xF)));
-                    break;
-                case 'w': // Trailing 16-bit absolute address
-                    if (!rdr.TryReadLeUInt16(out w2))
-                        return null;
-                    op = AddressOperand.Ptr16(w2);
-                    break;
-                case 'o':   // Branch offset
-                    offset = (short)wInstr;
-                    offset = (short)(offset << 6);
-                    offset = (short)(offset >> 8);
-                    offset = (short)(offset & ~1);
-                    op = AddressOperand.Create(this.addr + offset + 2);
-                    break;
-                case 'X':
-                    op = MemD(arch.x, 0);
-                    break;
-                case 'Y':
-                    op = MemD(arch.y, 0);
-                    break;
-                case 'y':
-                    op = MemD(arch.y, Displacement(wInstr));
-                    break;
-                case 'Z':
-                    op = MemD(arch.z, 0);
-                    break;
-                case 'z':
-                    op = MemD(arch.z, Displacement(wInstr));
-                    break;
-                default:
-                    throw new NotImplementedException(string.Format("Unimplemented AVR8 format symbol '{0}'.'", fmt[i - 1]));
-                }
-                ops.Add(op);
-            }
             return new AvrInstruction
             {
-                opcode = opcode,
-                operands = ops.ToArray(),
+                InstructionClass = InstrClass.Invalid,
+                opcode = Mnemonic.invalid,
+                operands = new MachineOperand[0]
             };
         }
+
+        #region Mutators
+
+        private static Mutator<Avr8Disassembler> Inc(RegisterStorage reg)
+        {
+            return (u, d) => {
+                d.ops.Add(new MemoryOperand(PrimitiveType.Byte)
+                {
+                    Base = reg,
+                    PostIncrement = true,
+                    PreDecrement = false,
+                });
+                return true;
+            };
+        }
+        private static readonly Mutator<Avr8Disassembler> IncX = Inc(Avr8Architecture.x);
+        private static readonly Mutator<Avr8Disassembler> IncY = Inc(Avr8Architecture.y);
+        private static readonly Mutator<Avr8Disassembler> IncZ = Inc(Avr8Architecture.z);
+
+        private static Mutator<Avr8Disassembler> Dec(RegisterStorage reg)
+        {
+            return (u, d) => {
+                d.ops.Add(new MemoryOperand(PrimitiveType.Byte)
+                {
+                    Base = reg,
+                    PostIncrement = false,
+                    PreDecrement = true,
+                });
+                return true;
+            };
+        }
+
+        private static Mutator<Avr8Disassembler> DecX = Dec(Avr8Architecture.x);
+        private static Mutator<Avr8Disassembler> DecY = Dec(Avr8Architecture.y);
+        private static Mutator<Avr8Disassembler> DecZ = Dec(Avr8Architecture.z);
+
+        // I/O location
+        private static bool A(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (((wInstr >> 5) & 0x30) | (wInstr & 0xF))));
+            return true;
+        }
+
+        // 8-bit immediate at bits 8..11 and 0..3
+        private static bool B(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (((wInstr >> 4) & 0xF0) | (wInstr & 0x0F))));
+            return true;
+        }
+
+        // 4-bit field in sgis
+        private static bool g(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) ((wInstr >> 3) & 0x0F)));
+            return true;
+        }
+
+        // 3-bit field in sgis, indicating bit nr.
+        private static bool h(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (wInstr & 7)));
+            return true;
+        }
+
+        // 4-bit immediate at bit 0
+        private static bool I(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (wInstr & 0x0F)));
+            return true;
+        }
+
+        // 4-bit immediate at bit 4
+        private static bool i(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) ((wInstr >> 4) & 0x0F)));
+            return true;
+        }
+
+        // Relative jump
+        private static bool J(uint wInstr, Avr8Disassembler dasm)
+        {
+            int offset = (short) ((wInstr & 0xFFF) << 4);
+            offset = offset >> 3;
+            dasm.ops.Add(AddressOperand.Create(dasm.addr + 2 + offset));
+            return true;
+        }
+
+        // Destination register
+        private static bool D(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register(((int) wInstr >> 4) & 0x1F));
+            return true;
+        }
+
+        // Destination register (r16-r31)
+        private static bool d(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register(0x10 | ((int) wInstr >> 4) & 0x0F));
+            return true;
+        }
+
+        // source register (5 bits)
+        private static bool R(uint wInstr, Avr8Disassembler dasm)
+        {
+            int iReg = (int) ((wInstr >> 5) & 0x10 | (wInstr) & 0x0F);
+            dasm.ops.Add(dasm.Register(iReg));
+            return true;
+        }
+
+        // source register (r16-r31)
+        private static bool r4(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register(0x10 | (int) wInstr & 0x0F));
+            return true;
+        }
+
+        // source register (5 bits)
+        private static bool r(uint wInstr, Avr8Disassembler dasm)
+        {
+            var iReg = (int) ((wInstr >> 4) & 0x10 | (wInstr >> 4) & 0x0F);
+            dasm.ops.Add(dasm.Register(iReg));
+            return true;
+        }
+
+        private static bool K(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (((wInstr >> 4) & 0xF0) | (wInstr & 0xF))));
+            return true;
+        }
+
+        // register pair source
+        private static bool P(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register(((int) wInstr << 1) & ~1));
+            return true;
+        }
+
+        // register pair destination
+        private static bool p(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register((int) (wInstr >> 3) & ~1));
+            return true;
+        }
+
+        // absolute address used by jump and call.
+        private static bool Q(uint wInstr, Avr8Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort w2))
+                return false;
+            dasm.ops.Add(AddressOperand.Ptr32(
+                (uint) (((wInstr >> 4) & 0x1F) << 18) |
+                (uint) ((wInstr & 1) << 17) |
+                (uint) (w2 << 1)));
+            return true;
+        }
+
+        // register pair used by adiw
+        private static bool q(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.Register(24 + ((int) (wInstr >> 3) & 6)));
+            return true;
+        }
+
+        // immediate used by adiw/sbiw
+        private static bool s(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(ImmediateOperand.Byte((byte) (((wInstr >> 2) & 0x30) | (wInstr & 0xF))));
+            return true;
+        }
+
+        // Trailing 16-bit absolute address
+        private static bool w(uint uInstr, Avr8Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort w2))
+                return false;
+            dasm.ops.Add(AddressOperand.Ptr16(w2));
+            return true;
+        }
+
+        // Branch offset
+        private static bool o(uint wInstr, Avr8Disassembler dasm) {
+            short offset;
+            offset = (short) wInstr;
+            offset = (short) (offset << 6);
+            offset = (short) (offset >> 8);
+            offset = (short) (offset & ~1);
+            dasm.ops.Add(AddressOperand.Create(dasm.addr + offset + 2));
+            return true;
+        }
+
+        private static bool X(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.MemD(Avr8Architecture.x, 0));
+            return true;
+        }
+        private static bool Y(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.MemD(Avr8Architecture.y, 0));
+            return true;
+        }
+
+        private static bool y(uint wInstr, Avr8Disassembler dasm) {
+            dasm.ops.Add(dasm.MemD(Avr8Architecture.y, dasm.Displacement((ushort)wInstr)));
+            return true;
+        }
+
+        private static bool Z(uint wInstr, Avr8Disassembler dasm) {
+            dasm.ops.Add(dasm.MemD(Avr8Architecture.z, 0));
+            return true;
+        }
+
+        private static bool z(uint wInstr, Avr8Disassembler dasm)
+        {
+            dasm.ops.Add(dasm.MemD(Avr8Architecture.z, dasm.Displacement((ushort) wInstr)));
+            return true;
+        }
+
+        #endregion
+
+        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<Avr8Disassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, InstrClass.Linear, mutators);
+        }
+
+        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<Avr8Disassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, iclass, mutators);
+        }
+
 
         private MachineOperand Register(int v)
         {
@@ -199,26 +319,6 @@ namespace Reko.Arch.Avr
             };
         }
 
-        private MachineOperand IncDec(bool inc, char cReg)
-        {
-            RegisterStorage reg;
-            switch (cReg)
-            {
-            case 'X': reg = arch.x; break;
-            case 'Y': reg = arch.y; break;
-            case 'Z': reg = arch.z; break;
-            default: Debug.Assert(false, "Must be X, Y, or Z");
-                reg = null;
-                break;
-            }
-            return new MemoryOperand(PrimitiveType.Byte)
-            {
-                Base = reg,
-                PostIncrement = inc,
-                PreDecrement = !inc,
-            };
-        }
-
         private short Displacement(ushort wInstr)
         {
             var d = 
@@ -230,507 +330,473 @@ namespace Reko.Arch.Avr
 
         private void EmitUnitTest(ushort wInstr)
         {
-            if (seen.Contains(wInstr))
-                return;
-            seen.Add(wInstr);
-
-            Debug.Print("        [Test]");
-            Debug.Print("        public void Avr8_dis_{0:X4}()", wInstr);
-            Debug.Print("        {");
-            Debug.Print("            AssertCode(\"@@@\", 0x{0:X4});", wInstr);
-            Debug.Print("        }");
-            Debug.Print("");
+            var instrHex = $"{wInstr:X4}";
+            base.EmitUnitTest("AVR8", instrHex, "", "Avr8_dis", this.addr, w =>
+            {
+                w.WriteLine("            AssertCode(\"@@@\", 0x{0:X4});", wInstr);
+            });
         }
 
         static Avr8Disassembler()
         {
-            var oprecs0 = new OpRec[16]
+            invalid = Instr(Mnemonic.invalid, InstrClass.Invalid);
+            var decoders0 = new Decoder[16]
             {
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.movw, "p,P"),
-                new BOpRec(Opcode.muls, "d,r4"),
-                new BOpRec(Opcode.muls, "d,r4"),
+                Instr(Mnemonic.invalid, InstrClass.Invalid|InstrClass.Zero),
+                Instr(Mnemonic.movw, p,P),
+                Instr(Mnemonic.muls, d,r4),
+                Instr(Mnemonic.muls, d,r4),
 
-                new BOpRec(Opcode.cpc, "D,R"),
-                new BOpRec(Opcode.cpc, "D,R"),
-                new BOpRec(Opcode.cpc, "D,R"),
-                new BOpRec(Opcode.cpc, "D,R"),
+                Instr(Mnemonic.cpc, D,R),
+                Instr(Mnemonic.cpc, D,R),
+                Instr(Mnemonic.cpc, D,R),
+                Instr(Mnemonic.cpc, D,R),
 
-                new BOpRec(Opcode.sbc, "D,R"),
-                new BOpRec(Opcode.sbc, "D,R"),
-                new BOpRec(Opcode.sbc, "D,R"),
-                new BOpRec(Opcode.sbc, "D,R"),
+                Instr(Mnemonic.sbc, D,R),
+                Instr(Mnemonic.sbc, D,R),
+                Instr(Mnemonic.sbc, D,R),
+                Instr(Mnemonic.sbc, D,R),
 
-                new BOpRec(Opcode.add, "D,R"),
-                new BOpRec(Opcode.add, "D,R"),
-                new BOpRec(Opcode.add, "D,R"),
-                new BOpRec(Opcode.add, "D,R"),
+                Instr(Mnemonic.add, D,R),
+                Instr(Mnemonic.add, D,R),
+                Instr(Mnemonic.add, D,R),
+                Instr(Mnemonic.add, D,R),
             };
 
-            var oprecs1 = new OpRec[]
+            var decoders1 = new Decoder[]
             {
-                new BOpRec(Opcode.cpse, "D,R"),
-                new BOpRec(Opcode.cp,   "D,R"),
-                new BOpRec(Opcode.sub,  "D,R"),
-                new BOpRec(Opcode.adc,  "D,R"),
+                Instr(Mnemonic.cpse, D,R),
+                Instr(Mnemonic.cp,   D,R),
+                Instr(Mnemonic.sub,  D,R),
+                Instr(Mnemonic.adc,  D,R),
             };
 
-            var oprecs2 = new OpRec[]
+            var decoders2 = new Decoder[]
             {
-                new BOpRec(Opcode.and, "D,R"),
-                new BOpRec(Opcode.eor, "D,R"),
-                new BOpRec(Opcode.or, "D,R"),
-                new BOpRec(Opcode.mov, "R,r"),
+                Instr(Mnemonic.and, D,R),
+                Instr(Mnemonic.eor, D,R),
+                Instr(Mnemonic.or, D,R),
+                Instr(Mnemonic.mov, R,r),
             };
 
-            var oprecs80 = new OpRec[]
+            var decoders80 = new Decoder[]
             {
-                new BOpRec(Opcode.ld,  "D,X"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
+                Instr(Mnemonic.ld,  D,X),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
 
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
 
-                new BOpRec(Opcode.ld,  "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
+                Instr(Mnemonic.ld,  D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
 
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
             };
 
-            var decoders_std_Z = new OpRec[]
+            var decoders_std_Z = new Decoder[]
             {
-                new BOpRec(Opcode.st, "Z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
+                Instr(Mnemonic.st, Z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
 
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
 
-                new BOpRec(Opcode.st, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
+                Instr(Mnemonic.st, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
 
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
             };
 
-            var decoders_ldd = new OpRec[]
+            var decoders_ldd = new Decoder[]
             {
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
 
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
-                new BOpRec(Opcode.ldd, "D,z"),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
+                Instr(Mnemonic.ldd, D,z),
 
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
 
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-                new BOpRec(Opcode.ldd, "D,y"),
-         };
-
-            var decoders_std = new OpRec[]
-            {
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-                new BOpRec(Opcode.std, "z,D"),
-
-                new BOpRec(Opcode.st, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
-                new BOpRec(Opcode.std, "y,D"),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
+                Instr(Mnemonic.ldd, D,y),
             };
 
-            var oprecs8 = new OpRec[8]
+            var decoders_std = new Decoder[]
             {
-                new GrpOpRec(0, 4, oprecs80),
-                new GrpOpRec(0, 4, decoders_std_Z),
-                new GrpOpRec(0, 4, decoders_ldd),
-                new GrpOpRec(0, 4, decoders_std),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
 
-                new GrpOpRec(0, 4, decoders_ldd),
-                new GrpOpRec(0, 4, decoders_std),
-                new GrpOpRec(0, 4, decoders_ldd),
-                new GrpOpRec(0, 4, decoders_std),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+                Instr(Mnemonic.std, z,D),
+
+                Instr(Mnemonic.st, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
+                Instr(Mnemonic.std, y,D),
             };
 
-            var oprecs94_8 = new OpRec[]
+            var decoders8 = new Decoder[8]
             {
-                new BOpRec(Opcode.sec, ""),
-                new BOpRec(Opcode.sez, ""),
-                new BOpRec(Opcode.sen, ""),
-                new BOpRec(Opcode.sev, ""),
+                Mask(0, 4, decoders80),
+                Mask(0, 4, decoders_std_Z),
+                Mask(0, 4, decoders_ldd),
+                Mask(0, 4, decoders_std),
 
-                new BOpRec(Opcode.ses, ""),
-                new BOpRec(Opcode.seh, ""),
-                new BOpRec(Opcode.set, ""),
-                new BOpRec(Opcode.sei, ""),
-
-                new BOpRec(Opcode.clc, ""),
-                new BOpRec(Opcode.clz, ""),
-                new BOpRec(Opcode.cln, ""),
-                new BOpRec(Opcode.clv, ""),
-
-                new BOpRec(Opcode.cls, ""),
-                new BOpRec(Opcode.clh, ""),
-                new BOpRec(Opcode.clt, ""),
-                new BOpRec(Opcode.cli, ""),
-
-                new BOpRec(Opcode.ret, ""),
-                new BOpRec(Opcode.reti, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-
-                new BOpRec(Opcode.sleep, ""),
-                new BOpRec(Opcode.@break, ""),
-                new BOpRec(Opcode.wdr, ""),
-                new BOpRec(Opcode.invalid, ""),
-
-                new BOpRec(Opcode.lpm, ""),
-                new BOpRec(Opcode.elpm, ""),
-                new BOpRec(Opcode.spm, ""),
-                new BOpRec(Opcode.spm, ""),
+                Mask(0, 4, decoders_ldd),
+                Mask(0, 4, decoders_std),
+                Mask(0, 4, decoders_ldd),
+                Mask(0, 4, decoders_std),
             };
 
-            var oprecs95_8 = new OpRec[]
+            var decoders94_8 = new Decoder[]
             {
-                new BOpRec(Opcode.ret, ""),
-                new BOpRec(Opcode.reti, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.sec),
+                Instr(Mnemonic.sez),
+                Instr(Mnemonic.sen),
+                Instr(Mnemonic.sev),
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.ses),
+                Instr(Mnemonic.seh),
+                Instr(Mnemonic.set),
+                Instr(Mnemonic.sei),
 
-                new BOpRec(Opcode.sleep, ""),
-                new BOpRec(Opcode.@break, ""),
-                new BOpRec(Opcode.wdr, ""),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.clc),
+                Instr(Mnemonic.clz),
+                Instr(Mnemonic.cln),
+                Instr(Mnemonic.clv),
 
-                new BOpRec(Opcode.lpm, ""),
-                new BOpRec(Opcode.elpm, ""),
-                new BOpRec(Opcode.spm, ""),
-                new BOpRec(Opcode.spm, ""),
+                Instr(Mnemonic.cls),
+                Instr(Mnemonic.clh),
+                Instr(Mnemonic.clt),
+                Instr(Mnemonic.cli),
+
+                Instr(Mnemonic.ret, InstrClass.Transfer),
+                Instr(Mnemonic.reti, InstrClass.Transfer),
+                invalid,
+                invalid,
+
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+
+                Instr(Mnemonic.sleep),
+                Instr(Mnemonic.@break),
+                Instr(Mnemonic.wdr),
+                invalid,
+
+                Instr(Mnemonic.lpm),
+                Instr(Mnemonic.elpm),
+                Instr(Mnemonic.spm),
+                Instr(Mnemonic.spm),
             };
 
-            var oprecs94_9 = new Dictionary<int, OpRec>
+            var decoders95_8 = new Decoder[]
             {
-                { 0, new BOpRec(Opcode.ijmp, "") },
-                { 1, new BOpRec(Opcode.eijmp, "") },
-                { 16, new BOpRec(Opcode.icall, "") },
-                { 17, new BOpRec(Opcode.eicall, "") },
+                Instr(Mnemonic.ret, InstrClass.Transfer),
+                Instr(Mnemonic.reti, InstrClass.Transfer),
+                invalid,
+                invalid,
+
+                invalid,
+                invalid,
+                invalid,
+                invalid,
+
+                Instr(Mnemonic.sleep),
+                Instr(Mnemonic.@break),
+                Instr(Mnemonic.wdr),
+                invalid,
+
+                Instr(Mnemonic.lpm),
+                Instr(Mnemonic.elpm),
+                Instr(Mnemonic.spm),
+                Instr(Mnemonic.spm),
             };
 
-            var oprecs95_9 = new Dictionary<int, OpRec>
+            var decoders94_9 = new (uint, Decoder)[]
             {
-                { 0, new BOpRec(Opcode.icall, "") },
-                { 1, new BOpRec(Opcode.eicall, "") },
+                ( 0, Instr(Mnemonic.ijmp, InstrClass.Transfer) ),
+                ( 1, Instr(Mnemonic.eijmp, InstrClass.Transfer) ),
+                ( 16, Instr(Mnemonic.icall, InstrClass.Transfer|InstrClass.Call) ),
+                ( 17, Instr(Mnemonic.eicall, InstrClass.Transfer|InstrClass.Call) ),
             };
 
-            var oprecs90 = new OpRec[]
+            var decoders95_9 = new (uint, Decoder)[] 
             {
-                new BOpRec(Opcode.lds, "D,w"),
-                new BOpRec(Opcode.ld, "D,+Z"),
-                new BOpRec(Opcode.ld, "D,-Z"),
-                new BOpRec(Opcode.invalid, ""),
-
-                new BOpRec(Opcode.lpm, "D,Z"),
-                new BOpRec(Opcode.lpm, "D,+Z"),
-                new BOpRec(Opcode.elpm, "D,Z"),
-                new BOpRec(Opcode.elpm, "D,+Z"),
-
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.ld, "D,+Y"),
-                new BOpRec(Opcode.ld, "D,-Y"),
-                new BOpRec(Opcode.invalid, ""),
-
-                new BOpRec(Opcode.ld, "D,X"),
-                new BOpRec(Opcode.ld, "D,+X"),
-                new BOpRec(Opcode.ld, "D,-X"),
-                new BOpRec(Opcode.pop, "D"),
+                ( 0, Instr(Mnemonic.icall, InstrClass.Transfer|InstrClass.Call)),
+                ( 1, Instr(Mnemonic.eicall, InstrClass.Transfer|InstrClass.Call)),
             };
 
-            var oprecs92 = new OpRec[]
+            var decoders90 = new Decoder[]
             {
-                new BOpRec(Opcode.sts, "w,D"),
-                new BOpRec(Opcode.st, "+Z,D"),
-                new BOpRec(Opcode.st, "-Z,D"),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.lds, D,w),
+                Instr(Mnemonic.ld, D,IncZ),
+                Instr(Mnemonic.ld, D,DecZ),
+                invalid,
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.lpm, D,Z),
+                Instr(Mnemonic.lpm, D,IncZ),
+                Instr(Mnemonic.elpm, D,Z),
+                Instr(Mnemonic.elpm, D,IncZ),
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.st, "+y,D"),
-                new BOpRec(Opcode.st, "-y,D"),
-                new BOpRec(Opcode.invalid, ""),
+                invalid,
+                Instr(Mnemonic.ld, D,IncY),
+                Instr(Mnemonic.ld, D,DecY),
+                invalid,
 
-                new BOpRec(Opcode.st, "X,D"),
-                new BOpRec(Opcode.st, "+X,D"),
-                new BOpRec(Opcode.st, "-X,D"),
-                new BOpRec(Opcode.push, "D"),
+                Instr(Mnemonic.ld, D,X),
+                Instr(Mnemonic.ld, D,IncX),
+                Instr(Mnemonic.ld, D,DecX),
+                Instr(Mnemonic.pop, D),
             };
 
-            var oprecs94 = new OpRec[]
+            var decoders92 = new Decoder[]
             {
-                new BOpRec(Opcode.com, "D"),
-                new BOpRec(Opcode.neg, "D"),
-                new BOpRec(Opcode.swap, "D"),
-                new BOpRec(Opcode.inc, "D"),
+                Instr(Mnemonic.sts, w,D),
+                Instr(Mnemonic.st, IncZ,D),
+                Instr(Mnemonic.st, DecZ,D),
+                invalid,
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.asr, "D"),
-                new BOpRec(Opcode.lsr, "D"),
-                new BOpRec(Opcode.ror, "D"),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
 
-                new GrpOpRec(4, 5, oprecs94_8),
-                new SparseOpRec(4, 5, oprecs94_9),
-                new BOpRec(Opcode.dec, "D"),
-                new BOpRec(Opcode.des, "i"),
+                invalid,
+                Instr(Mnemonic.st, IncY,D),
+                Instr(Mnemonic.st, DecY,D),
+                invalid,
 
-                new BOpRec(Opcode.jmp, "Q"),
-                new BOpRec(Opcode.jmp, "Q"),
-                new BOpRec(Opcode.call, "Q"),
-                new BOpRec(Opcode.call, "Q"),
+                Instr(Mnemonic.st, X,D),
+                Instr(Mnemonic.st, IncX,D),
+                Instr(Mnemonic.st, DecX,D),
+                Instr(Mnemonic.push, D),
             };
 
-            var oprecs95 = new OpRec[]
+            var decoders94 = new Decoder[]
             {
-                new BOpRec(Opcode.com, "D"),
-                new BOpRec(Opcode.neg, "D"),
-                new BOpRec(Opcode.swap, "D"),
-                new BOpRec(Opcode.inc, "D"),
+                Instr(Mnemonic.com, D),
+                Instr(Mnemonic.neg, D),
+                Instr(Mnemonic.swap, D),
+                Instr(Mnemonic.inc, D),
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.asr, "D"),
-                new BOpRec(Opcode.lsr, "D"),
-                new BOpRec(Opcode.ror, "D"),
+                invalid,
+                Instr(Mnemonic.asr, D),
+                Instr(Mnemonic.lsr, D),
+                Instr(Mnemonic.ror, D),
 
-                new GrpOpRec(4, 5, oprecs95_8),
-                new SparseOpRec(4, 5, oprecs95_9),
-                new BOpRec(Opcode.dec, "D"),
-                new BOpRec(Opcode.invalid, ""),
+                Mask(4, 5, decoders94_8),
+                Sparse(4, 5, invalid, decoders94_9),
+                Instr(Mnemonic.dec, D),
+                Instr(Mnemonic.des, i),
 
-                new BOpRec(Opcode.jmp, "Q"),
-                new BOpRec(Opcode.jmp, "Q"),
-                new BOpRec(Opcode.call, "Q"),
-                new BOpRec(Opcode.call, "Q"),
-
+                Instr(Mnemonic.jmp, InstrClass.Transfer, Q),
+                Instr(Mnemonic.jmp, InstrClass.Transfer, Q),
+                Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Q),
+                Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Q),
             };
 
-            var oprecs9 = new OpRec[]
+            var decoders95 = new Decoder[]
             {
-                new GrpOpRec(0, 4, oprecs90),
-                new GrpOpRec(0, 4, oprecs90),
-                new GrpOpRec(0, 4, oprecs92),
-                new GrpOpRec(0, 4, oprecs92),
+                Instr(Mnemonic.com, D),
+                Instr(Mnemonic.neg, D),
+                Instr(Mnemonic.swap, D),
+                Instr(Mnemonic.inc, D),
 
-                new GrpOpRec(0, 4, oprecs94),
-                new GrpOpRec(0, 4, oprecs94),   //$TODO: may need a oprecs95 for all the invalid "des"
-                new BOpRec(Opcode.adiw, "q,s"),
-                new BOpRec(Opcode.sbiw, "q,s"),
+                invalid,
+                Instr(Mnemonic.asr, D),
+                Instr(Mnemonic.lsr, D),
+                Instr(Mnemonic.ror, D),
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.sbis, "g,h"),
+                Mask(4, 4, decoders95_8),
+                Sparse(4, 5, invalid, decoders95_9),
+                Instr(Mnemonic.dec, D),
+                invalid,
 
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.jmp, InstrClass.Transfer, Q),
+                Instr(Mnemonic.jmp, InstrClass.Transfer, Q),
+                Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Q),
+                Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Q),
             };
 
-            var oprecsB = new OpRec[]
+            var decoders9 = new Decoder[]
             {
-                new BOpRec(Opcode.@in, "D,A"),
-                new BOpRec(Opcode.@out, "A,D"),
+                Mask(0, 4, decoders90),
+                Mask(0, 4, decoders90),
+                Mask(0, 4, decoders92),
+                Mask(0, 4, decoders92),
+
+                Mask(0, 4, decoders94),
+                Mask(0, 4, decoders94),   //$TODO: may need a decoders95 for all the invalid des
+                Instr(Mnemonic.adiw, q,s),
+                Instr(Mnemonic.sbiw, q,s),
+
+                invalid,
+                invalid,
+                invalid,
+                Instr(Mnemonic.sbis, g,h),
+
+                invalid,
+                invalid,
+                invalid,
+                invalid,
             };
 
-            var decoders_sbrc = new OpRec[2]
+            var decodersB = new Decoder[]
             {
-                new BOpRec(Opcode.sbrc, "D,I"),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.@in, D,A),
+                Instr(Mnemonic.@out, A,D),
             };
 
-            var decoders_sbrs = new OpRec[2]
+            var decoders_sbrc = new Decoder[2]
             {
-                new BOpRec(Opcode.sbrs, "D,I"),
-                new BOpRec(Opcode.invalid, ""),
+                Instr(Mnemonic.sbrc, D,I),
+                invalid,
             };
 
-            var oprecsF = new OpRec[]
+            var decoders_sbrs = new Decoder[2]
             {
-                new CondOpRec(),
-                new CondOpRec(),
-                new CondOpRec(),
-                new CondOpRec(),
-
-                new CondOpRec(),
-                new CondOpRec(),
-                new CondOpRec(),
-                new CondOpRec(),
-
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-                new BOpRec(Opcode.invalid, ""),
-
-                new GrpOpRec(3, 1, decoders_sbrc),
-                new GrpOpRec(3, 1, decoders_sbrc),
-                new GrpOpRec(3, 1, decoders_sbrs),
-                new GrpOpRec(3, 1, decoders_sbrs),
+                Instr(Mnemonic.sbrs, D,I),
+                invalid,
             };
 
-            oprecs = new OpRec[]
+            var decodersF = new Decoder[]
             {
-                new GrpOpRec(8, 4, oprecs0),
-                new GrpOpRec(10, 2, oprecs1),
-                new GrpOpRec(10, 2, oprecs2),
-                new BOpRec(Opcode.cpi, "d,B"),
+                new CondDecoder(),
+                new CondDecoder(),
+                new CondDecoder(),
+                new CondDecoder(),
 
-                new BOpRec(Opcode.sbci, "d,B"),
-                new BOpRec(Opcode.subi, "d,B"),
-                new BOpRec(Opcode.ori, "d,B"),
-                new BOpRec(Opcode.andi, "d,B"),
+                new CondDecoder(),
+                new CondDecoder(),
+                new CondDecoder(),
+                new CondDecoder(),
 
-                new GrpOpRec(9, 3, oprecs8),
-                new GrpOpRec(8, 4, oprecs9),
-                new BOpRec(Opcode.invalid, ""),
-                new GrpOpRec(0xB, 1, oprecsB),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
 
-                new BOpRec(Opcode.rjmp, "J"),
-                new BOpRec(Opcode.rcall, "J"),
-                new BOpRec(Opcode.ldi, "d,K"),
-                new GrpOpRec(8, 4, oprecsF),
+                Mask(3, 1, decoders_sbrc),
+                Mask(3, 1, decoders_sbrc),
+                Mask(3, 1, decoders_sbrs),
+                Mask(3, 1, decoders_sbrs),
+            };
+
+            decoders = new Decoder[]
+            {
+                Mask(8, 4, decoders0),
+                Mask(10, 2, decoders1),
+                Mask(10, 2, decoders2),
+                Instr(Mnemonic.cpi, d,B),
+
+                Instr(Mnemonic.sbci, d,B),
+                Instr(Mnemonic.subi, d,B),
+                Instr(Mnemonic.ori, d,B),
+                Instr(Mnemonic.andi, d,B),
+
+                Mask(9, 3, decoders8),
+                Mask(8, 4, decoders9),
+                invalid,
+                Mask(0xB, 1, decodersB),
+
+                Instr(Mnemonic.rjmp, InstrClass.Transfer, J),
+                Instr(Mnemonic.rcall, InstrClass.Transfer|InstrClass.Call, J),
+                Instr(Mnemonic.ldi, d,K),
+                Mask(8, 4, decodersF),
             };
         }
 
-        public abstract class OpRec
+        public class InstrDecoder : Decoder
         {
-            public abstract AvrInstruction Decode(Avr8Disassembler dasm, ushort wInstr);
-        }
+            private readonly Mnemonic opcode;
+            private readonly InstrClass iclass;
+            private readonly Mutator<Avr8Disassembler>[] mutators;
 
-        public class BOpRec : OpRec
-        {
-            private Opcode opcode;
-            private string fmt;
-
-            public BOpRec(Opcode opcode, string fmt)
+            public InstrDecoder(Mnemonic opcode, InstrClass iclass, params Mutator<Avr8Disassembler>[] mutators)
             {
                 this.opcode = opcode;
-                this.fmt = fmt;
+                this.iclass = iclass;
+                this.mutators = mutators;
             }
 
-            public override AvrInstruction Decode(Avr8Disassembler dasm, ushort wInstr)
+            public override AvrInstruction Decode(uint wInstr, Avr8Disassembler dasm)
             {
-                return dasm.Decode(wInstr, opcode, fmt);
-            }
-        }
-
-        public class GrpOpRec : OpRec
-        {
-            private int shift;
-            private int mask;
-            private OpRec[] oprecs;
-
-            public GrpOpRec(int shift, int length, OpRec[] oprecs)
-            {
-                this.shift = shift;
-                this.mask = (1 << length) - 1;
-                this.oprecs = oprecs;
-            }
-
-            public override AvrInstruction Decode(Avr8Disassembler dasm, ushort wInstr)
-            {
-                int slot = (wInstr >> shift) & mask;
-                return oprecs[slot].Decode(dasm, wInstr);
-            }
-        }
-
-        public class SparseOpRec : OpRec
-        {
-            private int shift;
-            private int mask;
-            private Dictionary<int, OpRec> oprecs;
-
-            public SparseOpRec(int shift, int length, Dictionary<int, OpRec> oprecs)
-            {
-                this.shift = shift;
-                this.mask = (1 << length) - 1;
-                this.oprecs = oprecs;
-            }
-
-            public override AvrInstruction Decode(Avr8Disassembler dasm, ushort wInstr)
-            {
-                int slot = (wInstr >> shift) & mask;
-                OpRec oprec;
-                if (!oprecs.TryGetValue(slot, out oprec))
+                foreach (var m in mutators)
                 {
-                    return dasm.Decode(wInstr, Opcode.invalid, "");
+                    if (!m(wInstr, dasm))
+                        return invalid.Decode(wInstr, dasm);
                 }
-                return oprec.Decode(dasm, wInstr);
+                return new AvrInstruction
+                {
+                    opcode = opcode,
+                    InstructionClass = iclass,
+                    operands = dasm.ops.ToArray(),
+                };
             }
         }
 
-        public class CondOpRec : OpRec
-        {
-            static Opcode[] branches = new Opcode[]
-            {
-                Opcode.brcs, Opcode.breq, Opcode.brmi, Opcode.brvs,
-                Opcode.brlt, Opcode.brhs, Opcode.brts, Opcode.brie,
 
-                Opcode.brcc, Opcode.brne, Opcode.brpl, Opcode.brvc,
-                Opcode.brge, Opcode.brhc, Opcode.brtc, Opcode.brid
+
+        public class CondDecoder : Decoder
+        {
+            static readonly Mnemonic[] branches = new Mnemonic[]
+            {
+                Mnemonic.brcs, Mnemonic.breq, Mnemonic.brmi, Mnemonic.brvs,
+                Mnemonic.brlt, Mnemonic.brhs, Mnemonic.brts, Mnemonic.brie,
+
+                Mnemonic.brcc, Mnemonic.brne, Mnemonic.brpl, Mnemonic.brvc,
+                Mnemonic.brge, Mnemonic.brhc, Mnemonic.brtc, Mnemonic.brid
             };
 
-            public override AvrInstruction Decode(Avr8Disassembler dasm, ushort wInstr)
+            public override AvrInstruction Decode(uint uInstr, Avr8Disassembler dasm)
             {
+                ushort wInstr = (ushort) uInstr;
                 int br = (((wInstr >> 7) & 8) | (wInstr & 7)) & 0xF;
-                return dasm.Decode(wInstr, branches[br], "o");
+                o(wInstr, dasm);
+                return new AvrInstruction
+                {
+                    InstructionClass = InstrClass.ConditionalTransfer,
+                    opcode = branches[br],
+                    operands = dasm.ops.ToArray()
+                };
             }
         }
     }

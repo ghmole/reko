@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,37 +31,52 @@ namespace Reko.Arch.RiscV
     {
         private void RewriteFcmp(PrimitiveType dt, Func<Expression, Expression,Expression> fn)
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             m.Assign(dst, m.Cast(dst.DataType, fn(m.Cast(dt, left), m.Cast(dt, right))));
         }
 
         private void RewriteFcvt(PrimitiveType dt)
         {
-            var dst = RewriteOp(instr.op1);
-            var src = RewriteOp(instr.op2);
+            var dst = RewriteOp(instr.Operands[0]);
+            var src = RewriteOp(instr.Operands[1]);
             m.Assign(dst, m.Cast(dt, src));
         }
 
         private void RewriteFload(PrimitiveType dt)
         {
-            var dst = RewriteOp(instr.op1);
-            var ea = RewriteOp(instr.op2);
-            var offset = RewriteOp(instr.op3);
-            if (!offset.IsZero)
+            var dst = RewriteOp(instr.Operands[0]);
+            Expression ea;
+            if (instr.Operands[1] is MemoryOperand mem)
             {
-                ea = m.IAdd(ea, offset);
+                ea = binder.EnsureRegister(mem.Base);
+                if (mem.Offset != 0)
+                {
+                    ea = m.IAddS(ea, mem.Offset);
+                }
+            }
+            else
+            {
+                //$TODO: once 32-bit loads/stores are fixed, remove
+                // all "is MemoryOperand" occurrences and add a
+                // MemoryOperand case to RewriteOp.
+                ea = RewriteOp(instr.Operands[1]);
+                var offset = RewriteOp(instr.Operands[2]);
+                if (!offset.IsZero)
+                {
+                    ea = m.IAdd(ea, offset);
+                }
             }
             m.Assign(dst, m.Mem(dt, ea));
         }
 
         private void RewriteFmadd(PrimitiveType dt, Func<Expression,Expression,Expression> addsub)
         {
-            var dst = RewriteOp(instr.op1);
-            var factor1 = RewriteOp(instr.op2);
-            var factor2 = RewriteOp(instr.op3);
-            var summand = RewriteOp(instr.op4);
+            var dst = RewriteOp(instr.Operands[0]);
+            var factor1 = RewriteOp(instr.Operands[1]);
+            var factor2 = RewriteOp(instr.Operands[2]);
+            var summand = RewriteOp(instr.Operands[3]);
             m.Assign(dst, addsub(m.FMul(factor1, factor2), summand));
         }
     }

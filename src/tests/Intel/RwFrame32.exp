@@ -1,19 +1,21 @@
 // fn10000000
 // Return size: 4
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // esp:esp
 // eax:eax
-// SCZO:Flags
+// SCZO:SCZO
 // ax:ax
+// Top:Top
 // return address size: 4
-void fn10000000()
+define fn10000000
 fn10000000_entry:
+	esp = fp
+	Top = 0
 	// succ:  l10000000
 l10000000:
-	esp = fp
 	eax = Mem0[0x10003420:word32]
-	esp = esp - 0x00000004
+	esp = esp - 4
 	Mem0[esp:word32] = eax
 	call fn10000017 (retsize: 4;)
 	esp = esp + 0x00000004
@@ -25,30 +27,32 @@ fn10000000_exit:
 
 // fn10000017
 // Return size: 4
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // esp:esp
 // ebp:ebp
 // ecx:ecx
-// SCZO:Flags
-// Z:Flags
+// SCZO:SCZO
+// Z:Z
 // ax:ax
-// SZO:Flags
-// C:Flags
+// SZO:SZO
+// C:C
 // eax:eax
 // edx:edx
-// SO:Flags
+// SO:SO
 // cx:cx
+// Top:Top
 // return address size: 4
-void fn10000017()
+define fn10000017
 fn10000017_entry:
+	esp = fp
+	Top = 0
 	// succ:  l10000017
 l10000017:
-	esp = fp
-	esp = esp - 0x00000004
+	esp = esp - 4
 	Mem0[esp:word32] = ebp
 	ebp = esp
-	esp = esp - 0x00000004
+	esp = esp - 4
 	Mem0[esp:word32] = ecx
 	Mem0[ebp - 0x00000004:word16] = 0x0000
 	SCZO = cond(Mem0[ebp + 0x00000008:word32] - 0x00000000)
@@ -86,7 +90,7 @@ l1000005A:
 l1000005E:
 	esp = ebp
 	ebp = Mem0[esp:word32]
-	esp = esp + 0x00000004
+	esp = esp + 4
 	return
 	// succ:  fn10000017_exit
 fn10000017_exit:

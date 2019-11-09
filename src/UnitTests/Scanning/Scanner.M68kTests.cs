@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,42 +18,37 @@
  */
 #endregion
 
-using Reko;
+using Moq;
+using NUnit.Framework;
 using Reko.Arch.M68k;
 using Reko.Assemblers.M68k;
 using Reko.Core;
 using Reko.Core.Services;
 using Reko.Scanning;
-using NUnit.Framework;
-using Rhino.Mocks;
+using Reko.UnitTests.Mocks;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
 using System.ComponentModel.Design;
-using Reko.UnitTests.Mocks;
+using System.IO;
 
 namespace Reko.UnitTests.Scanning
 {
     [TestFixture]
     public class Scanner_M68kTests
     {
-        private MockRepository mr;
         private M68kArchitecture arch;
         private Program program;
         private Scanner scanner;
         private ServiceContainer sc;
-        private DecompilerEventListener listener;
+        private Mock<DecompilerEventListener> listener;
 
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
             sc = new ServiceContainer();
-            listener = mr.Stub<DecompilerEventListener>();
-            sc.AddService<DecompilerEventListener>(listener);
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            listener = new Mock<DecompilerEventListener>();
+            sc.AddService<DecompilerEventListener>(listener.Object);
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
         }
 
         private void BuildTest32(Action<M68kAssembler> asmProg)
@@ -94,7 +89,7 @@ namespace Reko.UnitTests.Scanning
                 program,
                 new ImportResolver(project, program, new FakeDecompilerEventListener()),
                 sc);
-            scanner.EnqueueImageSymbol(new ImageSymbol(addrBase), true);
+            scanner.EnqueueImageSymbol(ImageSymbol.Procedure(arch, addrBase), true);
             scanner.ScanImage();
         }
 
@@ -114,23 +109,23 @@ namespace Reko.UnitTests.Scanning
             string sExp =
 @"// fn00100000
 // Return size: 4
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // a7:a7
 // d0:d0
 // v4:v4
-// CVZN:Flags
-// Z:Flags
-// C:Flags
-// N:Flags
-// V:Flags
+// CVZN:CVZN
+// Z:Z
+// C:C
+// N:N
+// V:V
 // v10:v10
 // return address size: 4
-void fn00100000()
+define fn00100000
 fn00100000_entry:
+	a7 = fp
 	// succ:  l00100000
 l00100000:
-	a7 = fp
 	a7 = a7 - 4
 	v4 = d0
 	Mem0[a7:word32] = v4
@@ -156,35 +151,35 @@ fn00100000_exit:
         {
             BuildTest32(
                 Address.Ptr32(0x01020),
-                0x41, 0xF9 , 0x00 , 0x00 , 0x3E , 0x94
-                , 0x20 , 0x3C , 0x00 , 0x00 , 0x00 , 0x30
-                , 0x56 , 0x80 
-                , 0xE4 , 0x88
-                , 0x42 , 0x98
-                , 0x53 , 0x80
-                , 0x66 , 0xFA
-                , 0x4E , 0x75);
+                  0x41, 0xF9 , 0x00 , 0x00 , 0x3E , 0x94
+                , 0x20, 0x3C , 0x00 , 0x00 , 0x00 , 0x30
+                , 0x56, 0x80 
+                , 0xE4, 0x88
+                , 0x42, 0x98
+                , 0x53, 0x80
+                , 0x66, 0xFA
+                , 0x4E, 0x75);
             var sw = new StringWriter();
             program.Procedures.Values[0].Write(true, sw);
             string sExp = @"// fn00001020
 // Return size: 4
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // a7:a7
 // a0:a0
 // d0:d0
-// CVZN:Flags
-// CVZNX:Flags
-// Z:Flags
-// C:Flags
-// N:Flags
-// V:Flags
+// CVZN:CVZN
+// CVZNX:CVZNX
+// Z:Z
+// C:C
+// N:N
+// V:V
 // return address size: 4
-void fn00001020()
+define fn00001020
 fn00001020_entry:
+	a7 = fp
 	// succ:  l00001020
 l00001020:
-	a7 = fp
 	a0 = 0x00003E94
 	d0 = 0x00000030
 	CVZN = cond(d0)

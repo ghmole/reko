@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,44 +29,41 @@ using System.Collections.Generic;
 namespace Reko.Analysis
 {
 	/// <summary>
-	/// Looks at member pointer uses, to see if they always are associated with the same base pointer / segment.
-    /// If so, they can be treated as a pointer.
+	/// Looks at member pointer uses, to see if they always are associated
+    /// with the same base pointer / segment selector. If so, they can be 
+    /// treated as a pointer.
 	/// </summary>
 	public class SegmentedAccessClassifier : InstructionVisitorBase	
 	{
-		private Procedure proc;
-		private SsaIdentifierCollection ssaIds;
-		private Dictionary<Identifier,Identifier> assocs;
-		private Dictionary<Identifier,Constant> consts;
-		private Identifier overAssociatedId = new Identifier("overAssociated", VoidType.Instance, null);
-        private Constant overAssociatedConst = Constant.Real64(0.0);
+		private readonly SsaState ssa;
+		private readonly Dictionary<Identifier,Identifier> assocs;
+		private readonly Dictionary<Identifier,Constant> consts;
+		private readonly Identifier overAssociatedId = new Identifier("overAssociated", VoidType.Instance, null);
+        private readonly Constant overAssociatedConst = Constant.Real64(0.0);
 
-		private int sequencePoint;
-
-		public SegmentedAccessClassifier(Procedure proc, SsaIdentifierCollection ssaIds)
+		public SegmentedAccessClassifier(SsaState  ssa)
 		{
-			this.proc = proc;
-			this.ssaIds = ssaIds;
+			this.ssa = ssa;
 			assocs = new Dictionary<Identifier,Identifier>();
-            consts = new Dictionary<Identifier, Constant>();
+            consts = new Dictionary<Identifier,Constant>();
 		}
 
 		/// <summary>
-		/// Associates a base pointer identifier with an offset identifier (think "es" and "bx").
+		/// Associates a base pointer identifier <paramref name="basePtr"/> with an 
+        /// offset identifier (think "es" and "bx").
 		/// </summary>
-		/// <param name="basePtr"></param>
-		/// <param name="membPtr"></param>
 		public void Associate(Identifier basePtr, Identifier membPtr)
 		{
 			if (consts.ContainsKey(basePtr))
 			{
+                // If basePtr is already associated with a constant,
+                // it is over-associated.
 				assocs[basePtr] = overAssociatedId;
                 consts[basePtr] = overAssociatedConst;
 				return;
 			}
 			
-			Identifier a;
-            if (!assocs.TryGetValue(basePtr, out a))
+            if (!assocs.TryGetValue(basePtr, out Identifier a))
                 assocs[basePtr] = membPtr;
             else if (a != membPtr)
                 assocs[basePtr] = overAssociatedId;
@@ -74,6 +71,10 @@ namespace Reko.Analysis
                 assocs[basePtr] = membPtr;
 		}
 
+        /// <summary>
+        /// Associates the segment selector <paramref name="basePtr"/> with a constant
+        /// offset <paramref name="memberPtr"/>.
+        /// </summary>
 		public void Associate(Identifier basePtr, Constant memberPtr)
 		{
 			if (assocs.ContainsKey(basePtr))
@@ -87,8 +88,7 @@ namespace Reko.Analysis
 
 		public Identifier AssociatedIdentifier(Identifier pointer)
 		{
-            Identifier id;
-            if (assocs.TryGetValue(pointer, out id))
+            if (assocs.TryGetValue(pointer, out Identifier id))
             {
                 return (id != overAssociatedId) ? id : null;
             }
@@ -98,23 +98,18 @@ namespace Reko.Analysis
             }
 		}
 
-		public void Classify()
-		{
-			sequencePoint = 0;
-			foreach (Block b in proc.ControlGraph.Blocks)
-			{
-				foreach (Statement stm in b.Statements)
-				{
-					stm.Instruction.Accept(this);
-				}
-				++sequencePoint;
-			}
-		}
+        public void Classify()
+        {
+            foreach (Statement stm in ssa.Procedure.Statements)
+            {
+                stm.Instruction.Accept(this);
+            }
+        }
 
 		public bool IsOnlyAssociatedWithConstants(Identifier pointer)
 		{
-            Constant c;
-            return (consts.TryGetValue(pointer, out c) &&  c != overAssociatedConst);
+            return (consts.TryGetValue(pointer, out Constant c) && 
+                    c != overAssociatedConst);
 		}
 
 
@@ -122,26 +117,24 @@ namespace Reko.Analysis
 
 		public override void VisitSegmentedAccess(SegmentedAccess access)
 		{
-			Identifier pointer = access.BasePointer as Identifier;
-			if (pointer == null)
-				return;
-			BinaryExpression bin = access.EffectiveAddress as BinaryExpression;
-			if (bin != null)
-			{
-				Identifier mp = bin.Left as Identifier;
-				if (bin.Operator == BinaryOperator.IAdd && mp != null)
-				{
-					Associate(pointer, mp);
-				}
-				return;
-			}
-			Constant c = access.EffectiveAddress as Constant;
-			if (c != null)
-			{
-				Associate(pointer, c);
-				return;
-			}
-		}
+            if (!(access.BasePointer is Identifier pointer))
+                return;
+            switch (access.EffectiveAddress)
+            {
+            case Identifier id:
+                Associate(pointer, id);
+                return;
+            case BinaryExpression bin:
+                if (bin.Operator == BinaryOperator.IAdd && bin.Left is Identifier mp)
+                {
+                    Associate(pointer, mp);
+                }
+                return;
+            case Constant c:
+                Associate(pointer, c);
+                return;
+            }
+        }
 
 		#endregion
 	}

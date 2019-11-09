@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Assemblers.x86;
@@ -27,9 +28,9 @@ using Reko.Core.Services;
 using Reko.Environments.Windows;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.IO;
 using System.Threading;
 
@@ -38,39 +39,35 @@ namespace Reko.UnitTests.Arch.Intel
 	[TestFixture]
 	public class Rewrite32
 	{
-        private MockRepository mr;
         private Win32Platform win32;
         private IntelArchitecture arch;
-        private IServiceProvider services;
+        private ServiceContainer services;
         private FakeDecompilerEventListener eventListener;
 
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
             eventListener = new FakeDecompilerEventListener();
-            this.services = mr.Stub<IServiceProvider>();
+            this.services = new ServiceContainer();
             var tlSvc = new TypeLibraryLoaderServiceImpl(services);
-            var configSvc = mr.StrictMock<IConfigurationService>();
-            var win32env = new OperatingEnvironmentElement
+            var configSvc = new Mock<IConfigurationService>();
+            var win32env = new PlatformDefinition
             {
                 TypeLibraries = 
                 {
-                    new TypeLibraryElement {  Name= "msvcrt.xml" },
-                    new TypeLibraryElement {  Name= "windows32.xml" },
+                    new TypeLibraryDefinition {  Name= "msvcrt.xml" },
+                    new TypeLibraryDefinition {  Name= "windows32.xml" },
                 }
             };
-            configSvc.Stub(c => c.GetEnvironment("win32")).Return(win32env);
-            configSvc.Stub(c => c.GetInstallationRelativePath(null)).IgnoreArguments()
-                .Do(new Func<string[], string>(s => RekoConfigurationService.MakeInstallationRelativePath(s)));
-            services.Stub(s => s.GetService(typeof(ITypeLibraryLoaderService))).Return(tlSvc);
-            services.Stub(s => s.GetService(typeof(IConfigurationService))).Return(configSvc);
-            services.Stub(s => s.GetService(typeof(DecompilerEventListener))).Return(eventListener);
-            services.Stub(s => s.GetService(typeof(CancellationTokenSource))).Return(null);
-            services.Stub(s => s.GetService(typeof(IFileSystemService))).Return(new FileSystemServiceImpl());
-            services.Stub(s => s.GetService(typeof(IDiagnosticsService))).Return(new FakeDiagnosticsService());
-            services.Replay();
-            configSvc.Replay();
+            configSvc.Setup(c => c.GetEnvironment("win32")).Returns(win32env);
+            configSvc.Setup(c => c.GetInstallationRelativePath(It.IsAny<string>()))
+                .Returns((string[] s) => RekoConfigurationService.MakeInstallationRelativePath(s));
+            services.AddService(typeof(ITypeLibraryLoaderService), tlSvc);
+            services.AddService(typeof(IConfigurationService), configSvc.Object);
+            services.AddService(typeof(DecompilerEventListener), eventListener);
+            services.AddService(typeof(CancellationTokenSource), new CancellationTokenSource());
+            services.AddService(typeof(IFileSystemService),new FileSystemServiceImpl());
+            services.AddService(typeof(IDiagnosticsService),new FakeDiagnosticsService());
             arch = new X86ArchitectureFlat32("x86-protected-32");
             win32 = new Reko.Environments.Windows.Win32Platform(services, arch);
         }
@@ -82,49 +79,55 @@ namespace Reko.UnitTests.Arch.Intel
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RwMallocFree()
 		{
 			RunTest("Fragments/import32/mallocfree.asm", "Intel/RwMallocFree.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RwFrame32()
 		{
 			RunTest("Fragments/multiple/frame32.asm", "Intel/RwFrame32.txt");
 		}
 
 		[Test]
-		public void RwFtol()
+        [Category(Categories.IntegrationTests)]
+        public void RwFtol()
 		{
 			RunTest("Fragments/import32/ftol.asm", "Intel/RwFtol.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RwGlobalHandle()
 		{
 			RunTest("Fragments/import32/GlobalHandle.asm", "Intel/RwGlobalHandle.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RwLoopMalloc()
 		{
 			RunTest("Fragments/import32/loopmalloc.asm", "Intel/RwLoopMalloc.txt");
 		}
 
 		[Test]
+        [Category(Categories.IntegrationTests)]
 		public void RwLoopGetDC()
 		{
 			RunTest("Fragments/import32/loop_GetDC.asm", "Intel/RwLoopGetDC.txt");
 		}
 
 		[Test]
-		public void RwReg00004()
+        [Category(Categories.IntegrationTests)]
+        public void RwReg00004()
 		{
 			RunTest("Fragments/regressions/r00004.asm", "Intel/RwReg00004.txt");
 		}
 
 		[Test]
-        [Ignore("A spurious goto statement is being emitted. Analysis-branch should clean this up")]
 		public void RwReg00006()
 		{
 			RunTest("Fragments/regressions/r00006.asm", "Intel/RwReg00006.txt");

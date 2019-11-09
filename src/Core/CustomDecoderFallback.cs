@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,13 +25,7 @@ namespace Reko.Core
 {
     internal class CustomDecoderFallback : DecoderFallback
     {
-        public override int MaxCharCount
-        {
-            get
-            {
-                return 4;
-            }
-        }
+        public override int MaxCharCount => 4;
 
         public override DecoderFallbackBuffer CreateFallbackBuffer()
         {

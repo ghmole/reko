@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -93,15 +93,15 @@ namespace Reko.UnitTests.Arch.PowerPC
         public void PPCDis_IllegalOpcode()
         {
             PowerPcInstruction instr = DisassembleBytes(new byte[] { 00, 00, 00, 00 });
-            Assert.AreEqual(Opcode.illegal, instr.Opcode);
+            Assert.AreEqual(Mnemonic.illegal, instr.Mnemonic);
         }
 
         [Test]
         public void PPCDis_Ori()
         {
             PowerPcInstruction instr = DisassembleBytes(new byte[] { 0x60, 0x1F, 0x44, 0x44 });
-            Assert.AreEqual(Opcode.ori, instr.Opcode);
-            Assert.AreEqual(3, instr.Operands);
+            Assert.AreEqual(Mnemonic.ori, instr.Mnemonic);
+            Assert.AreEqual(3, instr.Operands.Length);
             Assert.AreEqual("ori\tr31,r0,4444", instr.ToString());
         }
 
@@ -836,6 +836,7 @@ namespace Reko.UnitTests.Arch.PowerPC
         [Test]
         public void PPCDis_regression7()
         {
+            Given_PowerPcBe64();
             AssertCode(0x7CA464AA, "lswi\tr5,r4,0C");
             AssertCode(0x7CA965AA, "stswi\tr5,r9,0C");
             AssertCode(0x7C0018AC, "dcbf\tr0,r3");
@@ -1009,7 +1010,7 @@ namespace Reko.UnitTests.Arch.PowerPC
             AssertCode(0x19C49F15, "vrlimi128\tv46,v51,04,02"); // 06 - 071(113)
             AssertCode(0x1923CF31, "vspltw128\tv9,v57,03");     // 06 - 073(115)
             AssertCode(0x18019F51, "vrlimi128\tv0,v51,01,02");  // 06 - 075(117)
-            AssertCode(0x1B600774, "vspltisw128\tv59,v0,+00000020");  // 06 - 077(119)
+            AssertCode(0x1B600774, "vspltisw128\tv59,v0,+00000000");  // 06 - 077(119)
             AssertCode(0x19ACFF91, "vrlimi128\tv13,v63,0C,03"); // 06 - 079(121)
             AssertCode(0x18099FD1, "vrlimi128\tv0,v51,09,02");  // 06 - 07D(125)
             AssertCode(0x1B24DFF5, "vupkd3d128\tv57,v59,04");   // 06 - 07F(127)

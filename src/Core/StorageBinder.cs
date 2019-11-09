@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Core.Expressions;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Reko.Core
 {
@@ -31,12 +32,9 @@ namespace Reko.Core
     /// </summary>
     public class StorageBinder : IStorageBinder, StorageVisitor<Identifier>
     {
-        //$TODO: In analysis-development, storages have GetHashCode() and 
-        // Equals() implementations.
-
         private Dictionary<RegisterStorage, Identifier> regs;
         private Dictionary<RegisterStorage, Dictionary<uint, Identifier>> grfs;
-        private Dictionary<Storage, Dictionary<Storage, Identifier>> seqs;
+        private Dictionary<Storage[], Identifier> seqs;
         private Dictionary<int, Identifier> fpus;
         private List<Identifier> ids;
 
@@ -44,7 +42,7 @@ namespace Reko.Core
         {
             this.regs = new Dictionary<RegisterStorage, Identifier>();
             this.grfs = new Dictionary<RegisterStorage, Dictionary<uint, Identifier>>();
-            this.seqs = new Dictionary<Storage, Dictionary<Storage, Identifier>>();
+            this.seqs = new Dictionary<Storage[], Identifier>(new Storage.ArrayComparer());
             this.fpus = new Dictionary<int, Identifier>();
             this.ids = new List<Identifier>();
         }
@@ -73,14 +71,12 @@ namespace Reko.Core
 
         public Identifier EnsureFlagGroup(RegisterStorage flagRegister, uint flagGroupBits, string name, DataType dataType)
         {
-            Identifier id;
-            Dictionary<uint, Identifier> grfs;
-            if (!this.grfs.TryGetValue(flagRegister, out grfs))
+            if (!this.grfs.TryGetValue(flagRegister, out var grfs))
             {
                 grfs = new Dictionary<uint, Identifier>();
                 this.grfs.Add(flagRegister, grfs);
             }
-            if (grfs.TryGetValue(flagGroupBits, out id))
+            if (grfs.TryGetValue(flagGroupBits, out var id))
                 return id;
             var grf = new FlagGroupStorage(flagRegister, flagGroupBits, name, dataType);
             id = new Identifier(name, dataType, grf);
@@ -105,7 +101,7 @@ namespace Reko.Core
             switch (stg)
             {
             case RegisterStorage reg: return EnsureRegister(reg);
-            case SequenceStorage seq: return EnsureSequence(seq.Name, seq.Head, seq.Tail, seq.DataType);
+            case SequenceStorage seq: return EnsureSequence(seq.DataType, seq.Name, seq.Elements);
             default: throw new NotImplementedException();
             }
         }
@@ -119,8 +115,7 @@ namespace Reko.Core
         {
             if (reg == null)
                 return null;
-            Identifier id;
-            if (regs.TryGetValue(reg, out id))
+            if (regs.TryGetValue(reg, out var id))
                 return id;
             id = new Identifier(reg.Name, reg.DataType, reg);
             regs.Add(reg, id);
@@ -128,37 +123,32 @@ namespace Reko.Core
             return id;
         }
 
-        public Identifier EnsureSequence(Storage head, Storage tail, DataType dataType)
+        public Identifier EnsureSequence(DataType dataType, params Storage [] elements)
         {
-            Identifier id;
-            Dictionary<Storage, Identifier> seqs;
-            if (!this.seqs.TryGetValue(head, out seqs))
+            var stg = new SequenceStorage(elements);
+            if (this.seqs.TryGetValue(elements, out var idSeq))
             {
-                seqs = new Dictionary<Storage, Identifier>();
-                this.seqs.Add(head, seqs);
+                return idSeq;
             }
-            if (seqs.TryGetValue(tail, out id))
-                return id;
-            var seq = new SequenceStorage(head, tail, dataType);
-            id = new Identifier(string.Format("{0}_{1}", head.Name, tail.Name), dataType, seq);
-            seqs.Add(tail, id);
+            var name = string.Join("_", elements.Select(e => e.Name));
+            var seq = new SequenceStorage(dataType, elements);
+            var id = new Identifier(name, dataType, seq);
+            seqs.Add(seq.Elements, id);
             ids.Add(id);
             return id;
         }
 
 
-        public Identifier EnsureSequence(string name, Storage head, Storage tail, DataType dataType)
+        public Identifier EnsureSequence(DataType dataType, string name, params Storage [] elements)
         {
-            if (!this.seqs.TryGetValue(head, out var seqs))
+            var stg = new SequenceStorage(elements);
+            if (this.seqs.TryGetValue(elements, out var idSeq))
             {
-                seqs = new Dictionary<Storage, Identifier>();
-                this.seqs.Add(head, seqs);
+                return idSeq;
             }
-            if (seqs.TryGetValue(tail, out var id))
-                return id;
-            var seq = new SequenceStorage(name, head, tail, dataType);
-            id = new Identifier(name, dataType, seq);
-            seqs.Add(tail, id);
+            var seq = new SequenceStorage(dataType, elements);
+            var id = new Identifier(name, dataType, seq);
+            seqs.Add(seq.Elements, id);
             ids.Add(id);
             return id;
         }
@@ -200,7 +190,7 @@ namespace Reko.Core
 
         Identifier StorageVisitor<Identifier>.VisitSequenceStorage(SequenceStorage seq)
         {
-            return EnsureSequence(seq.Head, seq.Tail, PrimitiveType.CreateWord((int)seq.BitSize));
+            return EnsureSequence(PrimitiveType.CreateWord((int)seq.BitSize), seq.Elements);
         }
 
         Identifier StorageVisitor<Identifier>.VisitStackArgumentStorage(StackArgumentStorage stack)

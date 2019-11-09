@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -123,13 +123,6 @@ namespace Reko.Core.Output
                restrict                              -- C99
                __restrict__                          -- GNU C
                volatile    */
-        [Flags]
-        enum type_qual
-        {
-            CONST = 1,
-            VOLATILE = 2,
-            RESTRICT = 4
-        }
 
         //$REVIEW: we don't do cv-qualifiers... yet?
         void TypeQualifierList(DataType t)
@@ -154,11 +147,11 @@ namespace Reko.Core.Output
 
         void Pointer(Pointer t)
         {
-            var ptPointee = t.Pointee as Pointer;
-            if (ptPointee != null)
+            if (t.Pointee is Pointer ptPointee)
                 Pointer(ptPointee);
             WriteSpace();
             fmt.Write('*');
+            TypeFormatter.WriteQualifier(t.Qualifier, fmt);
             TypeQualifierList(t);
         }
 
@@ -175,6 +168,13 @@ namespace Reko.Core.Output
             fmt.Write(baseType.Name);
             fmt.Write("::*");
             TypeQualifierList(m);
+        }
+
+        void ReferenceTo(ReferenceTo r)
+        {
+            WriteSpace();
+            fmt.Write('&');
+            TypeQualifierList(r);
         }
 
         /* type-specifier:
@@ -201,6 +201,7 @@ namespace Reko.Core.Output
 
         void TypeSpecifier(DataType t)
         {
+            TypeFormatter.WriteQualifier(t.Qualifier, fmt);
             if (t is UnknownType)
             {
                 fmt.Write("<type-error>");
@@ -297,13 +298,16 @@ namespace Reko.Core.Output
                 TypeQualifierList(t);
             var pt = t as Pointer;
             var mp = t as MemberPointer;
-            if (pt != null || mp != null)
+            var rf = t as ReferenceTo;
+            if (pt != null || mp != null || rf != null)
             {
                 // Get the types-specifier of this type.  
                 DataType pointee = StripPointerOperator(
                     pt != null 
                         ? pt.Pointee
-                        : mp.Pointee);
+                        : mp != null 
+                            ? mp.Pointee
+                            : rf.Referent);
                 SpecifierQualifierList(pointee);
                 if (pointee is ArrayType || pointee is FunctionType)
                 {
@@ -312,8 +316,10 @@ namespace Reko.Core.Output
                 }
                 if (pt != null)
                     Pointer(pt);
-                else
+                else if (mp != null)
                     MemberPointer(mp);
+                else if (rf != null)
+                    ReferenceTo(rf); 
                 --this.depth;
                 return;
             }

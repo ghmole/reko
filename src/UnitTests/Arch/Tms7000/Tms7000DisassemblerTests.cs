@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -95,7 +95,6 @@ namespace Reko.UnitTests.Arch.Tms7000
             var instr = DisassembleBytes(0x8A, 0x12, 0x34);
             Assert.AreEqual("lda\t@1234", instr.ToString());
         }
-
 
         [Test]
         public void Tms7000_dis_lda_direct_indexed()

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,6 @@ namespace Reko.Core
 	/// </summary>
 	public class CallGraph
 	{
-		private List<Procedure> entryPoints = new List<Procedure>();	
 		private DirectedGraphImpl<Procedure> graphProcs = new DirectedGraphImpl<Procedure>();
 		private DirectedGraphImpl<object> graphStms = new DirectedGraphImpl<object>();
 
@@ -47,12 +46,14 @@ namespace Reko.Core
 			graphStms.AddEdge(stmCaller, callee);
 		}
 
-		public void AddEntryPoint(Procedure proc)
+        public List<Procedure> EntryPoints { get; } = new List<Procedure>();
+
+        public void AddEntryPoint(Procedure proc)
 		{
 			AddProcedure(proc);
-			if (!entryPoints.Contains(proc))
+			if (!EntryPoints.Contains(proc))
 			{
-				entryPoints.Add(proc);
+				EntryPoints.Add(proc);
 			}
 		}
 
@@ -62,16 +63,25 @@ namespace Reko.Core
 			graphStms.AddNode(proc);
 		}
 
-		public void AddStatement(Statement stm)
-		{
-			graphStms.AddNode(stm);
-		}
+        public void RemoveCaller(Statement stm)
+        {
+            if (!graphStms.Nodes.Contains(stm))
+                return;
+            var callees = this.Callees(stm).ToArray();
+            foreach (var callee in callees)
+            {
+                graphStms.RemoveEdge(stm, callee);
+            }
+        }
 
-		public IEnumerable<object> Callees(Statement stm)
+        public IEnumerable<object> Callees(Statement stm)
 		{
             return graphStms.Successors(stm);
 		}
 
+        /// <summary>
+        /// Returns all the procedures that the given procedure calls.
+        /// </summary>
 		public IEnumerable<Procedure> Callees(Procedure proc)
 		{
 			return graphProcs.Successors(proc);
@@ -82,14 +92,20 @@ namespace Reko.Core
 			return graphProcs.Predecessors(proc);
 		}
 
-        public IEnumerable<object> CallerStatements(Procedure proc)
+        /// <summary>
+        /// Given a procedure, find all the statements that call it.
+        /// </summary>
+        public IEnumerable<Statement> CallerStatements(Procedure proc)
 		{
-			return graphStms.Predecessors(proc);
+            if (!graphStms.Nodes.Contains(proc))
+                return Array.Empty<Statement>();
+            return graphStms.Predecessors(proc).OfType<Statement>()
+                .Where(s => s.Block.Procedure != null);
 		}
 
 		public void Write(TextWriter wri)
 		{
-            var sl = graphProcs.Nodes.OrderBy(n => n, new ProcedureComparer());
+            var sl = graphProcs.Nodes.OrderBy(n => n.Name);
 			foreach (Procedure proc in sl)
 			{
 				wri.WriteLine("Procedure {0} calls:", proc.Name);
@@ -99,7 +115,7 @@ namespace Reko.Core
 				}
 			}
 
-            var st = graphStms.Nodes.OfType<Statement>().OrderBy(n => n, new StmComparer());
+            var st = graphStms.Nodes.OfType<Statement>().OrderBy(n => n.LinearAddress);
             foreach (var stm in st)
             {
                 wri.WriteLine("Statement {0:X8} {1} calls:", stm.LinearAddress, stm.Instruction);
@@ -110,33 +126,5 @@ namespace Reko.Core
             }
 		}
 
-		private class ProcedureComparer : IComparer<Procedure>
-		{
-			#region IComparer Members
-
-			public int Compare(Procedure x, Procedure y)
-			{
-				return string.Compare(x.Name, y.Name);
-			}
-
-			#endregion
-		}
-
-        private class StmComparer : IComparer<Statement>
-        {
-            public int Compare(Statement a, Statement b)
-            {
-                return a.LinearAddress < b.LinearAddress
-                    ? -1
-                    : a.LinearAddress > b.LinearAddress
-                        ? 1
-                        : 0;
-            }
-        }
-
-		public List<Procedure> EntryPoints
-		{
-			get { return entryPoints; }
-		}
-	}
+    }
 }

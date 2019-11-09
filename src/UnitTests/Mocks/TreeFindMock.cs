@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,8 @@ namespace Reko.UnitTests.Mocks
 			var v = Local32("v");
 			var t = Local32("t");
 			var vv = Local32("vv");
-
+            Label("l0");
+            Assign(Frame.EnsureRegister(Architecture.StackRegister), Frame.FramePointer);
 			Label("l0_seek");
 			BranchIf(Eq(t, 0), "l5_found"); 
 			Assign(vv, Mem(PrimitiveType.Word32, t));

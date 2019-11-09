@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,12 +32,12 @@ namespace Reko.Core.Serialization
     /// </summary>
     public class ArgumentDeserializer
     {
-        private ProcedureSerializer procSer;
-        private IProcessorArchitecture arch;
-        private Frame frame;
+        private readonly ProcedureSerializer procSer;
+        private readonly IProcessorArchitecture arch;
+        private readonly Frame frame;
+        private readonly int retAddressOnStack;  // number of bytes on the stack occupied by return address
+        private readonly int stackAlignment;
         private Argument_v1 argCur;
-        private int retAddressOnStack;  // number of bytes on the stack occupied by return address
-        private int stackAlignment;
 
         public ArgumentDeserializer(
             ProcedureSerializer procSer, 
@@ -95,9 +95,8 @@ namespace Reko.Core.Serialization
             {
                 return null;
             }
-            var name = Frame.FormatStackAccessName(
+            var name = NamingPolicy.Instance.StackArgumentName(
                 dt,
-                "Arg",
                 procSer.StackOffset + retAddressOnStack,
                 argCur.Name);
             var idArg = procSer.CreateId(
@@ -134,7 +133,7 @@ namespace Reko.Core.Serialization
                 dt = this.argCur.Type.Accept(procSer.TypeLoader);
             else 
                 dt = PrimitiveType.CreateWord(h.DataType.BitSize + h.DataType.BitSize);
-            return frame.EnsureSequence(h, t, dt);
+            return frame.EnsureSequence(dt, h, t);
         }
 
         public Identifier Deserialize(Argument_v1 arg)

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.Environments.Windows;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
+using Moq;
 using System;
 using System.Collections.Generic;
 
@@ -35,8 +35,7 @@ namespace Reko.UnitTests.Arch.Intel
     [Category(Categories.UnitTests)]
     public class X86CallingConventionTests
     {
-        private MockRepository mr;
-        private MockFactory mockFactory;
+        private CommonMockFactory mockFactory;
         private IntelArchitecture arch;
         private X86CallingConvention cc;
         private ICallingConventionEmitter ccr;
@@ -50,8 +49,7 @@ namespace Reko.UnitTests.Arch.Intel
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
-            mockFactory = new MockFactory(mr);
+            mockFactory = new CommonMockFactory();
             arch = new X86ArchitectureFlat32("x86-protected-32");
             platform = new Win32Platform(null, arch);
         }
@@ -73,6 +71,9 @@ namespace Reko.UnitTests.Arch.Intel
                 break;
             case "pascal":
                 cc = new X86CallingConvention(4, 4, 4, false, true);
+                break;
+            case "__thiscall":
+                cc = new X86CallingConvention(4, 4, 4, false, false);
                 break;
             default: throw new NotImplementedException(cConvention + " not supported.");
             }
@@ -100,35 +101,6 @@ namespace Reko.UnitTests.Arch.Intel
             default: throw new NotImplementedException(cConvention + " not supported.");
             }
             this.cc = cc;
-        }
-
-        [Test]
-        [Ignore("Wait a while with __thiscall")]
-        public void X86Cc_Deserialize_thiscall()
-        {
-            throw new NotImplementedException();
-            /*
-            var ssig = new SerializedSignature
-            {
-                EnclosingType = new StructType_v1 { Name = "CHandle" },
-                Convention = "__thiscall",
-                Arguments = new Argument_v1[] {
-                    new Argument_v1 
-                    {
-                        Type = new PrimitiveType_v1 { Domain = Domain.SignedInt, ByteSize = 4 },
-                        Name = "foo"
-                    }
-                }
-            };
-
-            Given_ProcedureSerializer("stdcall");
-            mr.ReplayAll();
-
-            var sig = cc.Generate()
-            Assert.AreEqual(2, sig.Parameters.Length);
-            Assert.AreEqual("this", sig.Parameters[0].ToString());
-            Assert.AreEqual("ecx", sig.Parameters[0].Storage.ToString());
-            Assert.AreEqual(8, sig.StackDelta);*/
         }
 
         [Test]
@@ -230,7 +202,7 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Given_32bit_CallingConvention("__cdecl");
             cc.Generate(ccr, r64, null, new List<DataType> ());
-            Assert.AreEqual("Stk: 4 Fpu: 1 FPU stack ()", ccr.ToString());
+            Assert.AreEqual("Stk: 4 Fpu: 1 FPU +0 ()", ccr.ToString());
         }
 
         [Test]
@@ -270,7 +242,7 @@ namespace Reko.UnitTests.Arch.Intel
         {
             Given_32bit_CallingConvention("__cdecl");
             cc.Generate(ccr, r64, null, new List<DataType>());
-            Assert.AreEqual("Stk: 4 Fpu: 1 FPU stack ()", ccr.ToString());
+            Assert.AreEqual("Stk: 4 Fpu: 1 FPU +0 ()", ccr.ToString());
         }
     }
 }

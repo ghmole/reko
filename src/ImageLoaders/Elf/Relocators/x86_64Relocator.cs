@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,27 +68,34 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 var symStr = loader.Symbols[rela_plt.LinkedSection.FileOffset][(int)sym];
 
                 var addr = plt.Address + (uint)(i + 1) * plt.EntrySize;
-                importReferences[addr] = new NamedImportReference(addr, null, symStr.Name);
+                var st = ElfLoader.GetSymbolType(symStr);
+                if (st.HasValue)
+                {
+                    importReferences[addr] = new NamedImportReference(addr, null, symStr.Name, st.Value);
+                }
             }
         }
 
-        public override void RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
+        public override ElfSymbol RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
         {
             var rt = (x86_64Rt)(rela.Info & 0xFF);
             if (loader.Sections.Count <= sym.SectionIndex)
-                return;
+                return sym;
             if (rt == x86_64Rt.R_X86_64_GLOB_DAT ||
                 rt == x86_64Rt.R_X86_64_JUMP_SLOT)
             {
                 var addrPfn = Address.Ptr64(rela.Offset);
 
-                importReferences.Add(addrPfn, new NamedImportReference(addrPfn, null, sym.Name));
+                var st = ElfLoader.GetSymbolType(sym);
+                if (!st.HasValue)
+                    return sym;
+                importReferences.Add(addrPfn, new NamedImportReference(addrPfn, null, sym.Name, st.Value));
                 var gotSym = loader.CreateGotSymbol(addrPfn, sym.Name);
                 imageSymbols.Add(addrPfn, gotSym);
-                return;
+                return sym;
             }
             if (sym.SectionIndex == 0)
-                return;
+                return sym;
             var symSection = loader.Sections[(int)sym.SectionIndex];
             ulong S = (ulong)sym.Value + symSection.Address.ToLinear();
             long A = 0;
@@ -106,8 +113,9 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 addr = Address.Ptr64(rela.Offset);
                 P = 0;
             }
-            var relR = program.CreateImageReader(addr);
-            var relW = program.CreateImageWriter(addr);
+            var arch = program.Architecture;
+            var relR = program.CreateImageReader(arch, addr);
+            var relW = program.CreateImageWriter(arch, addr);
             ulong PP = P;
             switch (rt)
             {
@@ -129,6 +137,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 w += ((ulong)(S + (ulong)A + P) >> sh) & mask;
                 relW.WriteUInt64(w);
             }
+            return sym;
         }
 
         public override string RelocationTypeToString(uint type)

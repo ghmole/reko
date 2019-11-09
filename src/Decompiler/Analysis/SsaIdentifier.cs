@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,16 +26,17 @@ using System.IO;
 
 namespace Reko.Analysis
 {
+    /// <summary>
+    /// An SSA identifier is actually a node in the SSA graph. The edges of 
+    /// the SSA graphs are the uses and definition of a particular SSA
+    /// identifier
+    /// </summary>
 	public class SsaIdentifier
 	{
-		public SsaIdentifier(Identifier id, Identifier eOrig, Statement stmDef, Expression exprDef, bool isSideEffect)
+		public SsaIdentifier(Identifier id, Identifier idOrig, Statement stmDef, Expression exprDef, bool isSideEffect)
 		{
-			if (id == null)
-				throw new ArgumentNullException("id");
-			if (eOrig == null)
-				throw new ArgumentNullException("eOrig");
-			this.Identifier = id;
-			this.OriginalIdentifier = eOrig;
+            this.Identifier = id ?? throw new ArgumentNullException("id");
+			this.OriginalIdentifier = idOrig ?? throw new ArgumentNullException("idOrig");
 			this.DefStatement = stmDef;
             this.DefExpression = exprDef;
             this.IsSideEffect = isSideEffect;
@@ -43,7 +44,7 @@ namespace Reko.Analysis
 		}
 
         /// <summary>
-        /// Expression that defines identifier.
+        /// Expression that defines the identifier.
         /// </summary>
         public Expression DefExpression { get; set; }
 
@@ -56,8 +57,6 @@ namespace Reko.Analysis
         /// The Identifier itself
         /// </summary>
         public Identifier Identifier { get; private set; }
-
-        public SsaIdentifier Previous { get; set; }
 
 		public bool IsOriginal
 		{
@@ -84,7 +83,8 @@ namespace Reko.Analysis
 		}
 
         /// <summary>
-        /// _Bag_ of Statements that use the identifier. A bag is needed, since the statement a = i * i uses i twice.
+        /// _Bag_ of Statements that use the identifier. A bag is needed, 
+        /// since the statement a = i * i uses i twice.
         /// </summary>
         public List<Statement> Uses { get; private set; }
 

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,809 +29,877 @@ using System.Text;
 
 namespace Reko.Arch.Z80
 {
+    using Decoder = Decoder<Z80Disassembler, Mnemonic, Z80Instruction>;
+    using Mutator = Mutator<Z80Disassembler>;
+
     /// <summary>
     /// Disassembles both 8080 and Z80 instructions, with respective syntax.
     /// </summary>
     public class Z80Disassembler : DisassemblerBase<Z80Instruction>
     {
-        private EndianImageReader rdr;
-        private RegisterStorage IndexRegister;
+        private readonly EndianImageReader rdr;
+        private readonly List<MachineOperand> ops;
+        private Address addr;
         private Z80Instruction instr;
+        private RegisterStorage IndexRegister;
 
         public Z80Disassembler(EndianImageReader rdr)
         {
             this.rdr = rdr;
+            this.ops = new List<MachineOperand>();
         }
 
         public override Z80Instruction DisassembleInstruction()
         {
-            if (!rdr.IsValid)
+            this.addr = rdr.Address;
+            if (!rdr.TryReadByte(out byte op))
                 return null;
-            var addr = rdr.Address;
-            this.instr = new Z80Instruction
-            {
-                Address = addr,
-            };
-            byte op;
-            if (!rdr.TryReadByte(out op))
-                return Invalid(addr);
-            
-            var opRef = oprecs[op];
+
+            this.instr = new Z80Instruction();
+            this.ops.Clear();
             this.IndexRegister = null;
-            instr = opRef.Decode(this, op, "");
+            var decoder = decoders[op];
+            instr = decoder.Decode(op, this);
             if (instr == null)
-                return Invalid(addr);
-            instr.Address = addr;
+                return CreateInvalidInstruction();
+            instr.Address = this.addr;
             instr.Length = (int)(rdr.Address - addr);
             return instr;
         }
 
-        private Z80Instruction Invalid(Address addr)
+        protected override Z80Instruction CreateInvalidInstruction()
         {
             return new Z80Instruction
             {
-                Address = addr,
-                Code = Opcode.illegal,
+                InstructionClass = InstrClass.Invalid,
+                Mnemonic = Mnemonic.illegal,
+                Address = this.addr,
             };
         }
 
-        public Z80Instruction DecodeOperands(Opcode opcode, byte op, string fmt)
+        private static CondCode[] ConditionCode =
         {
-            var ops = new MachineOperand[2];
-            var iOp = 0;
-            ushort us;
-            for (int i = 0; i < fmt.Length; ++i)
+            CondCode.nz,
+            CondCode.z,
+            CondCode.nc,
+            CondCode.c,
+            CondCode.po,
+            CondCode.pe,
+            CondCode.p,
+            CondCode.m,
+        };
+
+        private static RegisterStorage[] ByteRegister =
+        {
+            Registers.b,
+            Registers.c,
+            Registers.d,
+            Registers.e,
+            Registers.h,
+            Registers.l,
+            RegisterStorage.None,
+            Registers.a
+        };
+
+        private class InstrDecoder : Decoder
+        {
+            public readonly InstrClass IClass;
+            public readonly Mnemonic i8080Opcode;
+            public readonly Mnemonic Z80Opcode;
+            private readonly Mutator[] mutators;
+
+            public InstrDecoder(InstrClass iclass, Mnemonic i8080, Mnemonic z80, params Mutator [] mutators)
             {
-                if (fmt[i] == ',')
-                    ++i;
-                switch (fmt[i++])
-                {
-                default:
-                    throw new NotSupportedException(string.Format("Unknown format specifier {0}.", fmt[i - 1]));
-                case 'a':       // the 'A' register
-                    ops[iOp++] = new RegisterOperand(Registers.a);
-                    break;
-                case 'A':       // Absolute memory address.
-                    if (!rdr.TryReadLeUInt16(out us))
-                        return null;
-                    ops[iOp++] = AddressOperand.Ptr16(us);
-                    break;
-                case 'R':       // register encoded in bits 0..2 of op.
-                    ops[iOp++] = new RegisterOperand(ByteRegister(op));
-                    break;
-                case 'r':        // register encoded in bits 3..5 of op
-                    ops[iOp++] = new RegisterOperand(ByteRegister(op >> 3));
-                    break;
-                case 'M':       // memory fetch from HL (or IX,IY)
-                    ops[iOp++] = MemOperand(fmt[i++]);
-                    break;
-                case 'B':       // memory access using BC 
-                    ops[iOp++] = new MemoryOperand(Registers.bc, PrimitiveType.Byte);
-                    break;
-                case 'D':       // memory access using DE 
-                    ops[iOp++] = new MemoryOperand(Registers.de, PrimitiveType.Byte);
-                    break;
-                case 'H':       // memory access using HL
-                    ops[iOp++] = new MemoryOperand(IndexRegister != null ? IndexRegister : Registers.hl, PrimitiveType.Byte);
-                    break;
-                case 'S':       // memory access using SP
-                    ops[iOp++] = new MemoryOperand(Registers.sp, OperandSize(fmt[i++]));
-                    break;
-                case 'O':       // direct operand
-                    ops[iOp++] = DirectOperand(PrimitiveType.Word16, OperandSize(fmt[i++]));
-                    break;
-                case 'o':       // direct operand (byte sized)
-                    ops[iOp++] = DirectOperand(PrimitiveType.Byte, OperandSize(fmt[i++]));
-                    break;
-                case 'I':
-                    Constant imm;
-                    if (!rdr.TryReadLe(OperandSize(fmt[i++]), out imm))
-                        return null;
-                    ops[iOp++] = new ImmediateOperand(imm);
-                    break;
-                case 'W':
-                    ops[iOp++] = new RegisterOperand(WordRegister(fmt[i++]));
-                    break;
-                case 'C':
-                    ops[iOp++] = new ConditionOperand(ConditionCode(op >> 3));
-                    break;
-                case 'Q':
-                    ops[iOp++] = new ConditionOperand(ConditionCode((op >> 3) & 3));
-                    break;
-                case 'J':       // Relative jump
-                    var width = OperandSize(fmt[i++]);
-                    int ipOffset = (int) rdr.ReadLeSigned(width);
-                    ops[iOp++] = AddressOperand.Ptr16((ushort)(rdr.Address.ToUInt16() + ipOffset));
-                    break;
-                case 'x':       // 2-digit Inline hexadecimal byte
-                    int val = (Hex(fmt[i++]) << 4);
-                    val |= Hex(fmt[i++]);
-                    ops[iOp++] = new ImmediateOperand(Constant.Byte((byte) val));
-                    break;
-                case '[':
-                    ++i;
-                    ops[iOp++] = new MemoryOperand(Registers.c, PrimitiveType.Byte);
-                    break;
-                case 'L':
-                    ops[iOp++] = new RegisterOperand(LiteralRegister(fmt[i++]));
-                    break;
-                }
-            }
-            instr.Code = opcode;
-            instr.Length = (int)(rdr.Address - instr.Address);
-            instr.Op1 = ops[0];
-            instr.Op2 = ops[1];
-            return instr;
-        }
-
-        private MemoryOperand MemOperand(char chWidth)
-        {
-            RegisterStorage baseReg = Registers.hl;
-            sbyte offset = 0;
-            if (IndexRegister != null)
-            {
-                baseReg = IndexRegister;
-                offset = (sbyte) rdr.ReadByte();
-            }
-            var pop = new MemoryOperand(baseReg, offset, OperandSize(chWidth));
-            return pop;
-        }
-
-        private MachineOperand DirectOperand(PrimitiveType addrSize, PrimitiveType dataSize)
-        {
-            return new MemoryOperand(rdr.ReadLe(addrSize), dataSize);
-        }
-
-        private static int Hex(char c)
-        {
-            if ('0' <= c && c <= '9')
-                return c - '0';
-            if ('a' <= c && c <= 'f')
-                return 10 + c - 'a';
-            if ('A' <= c && c <= 'F')
-                return 10 + c - 'A';
-            throw new FormatException();
-        }
-
-        private CondCode ConditionCode(int bits)
-        {
-            switch (bits & 7)
-            {
-            default: throw new NotImplementedException();
-            case 0: return CondCode.nz;
-            case 1: return CondCode.z;
-            case 2: return CondCode.nc;
-            case 3: return CondCode.c;
-            case 4: return CondCode.po;
-            case 5: return CondCode.pe;
-            case 6: return CondCode.p;
-            case 7: return CondCode.m;
-            }
-        }
-
-        private RegisterStorage ByteRegister(int bits)
-        {
-            switch (bits & 0x7)
-            {
-            default: throw new NotImplementedException(string.Format("Unknown Z80 register {0}.", bits & 7));
-            case 0: return Registers.b;
-            case 1: return Registers.c;
-            case 2: return Registers.d;
-            case 3: return Registers.e;
-            case 4: return Registers.h;
-            case 5: return Registers.l;
-            case 7: return Registers.a;
-            }
-        }
-
-        private RegisterStorage LiteralRegister(char ch)
-        {
-            switch (ch)
-            {
-            case 'r': return Registers.r;
-            case 'i': return Registers.i;
-            default: throw new NotImplementedException(string.Format("Unknown register {0}.", ch));
-            }
-        }
-
-        private RegisterStorage WordRegister(char encoding)
-        {
-            switch (encoding)
-            {
-            case 'B': case 'b': return Registers.bc;
-            case 'D': case 'd': return Registers.de;
-            case 'H': case 'h': return IndexRegister != null ? IndexRegister : Registers.hl;
-            case 'S': case 's': return Registers.sp;
-            case 'A': case 'a': return Registers.af;
-            default: throw new NotImplementedException(string.Format("Unknown word register specifier {0}", encoding));
-            }
-        }
-
-        private PrimitiveType OperandSize(char c)
-        {
-            switch (c)
-            {
-            default: throw new NotSupportedException(string.Format("Unsupported operand size {0}.", c));
-            case 'b': return PrimitiveType.Byte;
-            case 'w': return PrimitiveType.Word16;
-            }
-        }
-
-        private abstract class OpRec
-        {
-            public abstract Z80Instruction Decode(Z80Disassembler disasm, byte op, string opFormat);
-        }
-
-        private class SingleByteOpRec : OpRec
-        {
-            public Opcode i8080Opcode;
-            public Opcode Z80Opcode;
-            public string Format;
-
-            public SingleByteOpRec(Opcode i8080, Opcode z80, string format)
-            {
+                this.IClass = iclass;
                 this.i8080Opcode = i8080;
                 this.Z80Opcode = z80;
-                this.Format = format;
+                this.mutators = mutators;
             }
 
-            public override Z80Instruction Decode(Z80Disassembler disasm, byte op, string opFormat)
+            public override Z80Instruction Decode(uint op, Z80Disassembler disasm)
             {
-                return disasm.DecodeOperands(Z80Opcode, op, Format);
+                var instr = disasm.instr;
+                foreach (var m in mutators)
+                {
+                    if (!m(op, disasm))
+                        return disasm.CreateInvalidInstruction();
+                }
+                instr.InstructionClass = IClass;
+                instr.Mnemonic = Z80Opcode;
+                instr.Operands = disasm.ops.ToArray();
+                return instr;
             }
         }
 
-        private class IndexPrefixOpRec : OpRec
+        private class IndexPrefixDecoder : Decoder
         {
-            private RegisterStorage IndexRegister;
+            private readonly RegisterStorage IndexRegister;
 
-            public IndexPrefixOpRec(RegisterStorage idxReg)
+            public IndexPrefixDecoder(RegisterStorage idxReg)
             {
                 this.IndexRegister = idxReg;
             }
 
-            public override Z80Instruction Decode(Z80Disassembler disasm, byte op, string opFormat)
+            public override Z80Instruction Decode(uint bPrev, Z80Disassembler dasm)
             {
-                disasm.IndexRegister = this.IndexRegister;
-                op = disasm.rdr.ReadByte();
+                dasm.IndexRegister = this.IndexRegister;
+                if (!dasm.rdr.TryReadByte(out byte op))
+                    return dasm.CreateInvalidInstruction();
+                var instr = dasm.instr;
                 if (op == 0xCB)
                 {
-                    var offset = disasm.rdr.ReadSByte();
-                    op = disasm.rdr.ReadByte();
+                    var offset = dasm.rdr.ReadSByte();
+                    op = dasm.rdr.ReadByte();
                     switch (op >> 6)
                     {
                     default: throw new NotImplementedException();
                     case 1:
-                        return new Z80Instruction
-                        {
-                            Code = Opcode.bit,
-                            Op1 = new ImmediateOperand(Constant.Byte((byte) ((op >> 3) & 0x07))),
-                            Op2 = new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
+                        instr.Mnemonic = Mnemonic.bit;
+                        instr.Operands = new MachineOperand[] {
+                            new ImmediateOperand(Constant.Byte((byte) ((op >> 3) & 0x07))),
+                            new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
                         };
+                        return instr;
                     case 2:
-                        return new Z80Instruction
-                        {
-                            Code = Opcode.res,
-                            Op1 = new ImmediateOperand(Constant.Byte((byte)((op >> 3) & 0x07))),
-                            Op2 = new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
+                        instr.Mnemonic = Mnemonic.res;
+                        instr.Operands = new MachineOperand[] {
+                            new ImmediateOperand(Constant.Byte((byte) ((op >> 3) & 0x07))),
+                            new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
                         };
+                        return instr;
                     case 3:
-                        return new Z80Instruction
-                        {
-                            Code = Opcode.set,
-                            Op1 = new ImmediateOperand(Constant.Byte((byte)((op >> 3) & 0x07))),
-                            Op2 = new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
+                        instr.Mnemonic = Mnemonic.set;
+                        instr.Operands = new MachineOperand[] {
+                            new ImmediateOperand(Constant.Byte((byte) ((op >> 3) & 0x07))),
+                            new MemoryOperand(IndexRegister, offset, PrimitiveType.Byte)
                         };
+                        return instr;
                     }
                 }
                 else
                 {
-                    return oprecs[op].Decode(disasm, op, opFormat);
+                    return decoders[op].Decode(op, dasm);
                 }
             }
         }
 
-        private class CbPrefixOpRec : OpRec
+        private class CbPrefixDecoder : Decoder
         {
-            static Opcode[] cbOpcodes = new Opcode[] {
-                Opcode.rlc,
-                Opcode.rrc,
-                Opcode.rl,
-                Opcode.rr,
-                Opcode.sla,
-                Opcode.sra,
-                Opcode.swap,
-                Opcode.srl,
+            static readonly Mnemonic[] cbOpcodes = new Mnemonic[] {
+                Mnemonic.rlc,
+                Mnemonic.rrc,
+                Mnemonic.rl,
+                Mnemonic.rr,
+                Mnemonic.sla,
+                Mnemonic.sra,
+                Mnemonic.swap,
+                Mnemonic.srl,
             };
 
-            static string[] cbFormats = new string[] {
-                "R", "R", "R", "R", "R", "R", "Mb", "R", 
+            static readonly Mutator[] cbFormats = new Mutator[] {
+                R, R, R, R, R, R, Mb, R, 
             };
 
-            public override Z80Instruction Decode(Z80Disassembler disasm, byte op, string opFormat)
+            public override Z80Instruction Decode(uint bPrev, Z80Disassembler dasm)
             {
-                op = disasm.rdr.ReadByte();
-                Opcode code;
-                MachineOperand Op2;
+                if (!dasm.rdr.TryReadByte(out var op))
+                    return dasm.CreateInvalidInstruction();
+
+                dasm.instr.InstructionClass = InstrClass.Linear;
+                var y = (byte) ((op >> 3) & 0x07);
                 switch (op >> 6)
                 {
-                default: throw new NotImplementedException();
+                default: throw new InvalidOperationException();
                 case 0:
-                    return disasm.DecodeOperands(
-                        cbOpcodes[(op >> 3) & 0x07],
-                        op,
-                        cbFormats[op & 0x07]);
+                    dasm.instr.Mnemonic = cbOpcodes[y];
+                    break;
                 case 1:
-                    code = Opcode.bit;
+                    dasm.instr.Mnemonic = Mnemonic.bit;
+                    dasm.ops.Add(ImmediateOperand.Byte(y));
                     break;
                 case 2:
-                    code = Opcode.res;
+                    dasm.instr.Mnemonic = Mnemonic.res;
+                    dasm.ops.Add(ImmediateOperand.Byte(y));
                     break;
                 case 3:
-                    code = Opcode.set;
+                    dasm.instr.Mnemonic = Mnemonic.set;
+                    dasm.ops.Add(ImmediateOperand.Byte(y));
                     break;
                 }
-                if ((op & 7) == 6)
-                {
-                    Op2 = disasm.MemOperand('b');
-                }
-                else
-                {
-                    Op2 = new RegisterOperand(disasm.ByteRegister(op));
-                }
-                return new Z80Instruction
-                {
-                    Code = code,
-                    Op1 = new ImmediateOperand(Constant.Byte((byte)((op >> 3) & 0x07))),
-                    Op2 = Op2,
-                };
+                if (!cbFormats[op & 0x07](op, dasm))
+                    return dasm.CreateInvalidInstruction();
+                dasm.instr.Operands = dasm.ops.ToArray();
+                return dasm.instr;
             }
         }
 
-        private class EdPrefixOpRec : OpRec
+        private class EdPrefixDecoder : Decoder
         {
-            public override Z80Instruction Decode(Z80Disassembler disasm, byte op, string opFormat)
+            public override Z80Instruction Decode(uint bPrev, Z80Disassembler disasm)
             {
-                op = disasm.rdr.ReadByte();
-                OpRec oprec = null;
-                if (0x40 <= op && op < 0x80)
-                    oprec = edOprecs[op-0x40];
-                else if (0xA0 <= op && op < 0xC0)
-                    oprec = edOprecs[op - 0x60];
-                else 
-                    return new Z80Instruction { Code = Opcode.illegal };
-                return oprec.Decode(disasm, op, ((SingleByteOpRec)oprec).Format);
+                if (!disasm.rdr.TryReadByte(out var op2))
+                    return disasm.CreateInvalidInstruction();
+                Decoder decoder = null;
+                if (0x40 <= op2 && op2 < 0x80)
+                    decoder = edDecoders[op2 - 0x40];
+                else if (0xA0 <= op2 && op2 < 0xC0)
+                    decoder = edDecoders[op2 - 0x60];
+                else
+                    return disasm.CreateInvalidInstruction();
+                return decoder.Decode(op2, disasm);
             }
         }
+
+        private static InstrDecoder Instr(Mnemonic op8080, Mnemonic opZ80, params Mutator[] mutators)
+        {
+            return new InstrDecoder(InstrClass.Linear, op8080, opZ80, mutators);
+        }
+
+        private static InstrDecoder Instr(Mnemonic op8080, Mnemonic opZ80, InstrClass iclass)
+        {
+            return new InstrDecoder(iclass, op8080, opZ80);
+        }
+
+        private static InstrDecoder Instr(Mnemonic op8080, Mnemonic opZ80, Mutator m0, InstrClass iclass)
+        {
+            return new InstrDecoder(iclass, op8080, opZ80, m0);
+        }
+
+        private static InstrDecoder Instr(Mnemonic op8080, Mnemonic opZ80, Mutator m0, Mutator m1, InstrClass iclass)
+        {
+            return new InstrDecoder(iclass, op8080, opZ80, m0, m1);
+        }
+
+        #region Mutators
+
+        private static bool a(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.a));
+            return true;
+        }
+
+        // Absolute memory address.
+        private static bool A(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort us))
+                return false;
+            dasm.ops.Add(AddressOperand.Ptr16(us));
+            return true;
+        }
+
+        private static bool B(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new MemoryOperand(Registers.bc, PrimitiveType.Byte));
+            return true;
+        }
+
+        private static bool D(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new MemoryOperand(Registers.de, PrimitiveType.Byte));
+            return true;
+        }
+
+        // memory access using HL
+        private static bool Hb(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new MemoryOperand(
+                dasm.IndexRegister ?? Registers.hl, 
+                PrimitiveType.Byte));
+            return true;
+        }
+
+        private static bool C(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new ConditionOperand(ConditionCode[(op >> 3) & 7]));
+            return true;
+        }
+
+        private static bool Q(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new ConditionOperand(ConditionCode[(op >> 3) & 3]));
+            return true;
+        }
+
+        // register encoded in bits 3..5 of op
+        private static bool r(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(ByteRegister[(op >> 3)&7]));
+            return true;
+        }
+
+        // register encoded in bits 0..2 of op.
+        private static bool R(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(ByteRegister[op & 7]));
+            return true;
+        }
+
+        // Literal registers
+        private static bool Li(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.i));
+            return true;
+        }
+
+        private static bool Lr(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.r));
+            return true;
+        }
+
+        private static Mutator x(uint imm) {
+            return (u, d) =>
+            {
+                d.ops.Add(ImmediateOperand.Byte((byte)imm));
+                return true;
+            };
+        }
+
+        // Relative jump
+        private static bool Jb(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadByte(out var bOffset))
+                return false;
+
+            int offset = (sbyte) bOffset;
+            dasm.ops.Add(AddressOperand.Create(dasm.rdr.Address + offset));
+            return true;
+        }
+
+        private static bool Sw(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new MemoryOperand(Registers.sp, PrimitiveType.Word16));
+            return true;
+        }
+
+        private static bool Wa(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.af));
+            return true;
+        }
+
+        private static bool Wb(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.bc));
+            return true;
+        }
+
+        private static bool Wd(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.de));
+            return true;
+        }
+
+        private static bool Wh(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(dasm.IndexRegister ?? Registers.hl));
+            return true;
+        }
+
+        private static bool Ws(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new RegisterOperand(Registers.sp));
+            return true;
+        }
+
+
+        private static bool Ib(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadByte(out byte imm))
+                return false;
+            dasm.ops.Add(ImmediateOperand.Byte(imm));
+            return true;
+        }
+
+        private static bool Iw(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort imm))
+                return false;
+            dasm.ops.Add(ImmediateOperand.Word16(imm));
+            return true;
+        }
+
+        private static Mutator M(PrimitiveType w)
+        {
+            return (op, dasm) =>
+            {
+                RegisterStorage baseReg = Registers.hl;
+                sbyte offset = 0;
+                if (dasm.IndexRegister != null)
+                {
+                    baseReg = dasm.IndexRegister;
+                    if (!dasm.rdr.TryReadByte(out byte bOff))
+                        return false;
+                    offset = (sbyte) bOff;
+                }
+                dasm.ops.Add(new MemoryOperand(baseReg, offset, w));
+                return true;
+            };
+        }
+        private static Mutator Mb => M(PrimitiveType.Byte);
+        private static Mutator Mw => M(PrimitiveType.Word16);
+
+        private static bool mc(uint op, Z80Disassembler dasm)
+        {
+            dasm.ops.Add(new MemoryOperand(Registers.c, PrimitiveType.Byte));
+            return true;
+        }
+
+        private static bool Ob(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort dir))
+                return false;
+            dasm.ops.Add(new MemoryOperand(Constant.Word16(dir), PrimitiveType.Byte));
+            return true;
+        }
+
+        private static bool ob(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadByte(out byte dir))
+                return false;
+            dasm.ops.Add(new MemoryOperand(Constant.Word16(dir), PrimitiveType.Byte));
+            return true;
+        }
+
+        private static bool Ow(uint op, Z80Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeUInt16(out ushort dir))
+                return false;
+            dasm.ops.Add(new MemoryOperand(Constant.Word16(dir), PrimitiveType.Word16));
+            return true;
+        }
+
+        #endregion
 
         /// <summary>
         /// References:
         /// http://wikiti.brandonw.net/index.php?title=Z80_Instruction_Set
         /// http://www.zophar.net/fileuploads/2/10807fvllz/z80-1.txt
         /// </summary>
-        private static OpRec [] oprecs = new OpRec[] 
+        private static readonly Decoder[] decoders = new Decoder[]
         {
             // 00
-            new SingleByteOpRec(Opcode.nop, Opcode.nop, ""),
-            new SingleByteOpRec(Opcode.lxi, Opcode.ld, "Wb,Iw"),
-            new SingleByteOpRec(Opcode.stax, Opcode.ld, "B,a"),
-            new SingleByteOpRec(Opcode.inx, Opcode.inc, "Wb"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rlca, ""),
+            Instr(Mnemonic.nop, Mnemonic.nop, InstrClass.Zero|InstrClass.Linear|InstrClass.Padding),
+            Instr(Mnemonic.lxi, Mnemonic.ld, Wb,Iw),
+            Instr(Mnemonic.stax, Mnemonic.ld, B,a),
+            Instr(Mnemonic.inx, Mnemonic.inc, Wb),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rlca),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.ex_af, ""),
-            new SingleByteOpRec(Opcode.dad, Opcode.add, "Wh,Wb"),
-            new SingleByteOpRec(Opcode.ldax, Opcode.ld, "a,B"),
-            new SingleByteOpRec(Opcode.dcx, Opcode.dec, "Wb"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rrca, ""),
+            Instr(Mnemonic.illegal, Mnemonic.ex_af),
+            Instr(Mnemonic.dad, Mnemonic.add, Wh,Wb),
+            Instr(Mnemonic.ldax, Mnemonic.ld, a,B),
+            Instr(Mnemonic.dcx, Mnemonic.dec, Wb),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rrca),
 
             // 10
-            new SingleByteOpRec(Opcode.illegal, Opcode.djnz, "Jb"),
-            new SingleByteOpRec(Opcode.lxi, Opcode.ld, "Wd,Iw"),
-            new SingleByteOpRec(Opcode.stax, Opcode.ld, "D,a"),
-            new SingleByteOpRec(Opcode.inx, Opcode.inc, "Wd"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rla, ""),
+            Instr(Mnemonic.illegal, Mnemonic.djnz, Jb, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.lxi, Mnemonic.ld, Wd,Iw),
+            Instr(Mnemonic.stax, Mnemonic.ld, D,a),
+            Instr(Mnemonic.inx, Mnemonic.inc, Wd),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rla),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.jr, "Jb"),
-            new SingleByteOpRec(Opcode.dad, Opcode.add, "Wh,Wd"),
-            new SingleByteOpRec(Opcode.ldax, Opcode.ld, "a,D"),
-            new SingleByteOpRec(Opcode.dcx, Opcode.dec, "Wd"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rra, ""),
+            Instr(Mnemonic.illegal, Mnemonic.jr, Jb, InstrClass.Transfer),
+            Instr(Mnemonic.dad, Mnemonic.add, Wh,Wd),
+            Instr(Mnemonic.ldax, Mnemonic.ld, a,D),
+            Instr(Mnemonic.dcx, Mnemonic.dec, Wd),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rra),
 
             // 20
-            new SingleByteOpRec(Opcode.illegal, Opcode.jr, "Q,Jb"),
-            new SingleByteOpRec(Opcode.lxi, Opcode.ld, "Wh,Iw"),
-            new SingleByteOpRec(Opcode.shld, Opcode.ld, "Ow,Wh"),
-            new SingleByteOpRec(Opcode.inx, Opcode.inc, "Wh"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.daa, Opcode.daa, ""),
+            Instr(Mnemonic.illegal, Mnemonic.jr, Q, Jb,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.lxi, Mnemonic.ld, Wh,Iw),
+            Instr(Mnemonic.shld, Mnemonic.ld, Ow,Wh),
+            Instr(Mnemonic.inx, Mnemonic.inc, Wh),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.daa, Mnemonic.daa),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.jr, "Q,Jb"),
-            new SingleByteOpRec(Opcode.dad, Opcode.add, "Wh,Wh"),
-            new SingleByteOpRec(Opcode.lhld, Opcode.ld, "Wh,Ow"),
-            new SingleByteOpRec(Opcode.dcx, Opcode.dec, "Wh"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.cma, Opcode.cpl, ""),
+            Instr(Mnemonic.illegal, Mnemonic.jr, Q, Jb,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.dad, Mnemonic.add, Wh,Wh),
+            Instr(Mnemonic.lhld, Mnemonic.ld, Wh,Ow),
+            Instr(Mnemonic.dcx, Mnemonic.dec, Wh),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.cma, Mnemonic.cpl),
 
             // 30
-            new SingleByteOpRec(Opcode.illegal, Opcode.jr, "Q,Jb"),
-            new SingleByteOpRec(Opcode.lxi, Opcode.ld, "Ws,Iw"),
-            new SingleByteOpRec(Opcode.sta, Opcode.ld, "Ob,a"),
-            new SingleByteOpRec(Opcode.inx, Opcode.inc, "Ws"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "Hb"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "Hb"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "Mb,Ib"),
-            new SingleByteOpRec(Opcode.stc, Opcode.scf, ""),
+            Instr(Mnemonic.illegal, Mnemonic.jr, Q, Jb,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.lxi, Mnemonic.ld, Ws,Iw),
+            Instr(Mnemonic.sta, Mnemonic.ld, Ob,a),
+            Instr(Mnemonic.inx, Mnemonic.inc, Ws),
+            Instr(Mnemonic.inr, Mnemonic.inc, Hb),
+            Instr(Mnemonic.dcr, Mnemonic.dec, Hb),
+            Instr(Mnemonic.mvi, Mnemonic.ld, Mb,Ib),
+            Instr(Mnemonic.stc, Mnemonic.scf),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.jr, "Q,Jb"),
-            new SingleByteOpRec(Opcode.dad, Opcode.add, "Wh,Ws"),
-            new SingleByteOpRec(Opcode.lda, Opcode.ld, "a,Ob"),
-            new SingleByteOpRec(Opcode.dcx, Opcode.dec, "Ws"),
-            new SingleByteOpRec(Opcode.inr, Opcode.inc, "r"),
-            new SingleByteOpRec(Opcode.dcr, Opcode.dec, "r"),
-            new SingleByteOpRec(Opcode.mvi, Opcode.ld, "r,Ib"),
-            new SingleByteOpRec(Opcode.cmc, Opcode.ccf, ""),
+            Instr(Mnemonic.illegal, Mnemonic.jr, Q,Jb),
+            Instr(Mnemonic.dad, Mnemonic.add, Wh,Ws),
+            Instr(Mnemonic.lda, Mnemonic.ld, a,Ob),
+            Instr(Mnemonic.dcx, Mnemonic.dec, Ws),
+            Instr(Mnemonic.inr, Mnemonic.inc, r),
+            Instr(Mnemonic.dcr, Mnemonic.dec, r),
+            Instr(Mnemonic.mvi, Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.cmc, Mnemonic.ccf),
 
             // 40
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
             // 50
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
             // 60
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
             // 70
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
-            new SingleByteOpRec(Opcode.hlt, Opcode.hlt, ""),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "Mb,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
+            Instr(Mnemonic.hlt, Mnemonic.hlt, InstrClass.Terminates),
+            Instr(Mnemonic.mov, Mnemonic.ld, Mb,R),
 
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,Mb"),
-            new SingleByteOpRec(Opcode.mov, Opcode.ld, "r,R"),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,Mb),
+            Instr(Mnemonic.mov, Mnemonic.ld, r,R),
 
             // 80
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,Mb"),
-            new SingleByteOpRec(Opcode.add, Opcode.add, "a,R"),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
+            Instr(Mnemonic.add, Mnemonic.add, a,Mb),
+            Instr(Mnemonic.add, Mnemonic.add, a,R),
 
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,Mb"),
-            new SingleByteOpRec(Opcode.adc, Opcode.adc, "a,R"),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,Mb),
+            Instr(Mnemonic.adc, Mnemonic.adc, a,R),
 
             // 90
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,Mb"),
-            new SingleByteOpRec(Opcode.sub, Opcode.sub, "a,R"),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,Mb),
+            Instr(Mnemonic.sub, Mnemonic.sub, a,R),
 
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,Mb"),
-            new SingleByteOpRec(Opcode.sbb, Opcode.sbc, "a,R"),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,Mb),
+            Instr(Mnemonic.sbb, Mnemonic.sbc, a,R),
 
             // A0
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,Mb"),
-            new SingleByteOpRec(Opcode.ana, Opcode.and, "a,R"),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
+            Instr(Mnemonic.ana, Mnemonic.and, a,Mb),
+            Instr(Mnemonic.ana, Mnemonic.and, a,R),
 
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,Mb"),
-            new SingleByteOpRec(Opcode.xra, Opcode.xor, "a,R"),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,Mb),
+            Instr(Mnemonic.xra, Mnemonic.xor, a,R),
 
             // B0
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,Mb"),
-            new SingleByteOpRec(Opcode.ora, Opcode.or, "a,R"),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
+            Instr(Mnemonic.ora, Mnemonic.or, a,Mb),
+            Instr(Mnemonic.ora, Mnemonic.or, a,R),
 
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,Mb"),
-            new SingleByteOpRec(Opcode.cmp, Opcode.cp, "a,R"),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,Mb),
+            Instr(Mnemonic.cmp, Mnemonic.cp, a,R),
 
             // C0
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, "C"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.pop, "Wb"),
-            new SingleByteOpRec(Opcode.jnz, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.jmp, Opcode.jp, "A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.call, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.push, "Wb"),
-            new SingleByteOpRec(Opcode.adi, Opcode.add, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x00"),
+            Instr(Mnemonic.illegal, Mnemonic.ret, C, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.pop, Wb),
+            Instr(Mnemonic.jnz, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.jmp, Mnemonic.jp, A, InstrClass.Transfer),
+            Instr(Mnemonic.illegal, Mnemonic.call, C, A,InstrClass.ConditionalTransfer|InstrClass.Call),
+            Instr(Mnemonic.illegal, Mnemonic.push, Wb),
+            Instr(Mnemonic.adi, Mnemonic.add, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(00), InstrClass.Transfer|InstrClass.Call),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, "C"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, ""),
-            new SingleByteOpRec(Opcode.jz, Opcode.jp, "C,A"),
-            new CbPrefixOpRec(),
-            new SingleByteOpRec(Opcode.illegal, Opcode.call, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.call, "A"),
-            new SingleByteOpRec(Opcode.aci, Opcode.adc, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x08"),
+            Instr(Mnemonic.illegal, Mnemonic.ret, C, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.ret, InstrClass.Transfer),
+            Instr(Mnemonic.jz, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            new CbPrefixDecoder(),
+            Instr(Mnemonic.illegal, Mnemonic.call, C, A,InstrClass.ConditionalTransfer|InstrClass.Call),
+            Instr(Mnemonic.illegal, Mnemonic.call, A, InstrClass.Transfer|InstrClass.Call),
+            Instr(Mnemonic.aci, Mnemonic.adc, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x08), InstrClass.Transfer|InstrClass.Call),
 
             // D0
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, "C"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.pop, "Wd"),
-            new SingleByteOpRec(Opcode.jnc, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out, "ob,a"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.call, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.push, "Wd"),
-            new SingleByteOpRec(Opcode.sui, Opcode.sub, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x10"),
+            Instr(Mnemonic.illegal, Mnemonic.ret, C, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.pop, Wd),
+            Instr(Mnemonic.jnc, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.@out, ob,a),
+            Instr(Mnemonic.illegal, Mnemonic.call, C, A,InstrClass.ConditionalTransfer|InstrClass.Call),
+            Instr(Mnemonic.illegal, Mnemonic.push, Wd),
+            Instr(Mnemonic.sui, Mnemonic.sub, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x10), InstrClass.Transfer|InstrClass.Call),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, "C"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.exx, ""),
-            new SingleByteOpRec(Opcode.jc, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in, "a,ob"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.call, "C,A"),
-            new IndexPrefixOpRec(Registers.ix),
-            new SingleByteOpRec(Opcode.sbi, Opcode.sbc, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x18"),
+            Instr(Mnemonic.illegal, Mnemonic.ret, C, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.exx),
+            Instr(Mnemonic.jc, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.@in, a,ob),
+            Instr(Mnemonic.illegal, Mnemonic.call, C, A,InstrClass.ConditionalTransfer|InstrClass.Call),
+            new IndexPrefixDecoder(Registers.ix),
+            Instr(Mnemonic.sbi, Mnemonic.sbc, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x18), InstrClass.Transfer|InstrClass.Call),
 
             // E0
-            new SingleByteOpRec(Opcode.illegal, Opcode.ret, "C"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.pop, "Wh"),
-            new SingleByteOpRec(Opcode.jpo, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ex, "Sw,Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.push, "Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.add, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x20"),
+            Instr(Mnemonic.illegal, Mnemonic.ret, C, InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.pop, Wh),
+            Instr(Mnemonic.jpo, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.ex, Sw,Wh),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.push, Wh),
+            Instr(Mnemonic.illegal, Mnemonic.add, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x20),InstrClass.Transfer|InstrClass.Call),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.add, "Ws,D"),
-            new SingleByteOpRec(Opcode.pchl, Opcode.jp, "Mw"),
-            new SingleByteOpRec(Opcode.jpe, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ex, "Wd,Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new EdPrefixOpRec(),
-            new SingleByteOpRec(Opcode.illegal, Opcode.xor, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x28"),
+            Instr(Mnemonic.illegal, Mnemonic.add, Ws,D),
+            Instr(Mnemonic.pchl, Mnemonic.jp, Mw, InstrClass.Transfer),
+            Instr(Mnemonic.jpe, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.illegal, Mnemonic.ex, Wd,Wh),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            new EdPrefixDecoder(),
+            Instr(Mnemonic.illegal, Mnemonic.xor, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x28), InstrClass.Transfer|InstrClass.Call),
 
             // F0
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.pop, "Wa"),
-            new SingleByteOpRec(Opcode.jp, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.di, Opcode.di, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.push, "Wa"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.or, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x30"),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.pop, Wa),
+            Instr(Mnemonic.jp, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.di, Mnemonic.di),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.push, Wa),
+            Instr(Mnemonic.illegal, Mnemonic.or, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x30), InstrClass.Transfer|InstrClass.Call),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new SingleByteOpRec(Opcode.sphl, Opcode.ld, "Ws,Wh"),
-            new SingleByteOpRec(Opcode.jm, Opcode.jp, "C,A"),
-            new SingleByteOpRec(Opcode.ei, Opcode.ei, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal, ""),
-            new IndexPrefixOpRec(Registers.iy),
-            new SingleByteOpRec(Opcode.illegal, Opcode.cp, "a,Ib"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rst, "x38"),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.sphl, Mnemonic.ld, Ws,Wh),
+            Instr(Mnemonic.jm, Mnemonic.jp, C, A,InstrClass.ConditionalTransfer),
+            Instr(Mnemonic.ei, Mnemonic.ei),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            new IndexPrefixDecoder(Registers.iy),
+            Instr(Mnemonic.illegal, Mnemonic.cp, a,Ib),
+            Instr(Mnemonic.illegal, Mnemonic.rst, x(0x38), InstrClass.Transfer|InstrClass.Call),
         };
 
-        private static OpRec[] edOprecs = new OpRec[] 
+        private static readonly Decoder[] edDecoders = new Decoder[] 
         {
             // 40
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in, "r,[c"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out, "[c,r"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.sbc,  "Wh,Wb"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Ow,Wb"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.neg,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.retn,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.im,  "x00"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Li,a"),
+            Instr(Mnemonic.illegal, Mnemonic.@in, r,mc), 
+            Instr(Mnemonic.illegal, Mnemonic.@out, mc,r), 
+            Instr(Mnemonic.illegal, Mnemonic.sbc,  Wh,Wb),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Ow,Wb),
+            Instr(Mnemonic.illegal, Mnemonic.neg  ),
+            Instr(Mnemonic.illegal, Mnemonic.retn, InstrClass.Transfer),
+            Instr(Mnemonic.illegal, Mnemonic.im,  x(0)),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Li,a),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in,  "r,[c"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out,  "[c,r"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.adc,  "Wh,Wb"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Wb,Ow"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.reti,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Lr,a"),
+            Instr(Mnemonic.illegal, Mnemonic.@in,  r,mc),
+            Instr(Mnemonic.illegal, Mnemonic.@out,  mc,r),
+            Instr(Mnemonic.illegal, Mnemonic.adc,  Wh,Wb),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Wb,Ow),
+            Instr(Mnemonic.illegal, Mnemonic.illegal  ),
+            Instr(Mnemonic.illegal, Mnemonic.reti, InstrClass.Transfer),
+            Instr(Mnemonic.illegal, Mnemonic.illegal  ),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Lr,a),
             
             // 50
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in, "r[c"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out, "[c,r"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.sbc,  "Wh,Wd"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Ow,Wd"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.im,  "x01"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "a,Li"),
+            Instr(Mnemonic.illegal, Mnemonic.@in, r,mc), 
+            Instr(Mnemonic.illegal, Mnemonic.@out, mc,r), 
+            Instr(Mnemonic.illegal, Mnemonic.sbc,  Wh,Wd),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Ow,Wd),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.im,  x(1)),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  a,Li),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in,  "r,[c"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out,  "[c,r"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.adc,  "Wh,Wd"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Wd,Ow"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.im,  "x02"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "a,Lr"),
+            Instr(Mnemonic.illegal, Mnemonic.@in,  r,mc),
+            Instr(Mnemonic.illegal, Mnemonic.@out,  mc,r),
+            Instr(Mnemonic.illegal, Mnemonic.adc,  Wh,Wd),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Wd,Ow),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.im,  x(2)),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  a,Lr),
 
             // 60
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in, "r,[c"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out, "[c,r"), 
-            new SingleByteOpRec(Opcode.illegal, Opcode.sbc,  "Wh,Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Ow,Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rrd,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.@in, r,mc), 
+            Instr(Mnemonic.illegal, Mnemonic.@out, mc,r), 
+            Instr(Mnemonic.illegal, Mnemonic.sbc,  Wh,Wh),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Ow,Wh),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.rrd),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in,  "r,[c"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out,  "[c,r"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.adc,  "Wh,Wh"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Wh,Ow"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.rld,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.@in,  r,mc),
+            Instr(Mnemonic.illegal, Mnemonic.@out,  mc,r),
+            Instr(Mnemonic.illegal, Mnemonic.adc,  Wh,Wh),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Wh,Ow),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.rld),
             
             // 70
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.sbc,  "Wh,Ws"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Ow,Ws"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.sbc,  Wh,Ws),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Ow,Ws),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.@in,  "r,[c"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.@out,  "[c,r"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.adc,  "Wh,Ws"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ld,  "Ws,Ow"),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.@in,  r,mc),
+            Instr(Mnemonic.illegal, Mnemonic.@out,  mc,r),
+            Instr(Mnemonic.illegal, Mnemonic.adc,  Wh,Ws),
+            Instr(Mnemonic.illegal, Mnemonic.ld,  Ws,Ow),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
  
             // A0
-            new SingleByteOpRec(Opcode.illegal, Opcode.ldi, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.cpi , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ini  , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.outi , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.ldi),
+            Instr(Mnemonic.illegal, Mnemonic.cpi),
+            Instr(Mnemonic.illegal, Mnemonic.ini),
+            Instr(Mnemonic.illegal, Mnemonic.outi),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.ldd, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.cpd , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.ind  , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.outd , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.ldd),
+            Instr(Mnemonic.illegal, Mnemonic.cpd),
+            Instr(Mnemonic.illegal, Mnemonic.ind),
+            Instr(Mnemonic.illegal, Mnemonic.outd),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
 
             // B0
-            new SingleByteOpRec(Opcode.illegal, Opcode.ldir, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.cpir , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.inir  , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.otir , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.ldir),
+            Instr(Mnemonic.illegal, Mnemonic.cpir),
+            Instr(Mnemonic.illegal, Mnemonic.inir),
+            Instr(Mnemonic.illegal, Mnemonic.otir),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
 
-            new SingleByteOpRec(Opcode.illegal, Opcode.lddr, ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.cpdr , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.indr  , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.otdr , ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
-            new SingleByteOpRec(Opcode.illegal, Opcode.illegal,  ""),
+            Instr(Mnemonic.illegal, Mnemonic.lddr),
+            Instr(Mnemonic.illegal, Mnemonic.cpdr),
+            Instr(Mnemonic.illegal, Mnemonic.indr),
+            Instr(Mnemonic.illegal, Mnemonic.otdr),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
+            Instr(Mnemonic.illegal, Mnemonic.illegal),
         };
+
 #if NEVER
 
 ---		LD	BC,(word)	ED4Bword	BC <- (word)

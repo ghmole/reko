@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,11 +50,9 @@ namespace Reko.Core.Serialization
 
         public SerializedType VisitEnum(EnumType e)
         {
-            var members = e.Members != null
-                ? e.Members.Select(
+            var members = e.Members?.Select(
                     m => new SerializedEnumValue { Name = m.Key, Value = (int)m.Value })
-                    .ToArray()
-                : null;
+                .ToArray();
             return new SerializedEnumType
             {
                 Name = e.Name,
@@ -128,15 +126,6 @@ namespace Reko.Core.Serialization
             };
         }
 
-        public SerializedType VisitQualifiedType(QualifiedType qt)
-        {
-            return new QualifiedType_v1
-            {
-                DataType = qt.DataType.Accept(this),
-                Qualifier = qt.Qualifier,
-            };
-        }
-
         public SerializedType VisitReference(ReferenceTo refTo)
         {
             return new ReferenceType_v1
@@ -206,7 +195,7 @@ namespace Reko.Core.Serialization
 
             unions.Add(ut.Name);
             var alts = ut.Alternatives.Select(
-                    a => new SerializedUnionAlternative(a.Value.Name, a.Value.DataType.Accept(this))
+                    a => new UnionAlternative_v1(a.Value.Name, a.Value.DataType.Accept(this))
             );
             union.Alternatives = alts.ToArray();
             return union;

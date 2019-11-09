@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,11 +32,14 @@ namespace Reko.Core.Pascal
         private static Dictionary<string, TokenType> keywords = new Dictionary<string, TokenType>(StringComparer.OrdinalIgnoreCase)
         {
             { "array",      TokenType.Array},
+            { "boolean",    TokenType.Boolean },
             { "case",       TokenType.Case },
             { "char",       TokenType.Char },
             { "const",      TokenType.Const },
             { "end",        TokenType.End },
+            { "extended",   TokenType.Extended },
             { "false",      TokenType.False },
+            { "file",       TokenType.File },
             { "function",   TokenType.Function},
             { "interface",  TokenType.Interface},
             { "inline",     TokenType.Inline},

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,10 +44,19 @@ namespace Reko.Analysis
     /// of performing this across basic block boundaries. The challenge is
     /// to introduce new variables xx_yy that interfere with existing xx 
     /// and yy references.
+    /// This code must be run immediately after SSA translation. In particular
+    /// it must happen before value propagation since VP changes 
+    /// <code>
+    /// adc r1,0,C
+    /// </code>
+    /// to
+    /// <code>
+    /// add r1,C
+    /// </code>
     /// </remarks>
     public class LongAddRewriter
     {
-        private Procedure proc;
+        private SsaState ssa;
         private Expression dst;
         private IProcessorArchitecture arch;
 
@@ -57,10 +66,10 @@ namespace Reko.Analysis
         private static ExpressionMatcher segMemOffset;
         private static InstructionMatcher condm;
 
-        public LongAddRewriter(Procedure proc)
+        public LongAddRewriter(SsaState ssa)
         {
-            this.arch = proc.Architecture;
-            this.proc = proc;
+            this.ssa = ssa;
+            this.arch = ssa.Procedure.Architecture;
         }
 
         static LongAddRewriter()
@@ -75,7 +84,7 @@ namespace Reko.Analysis
                 new Assignment(
                     ExpressionMatcher.AnyId("dst"),
                     new BinaryExpression(
-                        ExpressionMatcher.AnyOperator("op"), 
+                        ExpressionMatcher.AnyOperator("op"),
                         VoidType.Instance,
                         ExpressionMatcher.AnyExpression("left"),
                         ExpressionMatcher.AnyExpression("right"))));
@@ -104,7 +113,7 @@ namespace Reko.Analysis
 
             segMemOffset = new ExpressionMatcher(
                 new SegmentedAccess(
-                    null,
+                    MemoryIdentifier.GlobalMemory,
                     ExpressionMatcher.AnyId(),
                     new BinaryExpression(
                         ExpressionMatcher.AnyOperator("op"),
@@ -114,65 +123,176 @@ namespace Reko.Analysis
                     ExpressionMatcher.AnyDataType("dt")));
         }
 
-        public Instruction CreateLongInstruction(AddSubCandidate loCandidate, AddSubCandidate hiCandidate)
+        public void CreateLongInstruction(AddSubCandidate loCandidate, AddSubCandidate hiCandidate)
         {
             var totalSize = PrimitiveType.Create(
                 Domain.SignedInt | Domain.UnsignedInt,
-                loCandidate.Dst.DataType.BitSize + loCandidate.Dst.DataType.BitSize);
+                loCandidate.Dst.DataType.BitSize + hiCandidate.Dst.DataType.BitSize);
             var left = CreateCandidate(loCandidate.Left, hiCandidate.Left, totalSize);
             var right = CreateCandidate(loCandidate.Right, hiCandidate.Right, totalSize);
             this.dst = CreateCandidate(loCandidate.Dst, hiCandidate.Dst, totalSize);
+            var stmts = hiCandidate.Statement.Block.Statements;
+            var linAddr = hiCandidate.Statement.LinearAddress;
+            var iStm = FindInsertPosition(loCandidate, hiCandidate, stmts);
+            Statement stmMkLeft = null;
+            if (left is Identifier)
+            {
+                stmMkLeft = stmts.Insert(
+                    iStm++,
+                    linAddr,
+                    CreateMkSeq(left, hiCandidate.Left, loCandidate.Left));
+                left = ReplaceDstWithSsaIdentifier(left, null, stmMkLeft);
+            }
 
-            if (left == null || right == null || dst == null)
-                return null;
-        
+            Statement stmMkRight = null;
+            if (right is Identifier)
+            {
+                stmMkRight = stmts.Insert(
+                    iStm++,
+                    linAddr,
+                    CreateMkSeq(right, hiCandidate.Right, loCandidate.Right));
+                right = ReplaceDstWithSsaIdentifier(right, null, stmMkRight);
+            }
+
             var expSum = new BinaryExpression(loCandidate.Op, left.DataType, left, right);
+            Instruction instr = Assign(dst, expSum);
+            var stmLong = stmts.Insert(iStm++, linAddr, instr);
+            this.dst = ReplaceDstWithSsaIdentifier(this.dst, expSum, stmLong);
+
+            var sidDst = GetSsaIdentifierOf(dst);
+            var sidLeft = GetSsaIdentifierOf(left);
+            var sidRight = GetSsaIdentifierOf(right);
+            if (stmMkLeft != null && sidLeft != null)
+            {
+                GetSsaIdentifierOf(loCandidate.Left)?.Uses.Add(stmMkLeft);
+                GetSsaIdentifierOf(hiCandidate.Left)?.Uses.Add(stmMkLeft);
+            }
+            if (stmMkRight != null && sidRight != null)
+            {
+                GetSsaIdentifierOf(loCandidate.Right)?.Uses.Add(stmMkRight);
+                GetSsaIdentifierOf(hiCandidate.Right)?.Uses.Add(stmMkRight);
+            }
+            if (sidDst != null)
+            {
+                if (sidLeft != null)
+                    sidLeft.Uses.Add(stmLong);
+                if (sidRight != null)
+                    sidRight.Uses.Add(stmLong);
+            }
+
+            var sidDstLo = GetSsaIdentifierOf(loCandidate.Dst);
+            if (sidDstLo != null)
+            {
+                var cast = new Slice(loCandidate.Dst.DataType, dst, 0);
+                var stmCastLo = stmts.Insert(iStm++, linAddr, new AliasAssignment(
+                    sidDstLo.Identifier, cast));
+                var stmDeadLo = sidDstLo.DefStatement;
+                sidDstLo.DefExpression = cast;
+                sidDstLo.DefStatement = stmCastLo;
+
+                var sidDstHi = GetSsaIdentifierOf(hiCandidate.Dst);
+                var slice = new Slice(hiCandidate.Dst.DataType, dst, loCandidate.Dst.DataType.BitSize);
+                var stmSliceHi = stmts.Insert(iStm++, linAddr, new AliasAssignment(
+                    sidDstHi.Identifier, slice));
+                var stmDeadHi = sidDstHi.DefStatement;
+                sidDstHi.DefExpression = slice;
+                sidDstHi.DefStatement = stmSliceHi;
+
+                if (sidDstLo != null)
+                {
+                    sidDst.Uses.Add(stmCastLo);
+                }
+                if (sidDstHi != null)
+                {
+                    sidDst.Uses.Add(stmSliceHi);
+                }
+                ssa.DeleteStatement(stmDeadLo);
+                ssa.DeleteStatement(stmDeadHi);
+            }
+        }
+
+        /// <summary>
+        /// Find a statement index appropriate for insert the new
+        /// long addition statements.
+        /// </summary>
+        /// <returns></returns>
+        private int FindInsertPosition(AddSubCandidate loCandidate, AddSubCandidate hiCandidate, StatementList stmts)
+        {
+            int iStm = stmts.IndexOf(hiCandidate.Statement);
+            if (loCandidate.Dst is Identifier idLow)
+            {
+                int iFirstLowUsage = ssa.Identifiers[idLow].Uses
+                    .Select(u => stmts.IndexOf(u))
+                    .Where(i => i >= 0)
+                    .Min();
+                iStm = Math.Min(iStm, iFirstLowUsage);
+            }
+            return iStm;
+        }
+
+        private Expression ReplaceDstWithSsaIdentifier(Expression dst, BinaryExpression src, Statement stmLong)
+        {
+            if (stmLong.Instruction is Assignment ass) {
+                var sid = ssa.Identifiers.Add(ass.Dst, stmLong, src, false);
+                ass.Dst = sid.Identifier;
+                return ass.Dst;
+            }
+            return dst;
+        }
+
+        private Instruction CreateMkSeq(Expression dst, Expression hi, Expression lo)
+        {
+            return Assign(dst, new MkSequence(dst.DataType, hi, lo));
+        }
+
+        private Instruction Assign(Expression dst, Expression src)
+        {
             if (dst is Identifier idDst)
             {
-                return new Assignment(idDst, expSum);
+                return new Assignment(idDst, src);
             }
             else
             {
-                return new Store(dst, expSum);
+                return new Store(dst, src);
             }
+        }
+
+        private SsaIdentifier GetSsaIdentifierOf(Expression dst)
+        {
+            if (dst is Identifier id)
+                return ssa.Identifiers[id];
+            else
+                return null;
         }
 
         public void Transform()
         {
-            foreach (var block in proc.ControlGraph.Blocks)
+            foreach (var block in ssa.Procedure.ControlGraph.Blocks)
             {
                 ReplaceLongAdditions(block);
             }
         }
 
+        /// <summary>
+        /// Look for add/adc or sub/sbc pairs that look like long additions
+        /// by scanning the statements from the beginning of the block to the end.
+        /// </summary>
         public void ReplaceLongAdditions(Block block)
         {
+            var stmtsOrig = block.Statements.ToList();
             for (int i = 0; i < block.Statements.Count; ++i)
             {
-                var loInstr = MatchAddSub(block.Statements[i].Instruction);
+                var loInstr = MatchAddSub(block.Statements[i]);
                 if (loInstr == null)
                     continue;
-                var cond = FindConditionOf(block.Statements, i, loInstr.Dst);
+                var cond = FindConditionOf(stmtsOrig, i, loInstr.Dst);
                 if (cond == null)
                     continue;
-
-                var hiInstr = FindUsingInstruction(block.Statements, cond.StatementIndex, loInstr);
+                var hiInstr = FindUsingInstruction(cond.FlagGroup, loInstr);
                 if (hiInstr == null)
                     continue;
 
-                var longInstr = CreateLongInstruction(loInstr, hiInstr);
-                if (longInstr != null)
-                {
-                    block.Statements[hiInstr.StatementIndex].Instruction = longInstr;
-                    cond = FindConditionOf(block.Statements, hiInstr.StatementIndex, hiInstr.Dst);
-                    if (cond != null)
-                    {
-                        block.Statements[cond.StatementIndex].Instruction =
-                            new Assignment(
-                                cond.FlagGroup, new ConditionOf(dst));
-                        i = cond.StatementIndex;
-                    }
-                }
+                CreateLongInstruction(loInstr, hiInstr);
             }
         }
 
@@ -183,41 +303,32 @@ namespace Reko.Analysis
         /// <param name="i"></param>
         /// <param name="next"></param>
         /// <returns></returns>
-        public AddSubCandidate FindUsingInstruction(StatementList stms, int i, AddSubCandidate loInstr)
+        public AddSubCandidate FindUsingInstruction(Identifier cy, AddSubCandidate loInstr)
         {
-            for (++i; i < stms.Count; ++i)
+            var queue = new Queue<Statement>(ssa.Identifiers[cy].Uses);
+            while (queue.Count > 0)
             {
-                var asc = MatchAdcSbc(stms[i].Instruction);
+                var use = queue.Dequeue();
+                var asc = MatchAdcSbc(use);
                 if (asc != null)
                 {
                     //Debug.Print("Left sides: [{0}] [{1}]", asc.Left, loInstr.Left);
                     if (asc.Left.GetType() != loInstr.Left.GetType())
                         return null;
-                    asc.StatementIndex = i;
+                    asc.Statement = use;
                     return asc;
                 }
-                if (!(stms[i].Instruction is Assignment ass))
+                if (!(use.Instruction is Assignment ass))
                     continue;
+                if (ass.Src is Slice)
+                {
+                    queue.EnqueueRange(ssa.Identifiers[ass.Dst].Uses);
+                    continue;
+                }
                 if (IsCarryFlag(ass.Dst))
                     return null;
             }
             return null;
-        }
-
-        public int FindUsingInstruction2(StatementList stms, int i, Operator next)
-        {
-            for (++i; i < stms.Count; ++i)
-            {
-                if (!(stms[i].Instruction is Assignment ass))
-                    continue;
-                if (!(ass.Src is BinaryExpression bin))
-                    continue;
-                if (bin.Operator == next)
-                    return i;
-                if (IsCarryFlag(ass.Dst))
-                    return -1;
-            }
-            return -1;
         }
 
         public bool IsCarryFlag(Expression exp)
@@ -236,13 +347,25 @@ namespace Reko.Analysis
         /// <param name="p"></param>
         /// <param name="ax"></param>
         /// <returns></returns>
-        public CondMatch FindConditionOf(StatementList stms, int iStm, Expression exp)
+        public CondMatch FindConditionOf(List<Statement> stms, int iStm, Expression exp)
         {
+            if (exp is Identifier idLo)
+            {
+                foreach (var use in ssa.Identifiers[idLo].Uses.Where(u => condm.Match(u.Instruction)))
+                {
+                    var grf = (Identifier)condm.CapturedExpressions("grf");
+                    var condExp = condm.CapturedExpressions("exp");
+                    if (grf.Storage is FlagGroupStorage && exp == condExp)
+                    {
+                        return new CondMatch { FlagGroup = grf, src = exp, Statement = use };
+                    }
+                }
+            }
             for (int i = iStm + 1; i < stms.Count; ++i)
             {
                 if (!condm.Match(stms[i].Instruction))
                     continue;
-                var grf = (Identifier) condm.CapturedExpressions("grf");
+                var grf = (Identifier)condm.CapturedExpressions("grf");
                 var condExp = condm.CapturedExpressions("exp");
                 if (grf.Storage is FlagGroupStorage && exp == condExp)
                 {
@@ -254,25 +377,19 @@ namespace Reko.Analysis
 
         private Expression CreateCandidate(Expression expLo, Expression expHi, DataType totalSize)
         {
-            var idLo = expLo as Identifier;
-            var idHi = expHi as Identifier;
-            if (idLo != null && idHi != null)
+            if (expLo is Identifier idLo && expHi is Identifier idHi)
             {
-                return proc.Frame.EnsureSequence(idHi.Storage, idLo.Storage, totalSize);
+                return ssa.Procedure.Frame.EnsureSequence(totalSize, idHi.Storage, idLo.Storage);
             }
-            var memDstLo = expLo as MemoryAccess;
-            var memDstHi = expHi as MemoryAccess;
-            if (memDstLo != null && memDstHi != null && MemoryOperandsAdjacent(memDstLo, memDstHi))
+            if (expLo is MemoryAccess memDstLo && expHi is MemoryAccess memDstHi && MemoryOperandsAdjacent(memDstLo, memDstHi))
             {
                 return CreateMemoryAccess(memDstLo, totalSize);
             }
-            var immLo = expLo as Constant;
-            var immHi = expHi as Constant;
-            if (immLo != null && immHi != null)
+            if (expLo is Constant immLo && expHi is Constant immHi)
             {
-                return Constant.Create(totalSize, ((ulong)immHi.ToUInt32() << expLo.DataType.BitSize) | immLo.ToUInt32());
+                return Constant.Create(totalSize, (immHi.ToUInt64() << expLo.DataType.BitSize) | immLo.ToUInt32());
             }
-            return null;
+            return new MkSequence(totalSize, expHi, expLo);
         }
 
         private Expression CreateMemoryAccess(MemoryAccess mem, DataType totalSize)
@@ -292,37 +409,23 @@ namespace Reko.Analysis
             public int StatementIndex;
             public Identifier FlagGroup;
             public Expression src;
-        }
-
-        public CondMatch MatchCond(Instruction instr)
-        {
-            var ass = instr as Assignment;
-            if (ass == null)
-                return null;
-            var cond = ass.Src as ConditionOf;
-            if (cond == null)
-                return null;
-            var src = cond.Expression as Identifier;
-            if (cond == null)
-                return null;
-            return new CondMatch { src = src, FlagGroup = ass.Dst };
+            public Statement Statement;
         }
 
         public bool MemoryOperandsAdjacent(MemoryAccess m1, MemoryAccess m2)
         {
-            //$TODO: endianness?
             var off1 = GetOffset(m1);
             var off2 = GetOffset(m2);
             if (off1 == null || off2 == null)
                 return false;
-            return off1.ToInt32() + m1.DataType.Size == off2.ToInt32();
+            return ssa.Procedure.Architecture.Endianness.OffsetsAdjacent(off1.ToInt32(), off2.ToInt32(), m1.DataType.Size);
         }
 
         private Constant GetOffset(MemoryAccess access)
         {
             if (memOffset.Match(access))
             {
-                return (Constant) memOffset.CapturedExpression("offset");
+                return (Constant)memOffset.CapturedExpression("offset");
             }
             if (segMemOffset.Match(access))
             {
@@ -337,9 +440,9 @@ namespace Reko.Analysis
         /// <param name="instr"></param>
         /// <returns>If the match succeeded, returns a partial BinaryExpression
         /// with the left and right side of the ADC/SBC instruction.</returns>
-        public AddSubCandidate MatchAdcSbc(Instruction instr)
+        public AddSubCandidate MatchAdcSbc(Statement stm)
         {
-            if (!adcPattern.Match(instr))
+            if (!adcPattern.Match(stm.Instruction))
                 return null;
             if (!IsCarryFlag(adcPattern.CapturedExpressions("cf")))
                 return null;
@@ -351,13 +454,14 @@ namespace Reko.Analysis
                 Dst = adcPattern.CapturedExpressions("dst"),
                 Op = op,
                 Left = adcPattern.CapturedExpressions("left"),
-                Right = adcPattern.CapturedExpressions("right")
+                Right = adcPattern.CapturedExpressions("right"),
+                Statement = stm
             };
         }
 
-        public AddSubCandidate MatchAddSub(Instruction instr)
+        public AddSubCandidate MatchAddSub(Statement stm)
         {
-            if (!addPattern.Match(instr))
+            if (!addPattern.Match(stm.Instruction))
                 return null;
             var op = addPattern.CapturedOperators("op");
             if (!IsIAddOrISub(op))
@@ -375,35 +479,12 @@ namespace Reko.Analysis
         {
             return (op == Operator.IAdd || op == Operator.ISub);
         }
-
-        public IEnumerable<CarryLinkedInstructions> FindCarryLinkedInstructions(Block block)
-        {
-            for (var i = block.Statements.Count - 1; i>= 0; --i) 
-            {
-                //FindUseCarryFlagInAddition(stm);
-                //FindDefOfCarry(stm);
-
-            }
-            yield break;
-        }
-
-        public static void TestCondition()
-        {
-            //LongAddRewriter larw = new LongAddRewriter(this.frame, state);
-            //int iUse = larw.IndexOfUsingOpcode(instrs, i, next);
-            //if (iUse >= 0 && larw.Match(instrCur, instrs[iUse]))
-            //{
-            //    instrs[iUse].code = Opcode.nop;
-            //    larw.EmitInstruction(op, emitter);
-            //    return larw.Dst;
-            //}
-        }
-
     }
 
     public class AddSubCandidate
     {
         public int StatementIndex;
+        public Statement Statement;
         public Expression Dst;
         public Operator Op;
         public Expression Left;

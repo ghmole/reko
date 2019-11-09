@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,98 +18,181 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Analysis;
 using Reko.Core;
-using Reko.Core.Lib;
 using Reko.Core.Expressions;
-using Reko.Core.Machine;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
-using NUnit.Framework;
-using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using Rhino.Mocks;
-using System.Collections.Generic;
 
 namespace Reko.UnitTests.Analysis
 {
+    /// <summary>
+    /// These are SSA integration tests: they hit the filesystem a lot. 
+    /// Therefore they aren't strictly speaking "unit" tests.
+    /// </summary>
 	[TestFixture]
+    [Category(Categories.IntegrationTests)]
 	public class SsaTests : AnalysisTestBase
 	{
 		private SsaState ssa;
+        private Identifier r1;
+        private Identifier r2;
 
-		[Test]
+        [SetUp]
+        public void Setup()
+        {
+            this.r1 = new Identifier("r1", PrimitiveType.Word32, new RegisterStorage("r1", 1, 0, PrimitiveType.Word32));
+            this.r2 = new Identifier("r2", PrimitiveType.Word32, new RegisterStorage("r2", 2, 0, PrimitiveType.Word32));
+        }
+
+        private Identifier EnsureRegister16(ProcedureBuilder m, string name)
+        {
+            return m.Frame.EnsureRegister(new RegisterStorage(name, m.Frame.Identifiers.Count, 0, PrimitiveType.Word16));
+        }
+
+        private Identifier EnsureRegister32(ProcedureBuilder m, string name)
+        {
+            return m.Frame.EnsureRegister(new RegisterStorage(name, m.Frame.Identifiers.Count, 0, PrimitiveType.Word32));
+        }
+
+        protected override void RunTest(Program program, TextWriter writer)
+		{
+            var flow = new ProgramDataFlow();
+            var importResolver = new Mock<IImportResolver>();
+            foreach (Procedure proc in program.Procedures.Values)
+            {
+                var sst = new SsaTransform(
+                    program,
+                    proc, 
+                    new HashSet<Procedure>(),
+                    importResolver.Object,
+                    flow);
+                sst.Transform();
+                sst.AddUsesToExitBlock();
+                sst.RemoveDeadSsaIdentifiers();
+                Debug.Print("SsaTest: {0}", new StackFrame(3).GetMethod().Name);
+                ssa = sst.SsaState;
+                ssa.Write(writer);
+                proc.Write(false, true, writer);
+                writer.WriteLine();
+                ssa.Validate(s => Assert.Fail(s));
+            }
+		}
+
+        private void RunUnitTest(ProcedureBuilder m, string outfile)
+        {
+            var flow = new ProgramDataFlow();
+            var importResolver = new Mock<IImportResolver>();
+
+            var proc = m.Procedure;
+            var platform = new FakePlatform(null, m.Architecture)
+            {
+                Test_CreateTrashedRegisters = () =>
+                    new HashSet<RegisterStorage>()
+                {
+                    (RegisterStorage)r1.Storage,
+                    (RegisterStorage)r2.Storage,
+                }
+            };
+            var program = new Program()
+            {
+                Architecture = m.Architecture,
+                Platform = platform,
+            };
+            var sst = new SsaTransform(
+                program,
+                proc, 
+                new HashSet<Procedure>(),
+                importResolver.Object,
+                flow);
+            sst.Transform();
+            ssa = sst.SsaState;
+            using (var fut = new FileUnitTester(outfile))
+            {
+                ssa.Write(fut.TextWriter);
+                proc.Write(false, fut.TextWriter);
+                fut.AssertFilesEqual();
+                ssa.Validate(s => Assert.Fail(s));
+            }
+        }
+
+        private void Dump(CallGraph cg)
+        {
+            var sw = new StringWriter();
+            cg.Write(sw);
+            Debug.Print("{0}", sw.ToString());
+        }
+
+        [Test]
 		public void SsaSimple()
 		{
-			RunFileTest("Fragments/ssasimple.asm", "Analysis/SsaSimple.txt");
+			RunFileTest_x86_real("Fragments/ssasimple.asm", "Analysis/SsaSimple.txt");
 		}
 
 		[Test]
 		public void SsaConverge()
 		{
-			RunFileTest("Fragments/3converge.asm", "Analysis/SsaConverge.txt");
+			RunFileTest_x86_real("Fragments/3converge.asm", "Analysis/SsaConverge.txt");
 		}
 
 		[Test]
 		public void SsaMemoryTest()
 		{
-			RunFileTest("Fragments/memory_simple.asm", "Analysis/SsaMemoryTest.txt");			
-		}
-
-		[Test]
-		public void SsaReg00004()
-		{
-			RunFileTest32("Fragments/regressions/r00004.asm", "Analysis/SsaReg00004.txt");
-		}
-
-		[Test]
-		public void SsaReg00005()
-		{
-			RunFileTest("Fragments/regressions/r00005.asm", "Analysis/SsaReg00005.txt");
+			RunFileTest_x86_real("Fragments/memory_simple.asm", "Analysis/SsaMemoryTest.txt");			
 		}
 
 		[Test]
 		public void SsaAddSubCarries()
 		{
-			RunFileTest("Fragments/addsubcarries.asm", "Analysis/SsaAddSubCarries.txt");			
+			RunFileTest_x86_real("Fragments/addsubcarries.asm", "Analysis/SsaAddSubCarries.txt");
 		}
 
 		[Test]
 		public void SsaSwitch()
 		{
-			RunFileTest("Fragments/switch.asm", "Analysis/SsaSwitch.txt");
+			RunFileTest_x86_real("Fragments/switch.asm", "Analysis/SsaSwitch.txt");
 		}
 		
 		[Test]
 		public void SsaFactorial()
 		{
-			RunFileTest("Fragments/factorial.asm", "Analysis/SsaFactorial.txt");
+			RunFileTest_x86_real("Fragments/factorial.asm", "Analysis/SsaFactorial.txt");
 		}
 
 		[Test]
 		public void SsaFactorialReg()
 		{
-			RunFileTest("Fragments/factorial_reg.asm", "Analysis/SsaFactorialReg.txt");
+			RunFileTest_x86_real("Fragments/factorial_reg.asm", "Analysis/SsaFactorialReg.txt");
 		}
 
 		[Test]
 		public void SsaForkedLoop()
 		{
-			RunFileTest("Fragments/forkedloop.asm", "Analysis/SsaForkedLoop.txt");
+			RunFileTest_x86_real("Fragments/forkedloop.asm", "Analysis/SsaForkedLoop.txt");
 		}
 
 		[Test]
 		public void SsaNestedRepeats()
 		{
-			RunFileTest("Fragments/nested_repeats.asm", "Analysis/SsaNestedRepeats.txt");
+			RunFileTest_x86_real("Fragments/nested_repeats.asm", "Analysis/SsaNestedRepeats.txt");
 		}
+
+        [Test]
+        public void SsaNegsNots()
+        {
+            RunFileTest_x86_real("Fragments/negsnots.asm", "Analysis/SsaNegsNots.txt");
+        }
 
         [Test]
         public void SsaOutParamters()
         {
-            ProcedureBuilder m = new ProcedureBuilder("foo");
-            Identifier r4 = m.Register(4);
+            var m = new ProcedureBuilder("foo");
+            Identifier r4 = m.Register("r4");
             m.MStore(m.Word32(0x400), m.Fn("foo", m.Out(PrimitiveType.Ptr32, r4)));
             m.Return();
 
@@ -160,74 +243,6 @@ namespace Reko.UnitTests.Analysis
             RunUnitTest(m, "Analysis/SsaCallIndirect.txt");
         }
 
-        private void RunUnitTest(ProcedureBuilder m, string outfile)
-        {
-            var proc = m.Procedure;
-            var sst = new SsaTransform(
-                new ProgramDataFlow(),
-                proc,
-                null,
-                proc.CreateBlockDominatorGraph(),
-                new HashSet<RegisterStorage>());
-            ssa = sst.SsaState;
-            using (var fut = new FileUnitTester(outfile))
-            {
-                ssa.Write(fut.TextWriter);
-                proc.Write(false, fut.TextWriter);
-                fut.AssertFilesEqual();
-                ssa.Validate(s => Assert.Fail(s));
-            }
-        }
-
-        private Identifier EnsureRegister16(ProcedureBuilder m, string name)
-        {
-            return m.Frame.EnsureRegister(new RegisterStorage(name, m.Frame.Identifiers.Count, 0, PrimitiveType.Word16));
-        }
-
-        private Identifier EnsureRegister32(ProcedureBuilder m, string name)
-        {
-            return m.Frame.EnsureRegister(new RegisterStorage(name, m.Frame.Identifiers.Count, 0, PrimitiveType.Word32));
-        }
-
-		protected override void RunTest(Program program, TextWriter writer)
-		{
-            var flow = new ProgramDataFlow(program);
-            var eventListener = new FakeDecompilerEventListener();
-            var importResolver = MockRepository.GenerateStub<IImportResolver>();
-            importResolver.Replay();
-            var trf = new TrashedRegisterFinder(program, program.Procedures.Values, flow, eventListener);
-            trf.Compute();
-            trf.RewriteBasicBlocks();
-            Dump(program.CallGraph);
-            RegisterLiveness.Compute(program, flow, eventListener);
-            GlobalCallRewriter.Rewrite(program, flow, eventListener);
-
-			foreach (Procedure proc in program.Procedures.Values)
-			{
-				Aliases alias = new Aliases(proc);
-				alias.Transform();
-				var gr = proc.CreateBlockDominatorGraph();
-				SsaTransform sst = new SsaTransform(
-                    flow,
-                    proc,
-                    importResolver,
-                    gr,
-                    new HashSet<RegisterStorage>());
-				ssa = sst.SsaState;
-				ssa.Write(writer);
-				proc.Write(false, true, writer);
-				writer.WriteLine();
-                ssa.Validate(s => Assert.Fail(s));
-			}
-		}
-
-        private void Dump(CallGraph cg)
-        {
-            var sw = new StringWriter();
-            cg.Write(sw);
-            Debug.Print("{0}", sw.ToString());
-        }
-
         [Test]
         public void SsaSwitchWithSharedBranches()
         {
@@ -266,6 +281,74 @@ namespace Reko.UnitTests.Analysis
             m.Return();
 
             RunUnitTest(m, "Analysis/SsaSwitchWithSharedBranches.txt");
+        }
+
+        [Test]
+        public void SsaAliasFlags()
+        {
+            var sExp =
+@"esi:esi
+    def:  def esi
+    uses: SZ_2 = cond(esi & esi)
+          SZ_2 = cond(esi & esi)
+SZ_2: orig: SZ
+    def:  SZ_2 = cond(esi & esi)
+    uses: al_4 = Test(ULE,SZ_2)
+          S_5 = SLICE(SZ_2, bool, 0) (alias)
+          Z_6 = SLICE(SZ_2, bool, 1) (alias)
+C_3: orig: C
+    def:  C_3 = false
+    uses: use C_3
+al_4: orig: al
+    def:  al_4 = Test(ULE,SZ_2)
+    uses: use al_4
+S_5: orig: S
+    def:  S_5 = SLICE(SZ_2, bool, 0) (alias)
+    uses: use S_5
+Z_6: orig: Z
+    def:  Z_6 = SLICE(SZ_2, bool, 1) (alias)
+    uses: use Z_6
+// ProcedureBuilder
+// Return size: 0
+define ProcedureBuilder
+ProcedureBuilder_entry:
+	def esi
+	// succ:  l1
+l1:
+	SZ_2 = cond(esi & esi)
+	S_5 = SLICE(SZ_2, bool, 0) (alias)
+	Z_6 = SLICE(SZ_2, bool, 1) (alias)
+	C_3 = false
+	al_4 = Test(ULE,SZ_2)
+	return
+	// succ:  ProcedureBuilder_exit
+ProcedureBuilder_exit:
+	use al_4
+	use C_3
+	use S_5
+	use Z_6
+
+";
+            RunStringTest(sExp, m =>
+            {
+                var eflags = new RegisterStorage("eflags", 9, 0, PrimitiveType.Word32);
+                var sz = m.Frame.EnsureFlagGroup(m.Architecture.GetFlagGroup("SZ"));
+                var cz = m.Frame.EnsureFlagGroup(m.Architecture.GetFlagGroup("SZ"));
+                var c = m.Frame.EnsureFlagGroup(m.Architecture.GetFlagGroup("C"));
+                var al = m.Reg8("al", 0);
+                var esi = m.Reg32("esi", 6);
+                m.Assign(sz, m.Cond(m.And(esi, esi)));
+                m.Assign(c, Constant.False());
+                m.Assign(al, m.Test(ConditionCode.ULE, cz));
+                m.Return();
+            });
+        }
+
+        [Test]
+        [Category(Categories.IntegrationTests)]
+        public void SsaPreservedAlias()
+        {
+            RunFileTest_x86_real("Fragments/multiple/preserved_alias.asm", "Analysis/SsaPreservedAlias.txt");
         }
     }
 }

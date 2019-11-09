@@ -2,7 +2,7 @@
 .i86
 
 main proc
-	mov si,0x1230
+;	mov si,0x1230
 	call recurse
 	ret
 	endp
@@ -26,5 +26,6 @@ recurse_done:
 stomp_esi proc
 	mov esi,0x1234
 	mov [0x4321],esi
+	ret
 	endp
 	

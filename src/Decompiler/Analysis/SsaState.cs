@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,49 +31,29 @@ using System.Text;
 
 namespace Reko.Analysis
 {
+    /// <summary>
+    /// This class maintains the SSA transformation of a given procedure. Specifically
+    /// it keeps tracks of all SSA Identifiers, which implicitly form a graph of 
+    /// identifiers connected by use->def and def->use edges.
+    /// </summary>
+    [DebuggerDisplay("{Procedure.Name}")]
 	public class SsaState
 	{
-		private SsaIdentifierCollection ids;
-
-		public SsaState(Procedure proc, DominatorGraph<Block> domGraph)
+		public SsaState(Procedure proc)
 		{
 			this.Procedure = proc;
-            this.DomGraph = domGraph;
-			this.ids = new SsaIdentifierCollection();
+			this.Identifiers = new SsaIdentifierCollection();
 		}
 
-        public Procedure Procedure { get; private set; }
-        public DominatorGraph<Block> DomGraph { get; private set; }
+        public SsaIdentifierCollection Identifiers { get; }
+
+        public Procedure Procedure { get; }
 
         /// <summary>
-        /// Inserts the instr d of the identifier v at statement S.
+        /// Given a procedure in SSA form, converts it back to "normal" form.
         /// </summary>
-        /// <param name="d"></param>
-        /// <param name="v"></param>
-        /// <param name="S"></param>
-        public void Insert(Instruction d, Identifier v, Statement S)
-        {
-            // Insert new phi-functions.
-            foreach (var dfFode in DomGraph.DominatorFrontier(S.Block))
-            {
-                // If there is no phi-function for v
-                //    create new phi-function for v. (which is an insert, so call self recursively)
-                // All input operands of the new phi-finctions are initually assumed to be
-                // uses of r.
-
-                // Update uses sets for all uses dominated by S, or the new phi statements.
-                // This is done by walking down the dominator tree from each def and find uses
-                // that along wit the def match property 1.
-
-                // Update each use that is a parameter of a newly created phi-function, according
-                // to property 2.
-            }
-        }
-		/// <summary>
-		/// Given a procedure in SSA form, converts it back to "normal" form.
-		/// </summary>
-		/// <param name="renameVariables"></param>
-		public void ConvertBack(bool renameVariables)
+        /// <param name="renameVariables"></param>
+        public void ConvertBack(bool renameVariables)
 		{
 			UnSSA unssa = new UnSSA(this);
 			foreach (Block block in Procedure.ControlGraph.Blocks)
@@ -98,6 +78,55 @@ namespace Reko.Analysis
 
 			Procedure.ExitBlock.Statements.Clear();
 		}
+
+        /// <summary>
+        /// Returns the index of the last <see cref="DefInstruction"/> in the 
+        /// <paramref name="stmts"/> statement list.
+        /// </summary>
+        /// <param name="stmts"></param>
+        /// <returns></returns>
+        private int LastDefPosition(StatementList stmts)
+        {
+            for (int i = stmts.Count - 1; i >= 0; --i)
+            {
+                if (stmts[i].Instruction is DefInstruction)
+                    return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// If there is no defined SSA identifier for <paramref name="id"/>
+        /// identifier, then create DefInstruction in the <paramref name="b"/>
+        /// block. Return existing SSA identifier otherwise
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="b"></param>
+        /// <returns>
+        /// New or existing SSA identifier for <paramref name="id"/>
+        /// </returns>
+        public SsaIdentifier EnsureDefInstruction(Identifier id, Block b)
+        {
+            if (Identifiers.TryGetValue(id, out var sid))
+                return sid;
+            sid = Identifiers.Add(id, null, null, false);
+            var stm = new Statement(
+                b.Address.ToLinear(),
+                new DefInstruction(id),
+                b);
+            sid.DefStatement = stm;
+
+            if (b == b.Procedure.EntryBlock)
+            {
+                int defPos = LastDefPosition(b.Statements) + 1;
+                b.Statements.Insert(defPos, stm);
+            }
+            else
+            {
+                b.Statements.Add(stm);
+            }
+            return sid;
+        }
 
         [Conditional("DEBUG")]
 		public void Dump(bool trace)
@@ -124,8 +153,8 @@ namespace Reko.Analysis
         }
 
         /// <summary>
-        /// Check if there are uses which is not in the procedure statements
-        /// list
+        /// Check if there are uses which aren't in the procedure statement
+        /// list.
         /// </summary>
         private void ValidateDeadUses(Action<string> error)
         {
@@ -143,7 +172,7 @@ namespace Reko.Analysis
         }
 
         /// <summary>
-        /// Compare uses stored in SsaState with actual ones
+        /// Compare uses stored in SsaState with actual ones.
         /// </summary>
         public void ValidateUses(Action<string> error)
         {
@@ -151,16 +180,17 @@ namespace Reko.Analysis
             var uc = new InstructionUseCollector();
             foreach (var stm in Procedure.Statements)
             {
-                var idMapStored = GetStatementIdentifiers(stm);
+                var idMapStored = GetStatementIdentifierCounts(stm);
                 var idMapActual = uc.CollectUses(stm);
                 foreach (var id in idMapStored.Keys)
                 {
                     if (!idMapActual.ContainsKey(id) || idMapActual[id] < idMapStored[id])
                         error(
                             string.Format(
-                                "{0}: incorrect {1} id in {2} uses",
+                                "{0}: incorrect {1} id in {2}:{3} uses",
                                 Procedure.Name,
                                 id,
+                                stm.Block,
                                 stm));
                 }
                 foreach (var id in idMapActual.Keys)
@@ -168,34 +198,35 @@ namespace Reko.Analysis
                     if (!idMapStored.ContainsKey(id) || idMapStored[id] < idMapActual[id])
                         error(
                             string.Format(
-                                "{0}: there is no {1} id in {2} uses",
+                                "{0}: there is no {1} id in {2}:{3} uses",
                                 Procedure.Name,
                                 id,
+                                stm.Block,
                                 stm));
                 }
             }
         }
 
         /// <summary>
-        /// Collect all the statements that are used in statement
-        /// stm, _according to the SsaState_. 
+        /// Counts the number of uses of each identifier referenced in the 
+        /// statement <paramref name="stm"/> by consulting the SSA state.
         /// </summary>
         /// <param name="stm"></param>
-        /// <returns></returns>
-        private IDictionary<Identifier, int> GetStatementIdentifiers(Statement stm)
+        /// <returns>A dictionary mapping identifiers to use counts.</returns>
+        private IDictionary<Identifier, int> GetStatementIdentifierCounts(Statement stm)
         {
             var idMap =
                (from sid in Identifiers
                 from use in sid.Uses
                 where use == stm
                 group new { sid.Identifier, use } by sid.Identifier into g
-                select new { Key = g.Key, Value = g.Count() })
+                select new { g.Key, Value = g.Count() })
                 .ToDictionary(de => de.Key, de => de.Value);
             return idMap;
         }
 
         /// <summary>
-        /// Compare definitions stored in SsaState with actual ones
+        /// Compare definitions stored in SsaState with actual ones.
         /// </summary>
         public void ValidateDefinitions(Action<string> error)
         {
@@ -206,14 +237,19 @@ namespace Reko.Analysis
                 var definitions = dc.CollectDefinitions(stm);
                 foreach (var defId in definitions)
                 {
-                    if (actualDefs.ContainsKey(defId))
+                    if (actualDefs.TryGetValue(defId, out var def))
+                    {
                         error(string.Format(
                             "{0}: multiple definitions for {1} ({2} and {3})",
                             Procedure.Name,
                             defId,
                             stm,
-                            actualDefs[defId]));
-                    actualDefs.Add(defId, stm);
+                            def));
+                    }
+                    else
+                    {
+                        actualDefs.Add(defId, stm);
+                    }
                 }
             }
             foreach (var sid in Identifiers)
@@ -250,7 +286,7 @@ namespace Reko.Analysis
         /// Deletes a statement by removing all the ids it references 
         /// from SSA state, then removes the statement itself from code.
         /// </summary>
-        /// <param name="pstm"></param>
+        /// <param name="stm"></param>
         public void DeleteStatement(Statement stm)
 		{
 			// Remove all definitions and uses.
@@ -263,11 +299,6 @@ namespace Reko.Analysis
 			stm.Block.Statements.Remove(stm);
 		}
 
-        public int RpoNumber(Block b)
-        {
-            return DomGraph.ReversePostOrder[b];
-        }
-
 		/// <summary>
 		/// Writes all SSA identifiers, showing the original variable,
 		/// the defining statement, and the using statements.
@@ -275,15 +306,19 @@ namespace Reko.Analysis
 		/// <param name="writer"></param>
 		public void Write(TextWriter writer)
 		{
-			foreach (SsaIdentifier id in ids)
+			foreach (SsaIdentifier id in Identifiers)
 			{
 				id.Write(writer);
 				writer.WriteLine();
 			}
 		}
 
-		public SsaIdentifierCollection Identifiers { get { return ids; } }
-
+        /// <summary>
+        /// For each <see cref="SsaIdentifier"/>, if its defining statement is
+        /// <paramref name="stmOld"/>, replace it with <paramref name="stmNew"/>.
+        /// </summary>
+        /// <param name="stmOld"></param>
+        /// <param name="stmNew"></param>
 		public void ReplaceDefinitions(Statement stmOld, Statement stmNew)
 		{
 			foreach (var sid in Identifiers)
@@ -292,6 +327,20 @@ namespace Reko.Analysis
 					sid.DefStatement = stmNew;
 			}
 		}
+
+        public void AddDefinitions(Statement stm)
+        {
+            var dc = new SsaDefinitionsCollector();
+            var definitions = dc.CollectDefinitions(stm);
+            foreach (var id in definitions)
+            {
+                if (Identifiers.TryGetValue(id, out var sid))
+                {
+                    sid.DefExpression = null;
+                    sid.DefStatement = stm;
+                }
+            }
+        }
 
         /// <summary>
         /// Remove all uses <paramref name="stm"/> makes.
@@ -306,6 +355,18 @@ namespace Reko.Analysis
 		}
 
         /// <summary>
+        /// Remove all uses <paramref name="e"/> expression makes
+        /// at <paramref name="stm"/> statement.
+        /// </summary>
+        /// <param name="stm">Statement</param>
+        /// <param name="e">Statement</param>
+        public void RemoveUses(Statement stm, Expression e)
+        {
+            var xu = new ExpressionUseRemover(stm, Identifiers);
+            e.Accept(xu);
+        }
+
+        /// <summary>
         /// Add all identifiers used in <paramref name="stm"/>.
         /// </summary>
         /// <param name="stm"></param>
@@ -316,11 +377,71 @@ namespace Reko.Analysis
         }
 
         /// <summary>
-        /// Undoes the SSA renaming by replacing each ssa identifier with its original identifier.
+        /// Finds all phi statements of a block, and creates a transposition of
+        /// their arguments.
         /// </summary>
-        private class UnSSA : InstructionTransformer
+        /// <remarks>
+        /// The phi statements typically cluster at the top of a basic block, and
+        /// we often want to see how values pass from predecessors to the block.
+        /// We want to "rip" vertical stripes of the phi statements, one 
+        /// stripe for each predecessor;
+        /// <code>
+        /// r_2 = f(r_0, r_1)
+        /// r_5 = f(r_3, r_4)
+        /// ...
+        /// r_z = f(r_x, r_y)
+        /// </code>
+        /// should result in the following "arg lists" (where pred0 and pred1)
+        /// are the block's predecessors.
+        /// <code>
+        /// pred0: (r_0, r_3, ..., r_x)
+        /// pred1: (r_1, r_4, ..., r_y)
+        /// </code>
+        /// </remarks>
+        /// <param name="block"></param>
+        /// <returns></returns>
+        public Dictionary<Block, CallBinding[]> PredecessorPhiIdentifiers(Block block)
+        {
+            var dict = new Dictionary<Block, CallBinding[]>();
+            if (block.Pred.Count > 1)
+            {
+                var phis = block.Statements
+                    .Select(s => s.Instruction)
+                    .OfType<PhiAssignment>()
+                    .Select(phi => phi.Src.Arguments
+                        .Select(a => new CallBinding(
+                            phi.Dst.Storage,
+                            a.Value)).ToArray()).ToArray();
+                var arrs = Reko.Core.EnumerableEx.ZipMany(
+                    phis,
+                    ids => ids.ToArray()).ToArray();
+                if (arrs.Length == 0)
+                    return dict;
+                for (int p = 0; p < block.Pred.Count; ++p)
+                {
+                    dict.Add(block.Pred[p], arrs[p]);
+                }
+            }
+            else if (block.Pred.Count == 1)
+            {
+                var uses = block.Statements
+                    .Select(s => s.Instruction)
+                    .OfType<UseInstruction>()
+                    .Select(u => 
+                        new CallBinding(
+                            ((Identifier)u.Expression).Storage,
+                            u.Expression));
+                dict.Add(block.Pred[0], uses.ToArray());
+            }
+            return dict;
+        }
+
+		/// <summary>
+		/// Undoes the SSA renaming by replacing each ssa identifier with its original identifier.
+		/// </summary>
+		private class UnSSA : InstructionTransformer
 		{
-			private SsaState ssa;
+			private readonly SsaState ssa;
 
 			public UnSSA(SsaState ssa)
 			{

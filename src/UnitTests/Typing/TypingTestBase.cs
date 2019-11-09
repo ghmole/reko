@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,10 +28,12 @@ using Reko.Core.Expressions;
 using Reko.Core.Operators;
 using Reko.Core.Services;
 using Reko.Core.Types;
+using Reko.Environments.Msdos;
+using Reko.Environments.Windows;
 using Reko.Loading;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
+using Moq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -47,26 +49,30 @@ namespace Reko.UnitTests.Typing
 	{
         protected ServiceContainer sc;
 
-        protected Program RewriteFile16(string relativePath) { return RewriteFile(relativePath, Address.SegPtr(0xC00, 0)); }
+        protected Program RewriteFile16(string relativePath) { return RewriteFile(relativePath, Address.SegPtr(0xC00, 0), (s, a) => new MsdosPlatform(s,a)); }
 
-		protected Program RewriteFile32(string relativePath) { return RewriteFile(relativePath, Address.Ptr32(0x00100000)); }
+		protected Program RewriteFile32(string relativePath) { return RewriteFile(relativePath, Address.Ptr32(0x00100000), (s, a) => new Win32Platform(s, a)); }
 
-		protected Program RewriteFile(string relativePath, Address addrBase)
+		protected Program RewriteFile(
+            string relativePath,
+            Address addrBase,
+            Func<IServiceProvider, IProcessorArchitecture, IPlatform> mkPlatform)
 		{
             sc = new ServiceContainer();
             var config = new FakeDecompilerConfiguration();
             var eventListener = new FakeDecompilerEventListener();
             sc.AddService<IConfigurationService>(config);
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
             sc.AddService<DecompilerEventListener>(eventListener);
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
+            var arch = new X86ArchitectureReal("x86-real-16");
             ILoader ldr = new Loader(sc);
             var program = ldr.AssembleExecutable(
                 FileUnitTester.MapTestPath(relativePath),
-                new X86TextAssembler(sc, new X86ArchitectureReal("x86-real-16")),
+                new X86TextAssembler(sc, arch),
                 addrBase);
-            program.Platform = new DefaultPlatform(sc, program.Architecture);
-            var ep = new ImageSymbol(program.SegmentMap.BaseAddress);
+            program.Platform = mkPlatform(sc, program.Architecture);
+            var ep = ImageSymbol.Procedure(arch, program.SegmentMap.BaseAddress);
             var project = new Project { Programs = { program } };
             var scan = new Scanner(
                 program,
@@ -88,12 +94,12 @@ namespace Reko.UnitTests.Typing
             var eventListener = new FakeDecompilerEventListener();
             svc.AddService<IConfigurationService>(cfg);
             svc.AddService<DecompilerEventListener>(eventListener);
-            svc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            svc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
             ILoader ldr = new Loader(svc);
             var imgLoader = new DchexLoader(FileUnitTester.MapTestPath( hexFile), svc, null);
             var program = imgLoader.Load(null);
             var project = new Project { Programs = { program } };
-            var ep = new ImageSymbol(program.ImageMap.BaseAddress);
+            var ep = ImageSymbol.Procedure(program.Architecture, program.ImageMap.BaseAddress);
             var importResolver = new ImportResolver(project, program, eventListener);
             var scan = new Scanner(program, importResolver, svc);
             scan.EnqueueImageSymbol(ep, true);
@@ -117,9 +123,9 @@ namespace Reko.UnitTests.Typing
         protected void RunTest(ProgramBuilder mock, string outputFile)
         {
             Program program = mock.BuildProgram();
-            var importResolver = MockRepository.GenerateStub<IImportResolver>();
-            DataFlowAnalysis dfa = new DataFlowAnalysis(program, importResolver, new FakeDecompilerEventListener());
-            dfa.DumpProgram();
+            var importResolver = new Mock<IImportResolver>();
+            DataFlowAnalysis dfa = new DataFlowAnalysis(program, importResolver.Object, new FakeDecompilerEventListener());
+            dfa.UntangleProcedures();
             dfa.BuildExpressionTrees();
             RunTest(program, outputFile);
         }

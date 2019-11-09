@@ -1,10 +1,10 @@
 // fn10000000
 // Return size: 4
-void fn10000000()
+define fn10000000
 fn10000000_entry:
+	esp = fp
 	// succ:  l10000000
 l10000000:
-	esp = fp
 	ecx = Mem0[esi + 0x0000006C:word32]
 	SZO = cond(ecx & ecx)
 	C = false
@@ -21,10 +21,10 @@ l1000000B:
 	// succ:  l10000012 l10000021
 l10000012:
 	eax = Mem0[esi + 0x0000007C:word32]
-	esp = esp - 0x00000004
+	esp = esp - 4
 	Mem0[esp:word32] = ebp
 	ecx = eax + eax * 0x00000002
-	esp = esp - 0x00000004
+	esp = esp - 4
 	Mem0[esp:word32] = esi
 	call Mem0[0x10000022 + ecx * 0x00000004:word32] (retsize: 4;)
 	// succ:  l10000021
@@ -34,21 +34,21 @@ l10000021:
 fn10000000_exit:
 // fn1000006E
 // Return size: 4
-void fn1000006E()
+define fn1000006E
 fn1000006E_entry:
+	esp = fp
 	// succ:  l1000006E
 l1000006E:
-	esp = fp
 	return
 	// succ:  fn1000006E_exit
 fn1000006E_exit:
 // fn1000006F
 // Return size: 4
-void fn1000006F()
+define fn1000006F
 fn1000006F_entry:
+	esp = fp
 	// succ:  l1000006F
 l1000006F:
-	esp = fp
 	return
 	// succ:  fn1000006F_exit
 fn1000006F_exit:

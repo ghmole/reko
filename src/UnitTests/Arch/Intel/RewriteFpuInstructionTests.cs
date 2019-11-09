@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ namespace Reko.UnitTests.Arch.Intel
             return new FakeRewriterHost(null);
         }
 
-        protected override IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected override IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             return new X86Rewriter(
                 arch,
@@ -107,7 +107,7 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Jnz("foo");
             });
             AssertCode(
-                "0|L--|00010000(8): 2 instructions",
+                "0|T--|00010000(8): 2 instructions",
                 "1|L--|SCZO = FPUF",
                 "2|T--|if (Test(EQ,FPUF)) branch 00010000"
                 );            
@@ -124,7 +124,7 @@ namespace Reko.UnitTests.Arch.Intel
                 m.Jz("foo");
             });
             AssertCode(
-                "0|L--|00010000(8): 2 instructions",
+                "0|T--|00010000(8): 2 instructions",
                 "1|L--|SCZO = FPUF",
                 "2|T--|if (Test(GE,FPUF)) branch 00010000"
                 );

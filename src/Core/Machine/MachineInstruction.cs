@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,15 +41,24 @@ namespace Reko.Core.Machine
         public int Length;
 
         /// <summary>
-        /// The kind of instruction
+        /// The kind of instruction.
         /// </summary>
-        public abstract InstructionClass InstructionClass { get; }
+        public InstrClass InstructionClass;
+
+        /// <summary>
+        /// 0 or more operands of the instruction.
+        /// </summary>
+        public MachineOperand[] Operands;
 
         /// <summary>
         /// Returns true if the instruction is valid.
         /// </summary>
-        public abstract bool IsValid { get; }
+        public bool IsValid => InstructionClass != InstrClass.Invalid;
 
+        /// <summary>
+        /// Returns true if <paramref name="addr"/> is contained
+        /// inside the instruction.
+        /// </summary>
         public bool Contains(Address addr)
         {
             ulong ulInstr = Address.ToLinear();
@@ -61,13 +70,6 @@ namespace Reko.Core.Machine
         {
         }
 
-        /// <summary>
-        /// Retrieves the i'th operand, or null if there is none at that position.
-        /// </summary>
-        /// <param name="i"></param>
-        /// <returns></returns>
-        public abstract MachineOperand GetOperand(int i);
-        
         /// <summary>
         /// Each different supported opcode should have a different numerical value, exposed here.
         /// </summary>
@@ -87,6 +89,29 @@ namespace Reko.Core.Machine
             renderer.Address = Address;
             this.Render(renderer, MachineInstructionWriterOptions.None);
             return renderer.ToString();
+        }
+
+        /// <summary>
+        /// Utility function to render the operands, separated by commas.
+        /// </summary>
+        /// <param name="writer"></param>
+        /// <param name="options"></param>
+        protected void RenderOperands(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        {
+            if (Operands.Length == 0)
+                return;
+            writer.Tab();
+            RenderOperand(Operands[0], writer, options);
+            for (int i = 1; i < Operands.Length; ++i)
+            {
+                writer.WriteChar(',');
+                RenderOperand(Operands[i], writer, options);
+            }
+        }
+
+        protected virtual void RenderOperand(MachineOperand operand, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        {
+            operand.Write(writer, options);
         }
     }
 }

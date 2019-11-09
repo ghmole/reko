@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,50 +40,87 @@ namespace Reko.UnitTests.Arch
 
         public abstract Address LoadAddress { get; }
 
-        protected virtual IEnumerable<RtlInstructionCluster> GetInstructionStream(IStorageBinder binder, IRewriterHost host)
+        protected virtual IEnumerable<RtlInstructionCluster> GetRtlStream(IStorageBinder binder, IRewriterHost host)
         {
             yield break;
         }
 
         public class RewriterHost : IRewriterHost
         {
-            private IProcessorArchitecture arch;
+            private readonly IProcessorArchitecture arch;
+            private readonly Dictionary<Address, ImportReference> importThunks;
+            private readonly Dictionary<string, PseudoProcedure> ppp;
 
-            public RewriterHost(IProcessorArchitecture arch)
+            public RewriterHost(IProcessorArchitecture arch) : this(arch, new Dictionary<Address, ImportReference>())
+            {
+            }
+
+            public RewriterHost(IProcessorArchitecture arch, Dictionary<Address, ImportReference> imports)
             {
                 this.arch = arch;
+                this.importThunks = imports;
+                this.ppp = new Dictionary<string, PseudoProcedure>();
             }
 
             public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, int arity)
             {
-                return new PseudoProcedure(name, returnType, arity);
+                if (ppp.TryGetValue(name, out var p))
+                    return p;
+                p = new PseudoProcedure(name, returnType, arity);
+                ppp.Add(name, p);
+                return p;
             }
 
+            public Expression CallIntrinsic(string name, FunctionType fnType, params Expression[] args)
+            {
+                if (!ppp.TryGetValue(name, out var intrinsic))
+                {
+                    intrinsic = new PseudoProcedure(name, fnType);
+                    ppp.Add(name, intrinsic);
+                }
+                return new Application(
+                    new ProcedureConstant(PrimitiveType.Ptr32, intrinsic),
+                    intrinsic.ReturnType,
+                    args);
+            }
+
+            public Expression PseudoProcedure(string name, DataType returnType, params Expression[] args)
+            {
+                var ppp = EnsurePseudoProcedure(name, returnType, args.Length);
+                return new Application(
+                    new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                    returnType,
+                    args);
+            }
+
+            public Expression PseudoProcedure(string name, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
+            {
+                var ppp = EnsurePseudoProcedure(name, returnType, args.Length);
+                ppp.Characteristics = c;
+                return new Application(
+                    new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                    returnType,
+                    args);
+            }
             public Expression GetImport(Address addrThunk, Address addrInstr)
             {
                 return null;
             }
 
-            public ExternalProcedure GetImportedProcedure(Address addrThunk, Address addrInstr)
+            public ExternalProcedure GetImportedProcedure(IProcessorArchitecture arch, Address addrThunk, Address addrInstruction)
+            {
+                if (importThunks.TryGetValue(addrThunk, out var p))
+                    throw new NotImplementedException();
+                else
+                    return null;
+            }
+
+            public virtual IProcessorArchitecture GetArchitecture(string archLabel)
             {
                 throw new NotImplementedException();
             }
 
-            public Expression PseudoProcedure(string name, DataType returnType, params Expression[] args)
-            {
-                return PseudoProcedure(name, new ProcedureCharacteristics(), returnType, args);
-            }
-
-            public Expression PseudoProcedure(string name, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
-            {
-                var ppp = new PseudoProcedure(name, returnType, args.Length);
-                return new Application(
-                    new ProcedureConstant(arch.PointerType, ppp),
-                    returnType,
-                    args);
-            }
-
-            public ExternalProcedure GetInterceptedCall(Address addrImportThunk)
+            public ExternalProcedure GetInterceptedCall(IProcessorArchitecture arch, Address addrImportThunk)
             {
                 throw new NotImplementedException();
             }
@@ -106,28 +143,7 @@ namespace Reko.UnitTests.Arch
             return new RewriterHost(Architecture);
         }
 
-        protected void AssertCode(params string[] expected)
-        {
-            int i = 0;
-            var frame = Architecture.CreateFrame();
-            var host = CreateRewriterHost();
-            var rewriter = GetInstructionStream(frame, host).GetEnumerator();
-            while (i < expected.Length && rewriter.MoveNext())
-            {
-                Assert.AreEqual(expected[i], string.Format("{0}|{1}|{2}", i, RtlInstruction.FormatClass(rewriter.Current.Class), rewriter.Current));
-                ++i;
-                var ee = rewriter.Current.Instructions.OfType<RtlInstruction>().GetEnumerator();
-                while (i < expected.Length && ee.MoveNext())
-                {
-                    Assert.AreEqual(expected[i], string.Format("{0}|{1}|{2}", i, RtlInstruction.FormatClass(ee.Current.Class), ee.Current));
-                    ++i;
-                }
-            }
-            Assert.AreEqual(expected.Length, i, "Expected " + expected.Length + " instructions.");
-            Assert.IsFalse(rewriter.MoveNext(), "More instructions were emitted than were expected.");
-        }
-
-        public uint ParseBitPattern(string bitPattern)
+        public uint BitStringToUInt32(string bitPattern)
         {
             int cBits = 0;
             uint instr = 0;
@@ -149,10 +165,36 @@ namespace Reko.UnitTests.Arch
             return instr;
         }
 
-        public byte[] ParseHexPattern(string hexPattern)
+        public byte[] HexStringToBytes(string hexPattern)
         {
-            return OperatingEnvironmentElement.LoadHexBytes(hexPattern)
+            return PlatformDefinition.LoadHexBytes(hexPattern)
                 .ToArray();
+        }
+
+        public static byte[] OctalStringToBytes(string octalBytes)
+        {
+            var w = new BeImageWriter();
+            int h = 0;
+            for (int i = 0; i < octalBytes.Length; ++i)
+            {
+                var digit = octalBytes[i] - '0';
+                if (0 <= digit && digit <= 9)
+                {
+                    h = h * 8 + digit;
+                    if ((i + 1) % 6 == 0)
+                    {
+                        w.WriteBeUInt16((ushort) h);
+                        h = 0;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+            var aOut = new byte[w.Position];
+            Array.Copy(w.Bytes, aOut, aOut.Length);
+            return aOut;
         }
 
     }

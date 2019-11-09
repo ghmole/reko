@@ -1,18 +1,19 @@
 // void fn0C00_0000(Register word16 ax)
 // stackDelta: 0; fpuStackDelta: 0; fpuMaxParam: -1
-// MayUse:  al ax
+// MayUse:  ax:[0..15]
 // LiveOut:
-// Trashed: SCZO ah al ax bh bl bx eax ebx rax rbx
+// Trashed: SCZO ax bx Top
 // Preserved: sp
 // fn0C00_0000
 // Return size: 0
 void fn0C00_0000(word16 ax)
 fn0C00_0000_entry:
+	byte al_8 = SLICE(ax, byte, 0)
 	// succ:  l0C00_0000
 l0C00_0000:
-	msdos_set_memory_allocation_strategy((byte) (word16) al)
-	word16 ax_14
-	msdos_set_UMB_link_state(ax >>u 0x0008, out ax_14)
+	msdos_set_memory_allocation_strategy(SLICE((word16) al_8, byte, 0))
+	word16 ax_17
+	msdos_set_UMB_link_state(ax >>u 0x0008, out ax_17)
 	return
 	// succ:  fn0C00_0000_exit
 fn0C00_0000_exit:

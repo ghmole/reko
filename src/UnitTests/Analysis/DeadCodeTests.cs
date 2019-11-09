@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,35 +18,42 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
+using Reko.Analysis;
 using Reko.Core;
 using Reko.Core.Expressions;
-using Reko.Analysis;
+using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
-using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-
+using System.Linq;
 
 namespace Reko.UnitTests.Analysis
 {
-	/// <summary>
-	/// Tests to make sure DeadCodeElimination works.
-	/// </summary>
-	[TestFixture]
+    /// <summary>
+    /// Tests to make sure DeadCodeElimination works.
+    /// </summary>
+    [TestFixture]
 	public class DeadCodeTests : AnalysisTestBase
 	{
         private SsaProcedureBuilder m;
+        private ProgramDataFlow programDataFlow;
+        private Mock<IImportResolver> importResolver;
 
         [SetUp]
         public void Setup()
         {
             m = new SsaProcedureBuilder();
+            this.programDataFlow = new ProgramDataFlow();
+            this.importResolver = new Mock<IImportResolver>();
         }
 
         public void EliminateDeadCode()
         {
-            DeadCode.Eliminate(m.Ssa.Procedure, m.Ssa);
+            DeadCode.Eliminate(m.Ssa);
             m.Ssa.Validate(s => Assert.Fail(s));
         }
 
@@ -55,54 +62,85 @@ namespace Reko.UnitTests.Analysis
             ProcedureCodeVerifier.AssertCode(m.Ssa.Procedure, expected);
         }
 
-        protected override void RunTest(Program program, TextWriter writer)
+        protected void RunTest(string sExp, Action<ProcedureBuilder> builder)
+        {
+            var m = new ProcedureBuilder();
+            builder(m);
+
+            var program = new Program()
+            {
+                Architecture = m.Architecture,
+            };
+            var sst = new SsaTransform(
+                program,
+                m.Procedure,
+                new HashSet<Procedure>(),
+                null,
+                programDataFlow);
+            sst.Transform();
+
+            DeadCode.Eliminate(sst.SsaState);
+            var sw = new StringWriter();
+            sst.SsaState.Procedure.Write(false, sw);
+            if (sw.ToString() != sExp)
+            {
+                Debug.WriteLine(sw.ToString());
+                Assert.AreEqual(sExp, sw.ToString());
+            }
+        }
+
+		protected override void RunTest(Program program, TextWriter writer)
 		{
-			DataFlowAnalysis dfa = new DataFlowAnalysis(program, null,  new FakeDecompilerEventListener());
-			dfa.UntangleProcedures();
-			foreach (Procedure proc in program.Procedures.Values)
+			DataFlowAnalysis dfa = new DataFlowAnalysis(program, importResolver.Object, new FakeDecompilerEventListener());
+			var ssts = dfa.UntangleProcedures();
+			foreach (var sst in ssts)
 			{
-				Aliases alias = new Aliases(proc);
-				alias.Transform();
-				SsaTransform sst = new SsaTransform(
-                    dfa.ProgramDataFlow,
-                    proc,
-                    null,
-                    proc.CreateBlockDominatorGraph(),
-                    program.Platform.CreateImplicitArgumentRegisters());
 				SsaState ssa = sst.SsaState;
 				ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, program.Platform);
 				cce.Transform();
 
-				DeadCode.Eliminate(proc, ssa);
+				DeadCode.Eliminate(ssa);
 				ssa.Write(writer);
-				proc.Write(false, writer);
-
-                ssa.Validate(s => Assert.Fail(s));
-            }
+				ssa.Procedure.Write(false, writer);
+			}
 		}
+
+        private Procedure Given_Procedure_With_Flow(ProcedureBuilder m, string name, Storage[] uses, Storage[] defs)
+        {
+            var sig = new FunctionType();
+            var proc = new Procedure(m.Architecture, name, Address.Ptr32(0x00123400), m.Architecture.CreateFrame());
+            var flow = new ProcedureFlow(proc);
+            flow.BitsUsed = uses.ToDictionary(u => u, u => new BitRange(0, (int)u.BitSize / 8));
+            flow.Trashed = defs.ToHashSet();
+            this.programDataFlow[proc] = flow;
+            return proc;
+        }
 
         [Test]
-		public void DeadPushPop()
+        [Category(Categories.IntegrationTests)]
+        public void DeadPushPop()
 		{
-			RunFileTest("Fragments/pushpop.asm", "Analysis/DeadPushPop.txt");
+			RunFileTest_x86_real("Fragments/pushpop.asm", "Analysis/DeadPushPop.txt");
 		}
 
 		[Test]
-		public void DeadFactorialReg()
+        [Category(Categories.IntegrationTests)]
+        public void DeadFactorialReg()
 		{
-			RunFileTest("Fragments/factorial_reg.asm", "Analysis/DeadFactorialReg.txt");
+			RunFileTest_x86_real("Fragments/factorial_reg.asm", "Analysis/DeadFactorialReg.txt");
 		}
 
 		[Test]
-		public void DeadFactorial()
+        [Category(Categories.IntegrationTests)]
+        public void DeadFactorial()
 		{
-			RunFileTest("Fragments/factorial.asm", "Analysis/DeadFactorial.txt");
+			RunFileTest_x86_real("Fragments/factorial.asm", "Analysis/DeadFactorial.txt");
 		}
 
 		[Test]
 		public void Dead3Converge()
 		{
-			RunFileTest("Fragments/3converge.asm", "Analysis/Dead3Converge.txt");
+			RunFileTest_x86_real("Fragments/3converge.asm", "Analysis/Dead3Converge.txt");
 		}
 
 		[Test]
@@ -116,10 +154,49 @@ namespace Reko.UnitTests.Analysis
 		{
 			ProcedureBuilder m = new ProcedureBuilder("foo");
 			Identifier unused = m.Local32("unused");
+            m.Assign(m.Frame.EnsureRegister(m.Architecture.StackRegister), m.Frame.FramePointer);
 			m.Assign(unused, m.Fn("foo", Constant.Word32(1)));
 			m.Return();
 			RunFileTest(m, "Analysis/DeadFnReturn.txt");
 		}
+
+        [Test(Description = "If a call defines a dead variable, remove it from the call instruction")]
+        public void DeadCallDefinition()
+        {
+         var sExp =
+            #region Expected
+@"// ProcedureBuilder
+// Return size: 0
+define ProcedureBuilder
+ProcedureBuilder_entry:
+	def r1
+	// succ:  l1
+l1:
+	call foo (retsize: 4;)
+		uses: r1:r1
+		defs: r1:r1_2
+	Mem4[0x00123400:word32] = r1_2
+	return
+	// succ:  ProcedureBuilder_exit
+ProcedureBuilder_exit:
+";
+            #endregion
+            RunTest(sExp, m =>
+            {
+                var _r1 = new RegisterStorage("r1", 1, 0, PrimitiveType.Word32);
+                var _r2 = new RegisterStorage("r2", 2, 0, PrimitiveType.Word32);
+                var foo = Given_Procedure_With_Flow(m,
+                    "foo",
+                    new Storage[] { _r1 }, 
+                    new Storage[] { _r1, _r2 });
+
+                var r1 = m.Frame.EnsureRegister(_r1);
+                var r2 = m.Frame.EnsureRegister(_r2);
+                var call = m.Call(foo, 4);
+                m.MStore(m.Word32(0x123400), r1);
+                m.Return();
+            });
+        }
 
         [Test(Description = "Comment should not be removed as dead code")]
         public void DeadComment()
@@ -133,6 +210,21 @@ namespace Reko.UnitTests.Analysis
             var sExp =
 @"
 // This is a comment
+";
+            AssertProcedureCode(sExp);
+        }
+
+        [Test]
+        public void DeadDpbApplication()
+        {
+            var dead = m.Reg32("dead");
+            m.Assign(dead, m.Dpb(m.Word32(0), m.Fn("foo", Constant.Word32(1)), 0));
+
+            EliminateDeadCode();
+
+            var sExp =
+@"
+foo(0x00000001)
 ";
             AssertProcedureCode(sExp);
         }

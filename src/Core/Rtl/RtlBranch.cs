@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,18 +28,18 @@ namespace Reko.Core.Rtl
 {
     public class RtlBranch : RtlTransfer
     {
-        public RtlBranch(Expression condition, Address target, RtlClass rtlClass) 
+        public RtlBranch(Expression condition, Address target, InstrClass rtlClass) 
             : base(target, rtlClass)
         {
             this.Condition = condition;
         }
 
+        public Expression Condition { get; }
+
         public override T Accept<T>(RtlInstructionVisitor<T> visitor)
         {
             return visitor.VisitBranch(this);
         }
-
-        public Expression Condition { get; private set; }
 
         protected override void WriteInner(TextWriter writer)
         {

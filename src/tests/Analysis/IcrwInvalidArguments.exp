@@ -1,52 +1,52 @@
-a:Stack +0004
-    def:  def a
-    uses: a_1 = a
-          ecx_6 = Mem0[a:word32]
-a_1: orig: a
-    def:  a_1 = a
-    uses: eax_4 = a_1
 fp:fp
     def:  def fp
-    uses: esp_3 = fp
-esp_3: orig: esp
-    def:  esp_3 = fp
-    uses: esp_7 = esp_3 + 0x00000004
-          eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-eax_4: orig: eax
-    def:  eax_4 = a_1
-Mem0:Global memory
+    uses: r63_2 = fp
+          r63_6 = fp + 4
+          eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+r63_2: orig: r63
+    def:  r63_2 = fp
+Mem0:Mem
     def:  def Mem0
-    uses: ecx_6 = Mem0[a:word32]
-          eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-ecx_6: orig: ecx
-    def:  ecx_6 = Mem0[a:word32]
-    uses: eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-          eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-esp_7: orig: esp
-    def:  esp_7 = esp_3 + 0x00000004
-eax_8: orig: eax
-    def:  eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-ecx_9: orig: ecx
-    def:  ecx_9 = <invalid>
-Mem10: orig: Mem0
-    uses: eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-// test
-// Return size: 4
-void test(str * a)
-fn0C00_0000_entry:
-	def a
+    uses: ecx_5 = Mem0[eax_4:word32]
+          eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+eax_4: orig: eax
+    def:  eax_4 = dwArg04_10
+    uses: ecx_5 = Mem0[eax_4:word32]
+ecx_5: orig: ecx
+    def:  ecx_5 = Mem0[eax_4:word32]
+    uses: eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+          eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+r63_6: orig: r63
+    def:  r63_6 = fp + 4
+eax_7: orig: eax
+    def:  eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+ecx_8: orig: ecx
+    def:  ecx_8 = <invalid>
+a:Stack +0004
+    def:  def a
+    uses: dwArg04_10 = a
+dwArg04_10: orig: dwArg04
+    def:  dwArg04_10 = a
+    uses: eax_4 = dwArg04_10
+Mem11: orig: Mem0
+    uses: eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+// ProcedureBuilder
+// Return size: 0
+void ProcedureBuilder(struct <anonymous> * a)
+ProcedureBuilder_entry:
 	def fp
 	def Mem0
-	// succ:  l0C00_0000
-l0C00_0000:
-	a_1 = a
-	esp_3 = fp
-	eax_4 = a_1
-	ecx_6 = Mem0[a:word32]
-	eax_8 = Mem0[ecx_6:word32](ecx_6, Mem10[esp_3:int32])
-	ecx_9 = <invalid>
-	esp_7 = esp_3 + 0x00000004
+	def a
+	dwArg04_10 = a
+	// succ:  l1
+l1:
+	r63_2 = fp
+	eax_4 = dwArg04_10
+	ecx_5 = Mem0[eax_4:word32]
+	eax_7 = Mem0[ecx_5:word32](ecx_5, Mem11[fp:int32])
+	ecx_8 = <invalid>
+	r63_6 = fp + 4
 	return
-	// succ:  fn0C00_0000_exit
-fn0C00_0000_exit:
+	// succ:  ProcedureBuilder_exit
+ProcedureBuilder_exit:
 

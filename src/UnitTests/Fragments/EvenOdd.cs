@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,10 +36,10 @@ namespace Reko.UnitTests.Fragments
         /// <returns></returns>
         public static Program BuildProgram()
         {
-            var prog = new ProgramBuilder();
+            var pb = new ProgramBuilder();
 
             var m = new ProcedureBuilder("even");
-            var r1 = m.Register(1);
+            var r1 = m.Register("r1");
             m.BranchIf(m.Eq0(r1), "done");
             m.Assign(r1, m.ISub(r1, 1));
             m.Call("odd", 4);
@@ -49,10 +49,10 @@ namespace Reko.UnitTests.Fragments
             m.Label("done");
             m.Assign(r1, true);
             m.Return();
-            prog.Add(m);
+            pb.Add(m);
 
             m = new ProcedureBuilder("odd");
-            r1 = m.Register(1);
+            r1 = m.Register("r1");
             m.BranchIf(m.Eq(r1, 1), "done");
             m.Assign(r1, m.ISub(r1, 1));
             m.Call("event", 4);
@@ -62,9 +62,9 @@ namespace Reko.UnitTests.Fragments
             m.Label("done");
             m.Assign(r1, true);
             m.Return();
-            prog.Add(m);
+            pb.Add(m);
 
-            return prog.BuildProgram();
+            return pb.BuildProgram();
         }
     }
 }

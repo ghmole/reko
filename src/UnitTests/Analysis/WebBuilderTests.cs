@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,97 +18,78 @@
  */
 #endregion
 
+using Moq;
+using NUnit.Framework;
 using Reko.Analysis;
 using Reko.Core;
 using Reko.Core.Expressions;
-using Reko.Core.Types;
+using Reko.Core.Rtl;
+using Reko.Core.Serialization;
 using Reko.UnitTests.Mocks;
-using NUnit.Framework;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Reko.UnitTests.Analysis
 {
-	[TestFixture]
+    [TestFixture]
 	public class WebBuilderTests : AnalysisTestBase
 	{
-        private MockRepository mr;
-
-        [SetUp]
-        public void Setup()
-        {
-            mr = new MockRepository();
-        }
-
 		[Test]
 		public void WebNestedRepeats()
 		{
-			RunFileTest("Fragments/nested_repeats.asm", "Analysis/WebNestedRepeats.txt");
+			RunFileTest_x86_real("Fragments/nested_repeats.asm", "Analysis/WebNestedRepeats.txt");
 		}
 
 		[Test]
 		public void WebWhileLoop()
 		{
-			RunFileTest("Fragments/while_loop.asm", "Analysis/WebWhileLoop.txt");
+			RunFileTest_x86_real("Fragments/while_loop.asm", "Analysis/WebWhileLoop.txt");
 		}
 
 		[Test]
-		public void WebGlobalHandle()
+        [Category(Categories.IntegrationTests)]
+        public void WebGlobalHandle()
         {
-            Given_FakeWin32Platform(mr);
-            this.platform.Stub(p => p.ResolveImportByName(null, null)).IgnoreArguments().Return(null);
-            this.platform.Stub(p => p.DataTypeFromImportName(null)).IgnoreArguments().Return(null);
-            this.platform.Stub(p => p.ResolveIndirectCall(null)).IgnoreArguments().Return(null);
-            mr.ReplayAll();
+            Given_FakeWin32Platform();
+            this.platformMock.Setup(p => p.ResolveImportByName(It.IsAny<string>(), It.IsAny<string>())).Returns((Expression) null);
+            this.platformMock.Setup(p => p.DataTypeFromImportName(It.IsAny<string>()))
+                .Returns((Tuple<string, SerializedType, SerializedType>) null);
+            this.platformMock.Setup(p => p.ResolveIndirectCall(It.IsAny<RtlCall>())).Returns((Address) null);
 
-			RunFileTest32("Fragments/import32/GlobalHandle.asm", "Analysis/WebGlobalHandle.txt");
+			RunFileTest_x86_32("Fragments/import32/GlobalHandle.asm", "Analysis/WebGlobalHandle.txt");
 		}
 
 		[Test]
-		public void WebSuccessiveDecs()
+        public void WebSuccessiveDecs()
 		{
-			RunFileTest("Fragments/multiple/successivedecs.asm", "Analysis/WebSuccessiveDecs.txt");
+			RunFileTest_x86_real("Fragments/multiple/successivedecs.asm", "Analysis/WebSuccessiveDecs.txt");
 		}
 
 		private void Build(Program program)
 		{
             var eventListener = new FakeDecompilerEventListener();
-            DataFlowAnalysis dfa = new DataFlowAnalysis(program, null, eventListener);
-			dfa.UntangleProcedures();
+            var dfa = new DataFlowAnalysis(program, null, eventListener);
+			var ssts = dfa.UntangleProcedures();
 			foreach (Procedure proc in program.Procedures.Values)
 			{
-                Aliases alias = new Aliases(proc);
-				alias.Transform();
-				var gr = proc.CreateBlockDominatorGraph();
-				SsaTransform sst = new SsaTransform(dfa.ProgramDataFlow, proc, null, gr, new HashSet<RegisterStorage>());
-				SsaState ssa = sst.SsaState;
+                var sst = ssts.Single(s => s.SsaState.Procedure == proc);
+				var ssa = sst.SsaState;
 
-				ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, program.Platform);
-				cce.Transform();
-
-				DeadCode.Eliminate(proc, ssa);
-
-				var vp = new ValuePropagator(program.SegmentMap, ssa, eventListener);
-				vp.Transform();
-
-				DeadCode.Eliminate(proc, ssa);
-
-				Coalescer coa = new Coalescer(proc, ssa);
+				Coalescer coa = new Coalescer(ssa);
 				coa.Transform();
 
-				DeadCode.Eliminate(proc, ssa);
+				DeadCode.Eliminate(ssa);
 
-				LiveCopyInserter lci = new LiveCopyInserter(proc, ssa.Identifiers);
+				LiveCopyInserter lci = new LiveCopyInserter(ssa);
 				lci.Transform();
 
-				WebBuilder web = new WebBuilder(proc, ssa.Identifiers, new Dictionary<Identifier,LinearInductionVariable>());
+				WebBuilder web = new WebBuilder(program, ssa, new Dictionary<Identifier,LinearInductionVariable>(), eventListener);
 				web.Transform();
 
 				ssa.ConvertBack(false);
 			}
-
 		}
 
 		protected override void RunTest(Program program, TextWriter writer)

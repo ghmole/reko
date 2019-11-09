@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@ namespace Reko.ImageLoaders.LLVM
         public LLVMPlatform(IServiceProvider services)
         {
             this.services = services;
+            this.Name = "LLVM";
         }
 
         public IProcessorArchitecture Architecture { get; set; }
@@ -53,7 +54,7 @@ namespace Reko.ImageLoaders.LLVM
 
         public MemoryMap_v1 MemoryMap { get; set; }
 
-        public string Name { get; set; }
+        public string Name { get; private set; }
 
         public string PlatformIdentifier { get; set; }
 
@@ -169,12 +170,12 @@ namespace Reko.ImageLoaders.LLVM
             throw new NotImplementedException();
         }
 
-        public Address MakeAddressFromConstant(Core.Expressions.Constant c)
+        public Address MakeAddressFromConstant(Core.Expressions.Constant c, bool codeAlign)
         {
             throw new NotImplementedException();
         }
 
-        public Address MakeAddressFromLinear(ulong uAddr)
+        public Address MakeAddressFromLinear(ulong uAddr, bool codeAlign)
         {
             throw new NotImplementedException();
         }

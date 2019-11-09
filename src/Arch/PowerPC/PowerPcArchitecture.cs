@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,8 +62,9 @@ namespace Reko.Arch.PowerPC
         /// Creates an instance of PowerPcArchitecture.
         /// </summary>
         /// <param name="wordWidth">Supplies the word width of the PowerPC architecture.</param>
-        public PowerPcArchitecture(string archId, PrimitiveType wordWidth, PrimitiveType signedWord) : base(archId)
+        public PowerPcArchitecture(string archId, EndianServices endianness, PrimitiveType wordWidth, PrimitiveType signedWord) : base(archId)
         {
+            Endianness = endianness;
             WordWidth = wordWidth;
             SignedWord = signedWord;
             PointerType = PrimitiveType.Create(Domain.Pointer, wordWidth.BitSize);
@@ -78,7 +79,7 @@ namespace Reko.Arch.PowerPC
             this.cr = new RegisterStorage("cr", 0x4C, 0, wordWidth);
             this.acc = new RegisterStorage("acc", 0x4D, 0, PrimitiveType.Word64);
 
-            // gp regs  0..1F
+            // gp regs   0..1F
             // fpu regs 20..3F
             // CR regs  40..47
             // vectors  80..FF
@@ -202,42 +203,45 @@ namespace Reko.Arch.PowerPC
         {
             var e = rdr.GetEnumerator();
 
-            if (!e.MoveNext() || (e.Current.Opcode != Opcode.addis && e.Current.Opcode != Opcode.oris))
+            if (!e.MoveNext() || (e.Current.Mnemonic != Mnemonic.addis && e.Current.Mnemonic != Mnemonic.oris))
                 return null;
             var addrInstr = e.Current.Address;
-            var reg = ((RegisterOperand)e.Current.op1).Register;
-            var uAddr = ((ImmediateOperand)e.Current.op3).Value.ToUInt32() << 16;
+            var reg = ((RegisterOperand)e.Current.Operands[0]).Register;
+            var uAddr = ((ImmediateOperand)e.Current.Operands[2]).Value.ToUInt32() << 16;
              
-            if (!e.MoveNext() || e.Current.Opcode != Opcode.lwz)
+            if (!e.MoveNext() || e.Current.Mnemonic != Mnemonic.lwz)
                 return null;
-            if (!(e.Current.op2 is MemoryOperand mem))
+            if (!(e.Current.Operands[1] is MemoryOperand mem))
                 return null;
             if (mem.BaseRegister != reg)
                 return null;
             uAddr = (uint)((int)uAddr + mem.Offset.ToInt32());
-            reg = ((RegisterOperand)e.Current.op1).Register;
+            reg = ((RegisterOperand)e.Current.Operands[0]).Register;
 
-            if (!e.MoveNext() || e.Current.Opcode != Opcode.mtctr)
+            if (!e.MoveNext() || e.Current.Mnemonic != Mnemonic.mtctr)
                 return null;
-            if (((RegisterOperand)e.Current.op1).Register != reg)
+            if (((RegisterOperand)e.Current.Operands[0]).Register != reg)
                 return null;
 
-            if (!e.MoveNext() || e.Current.Opcode != Opcode.bcctr)
+            if (!e.MoveNext() || e.Current.Mnemonic != Mnemonic.bcctr)
                 return null;
 
             // We saw a thunk! now try to resolve it.
 
             var addr = Address.Ptr32(uAddr);
-            var ep = host.GetImportedProcedure(addr, addrInstr);
+            var ep = host.GetImportedProcedure(this, addr, addrInstr);
             if (ep != null)
                 return ep;
-            return host.GetInterceptedCall(addr);
+            return host.GetInterceptedCall(this, addr);
         }
 
         public override ProcessorState CreateProcessorState()
         {
             return new PowerPcState(this);
         }
+
+        // PowerPC uses a link register
+        public override int ReturnAddressOnStack => 0;
 
         private PowerPcDisassembler.Decoder[] EnsureDecoders()
         {
@@ -252,24 +256,29 @@ namespace Reko.Arch.PowerPC
 
         public override SortedList<string, int> GetOpcodeNames()
         {
-            return Enum.GetValues(typeof(Opcode))
-                .Cast<Opcode>()
-                .ToSortedList(v => Enum.GetName(typeof(Opcode), v), v => (int)v);
+            return Enum.GetValues(typeof(Mnemonic))
+                .Cast<Mnemonic>()
+                .ToSortedList(v => Enum.GetName(typeof(Mnemonic), v), v => (int)v);
         }
 
         public override int? GetOpcodeNumber(string name)
         {
-            if (!Enum.TryParse(name, true, out Opcode result))
+            if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;
             return (int)result;
         }
 
-        public override RegisterStorage GetRegister(int i)
+        public RegisterStorage GetRegister(int i)
         {
             if (0 <= i && i < regs.Count)
                 return regs[i];
             else
                 return null;
+        }
+
+        public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
+        {
+            return GetRegister(domain - StorageDomain.Register);
         }
 
         public override RegisterStorage GetRegister(string name)
@@ -284,7 +293,8 @@ namespace Reko.Arch.PowerPC
 
         public override bool TryGetRegister(string name, out RegisterStorage reg)
         {
-            throw new NotImplementedException();
+            reg = GetRegister(name);
+            return reg != null;
         }
 
         public FlagGroupStorage GetCcFieldAsFlagGroup(RegisterStorage reg)
@@ -299,7 +309,7 @@ namespace Reko.Arch.PowerPC
             return null;
         }
 
-        public override FlagGroupStorage GetFlagGroup(uint grf)
+        public override FlagGroupStorage GetFlagGroup(RegisterStorage flagRegister, uint grf)
         {
             foreach (var f in ccFlagGroups)
             {
@@ -322,7 +332,13 @@ namespace Reko.Arch.PowerPC
                 return null;
         }
 
-        public override string GrfToString(uint grf)
+        public override IEnumerable<FlagGroupStorage> GetSubFlags(FlagGroupStorage flags)
+        {
+            return ccFlagGroups.Values
+                .Where(cc => cc.OverlapsWith(flags));
+        }
+
+        public override string GrfToString(RegisterStorage flagregister, string prefix, uint grf)
         {
             //$BUG: this needs to be better conceved. There are 
             // 32 (!) condition codes in the PowerPC architecture
@@ -357,26 +373,19 @@ namespace Reko.Arch.PowerPC
             return Options;
         }
 
-        public override abstract Address MakeAddressFromConstant(Constant c);
+        public override abstract Address MakeAddressFromConstant(Constant c, bool codeAlign);
 
         public override Address ReadCodeAddress(int size, EndianImageReader rdr, ProcessorState state)
         {
             throw new NotImplementedException();
         }
 
-        public override bool TryRead(MemoryArea mem, Address addr, PrimitiveType dt, out Constant value)
-        {
-            //$TODO: PPC is bi-endian
-            return mem.TryReadLe(addr, dt, out value);
-        }
-
-
         #endregion
     }
 
     public class PowerPcBe32Architecture : PowerPcArchitecture
     {
-        public PowerPcBe32Architecture(string archId) : base(archId, PrimitiveType.Word32, PrimitiveType.Int32)
+        public PowerPcBe32Architecture(string archId) : base(archId, EndianServices.Big, PrimitiveType.Word32, PrimitiveType.Int32)
         { }
 
         public override IEnumerable<Address> CreatePointerScanner(
@@ -392,34 +401,12 @@ namespace Reko.Arch.PowerPC
                 .Select(u => Address.Ptr32(u));
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr32(c.ToUInt32());
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
-        {
-            return new BeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new BeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            return new BeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new BeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new BeImageWriter(mem, addr);
+            var uAddr = c.ToUInt32();
+            if (codeAlign)
+                uAddr &= ~3u;
+            return Address.Ptr32(uAddr);
         }
 
         public override bool TryParseAddress(string txtAddress, out Address addr)
@@ -430,7 +417,7 @@ namespace Reko.Arch.PowerPC
 
     public class PowerPcLe32Architecture : PowerPcArchitecture
     {
-        public PowerPcLe32Architecture(string archId) : base(archId, PrimitiveType.Word32, PrimitiveType.Int32)
+        public PowerPcLe32Architecture(string archId) : base(archId, EndianServices.Little, PrimitiveType.Word32, PrimitiveType.Int32)
         {
 
         }
@@ -440,34 +427,12 @@ namespace Reko.Arch.PowerPC
             throw new NotImplementedException();
         }
 
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return new LeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            return new LeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            return new LeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            return new LeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            return new LeImageWriter(mem, addr);
-        }
-
-        public override Address MakeAddressFromConstant(Constant c)
-        {
-            return Address.Ptr32(c.ToUInt32());
+            var uAddr = c.ToUInt32();
+            if (codeAlign)
+                uAddr &= ~3u;
+            return Address.Ptr32(uAddr);
         }
 
         public override bool TryParseAddress(string txtAddress, out Address addr)
@@ -479,7 +444,7 @@ namespace Reko.Arch.PowerPC
     public class PowerPcBe64Architecture : PowerPcArchitecture
     {
         public PowerPcBe64Architecture(string archId)
-            : base(archId, PrimitiveType.Word64, PrimitiveType.Int64)
+            : base(archId, EndianServices.Big, PrimitiveType.Word64, PrimitiveType.Int64)
         { }
 
         public override IEnumerable<Address> CreatePointerScanner(
@@ -495,47 +460,17 @@ namespace Reko.Arch.PowerPC
                 .Select(u => Address.Ptr64(u));
         }
 
-        public override Address MakeAddressFromConstant(Constant c)
+        public override Address MakeAddressFromConstant(Constant c, bool codeAlign)
         {
-            return Address.Ptr64(c.ToUInt64());
-        }
-
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addr)
-        {
-            //$TODO: PowerPC is bi-endian.
-            return new BeImageReader(image, addr);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, Address addrBegin, Address addrEnd)
-        {
-            //$TODO: PowerPC is bi-endian.
-            return new BeImageReader(image, addrBegin, addrEnd);
-        }
-
-        public override EndianImageReader CreateImageReader(MemoryArea image, ulong offset)
-        {
-            //$TODO: PowerPC is bi-endian.
-            return new BeImageReader(image, offset);
-        }
-
-        public override ImageWriter CreateImageWriter()
-        {
-            //$TODO: PowerPC is bi-endian.
-            return new BeImageWriter();
-        }
-
-        public override ImageWriter CreateImageWriter(MemoryArea mem, Address addr)
-        {
-            //$TODO: PowerPC is bi-endian.
-            return new BeImageWriter(mem, addr);
+            var uAddr = c.ToUInt64();
+            if (codeAlign)
+                uAddr &= ~3u;
+            return Address.Ptr64(uAddr);
         }
 
         public override bool TryParseAddress(string txtAddress, out Address addr)
         {
             return Address.TryParse64(txtAddress, out addr);
         }
-
-
     }
 }

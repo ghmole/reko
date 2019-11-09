@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -141,7 +141,7 @@ namespace Reko.Core
             {
                 if (constAddr == Constant.Invalid)
                     return constAddr;
-                var ea = Architecture.MakeAddressFromConstant(constAddr);
+                var ea = Architecture.MakeAddressFromConstant(constAddr, false);
                 return GetMemoryValue(ea, access.DataType, segmentMap);
             }
             var addr = access.EffectiveAddress as Address;
@@ -205,6 +205,11 @@ namespace Reko.Core
             return null;
         }
 
+        public List<Statement> GetDefiningStatementClosure(Identifier id)
+        {
+            return new List<Statement>();
+        }
+
         public Expression MakeSegmentedAddress(Constant seg, Constant off)
         {
             return Architecture.MakeSegmentedAddress(seg, off);
@@ -246,6 +251,7 @@ namespace Reko.Core
                     binVal.Left is Identifier &&
                     binVal.Right is Constant)
                 {
+                    SetRegister(reg, Constant.Invalid);
                     linearDerived[reg] = binVal;
                     return Constant.Invalid;
                 }

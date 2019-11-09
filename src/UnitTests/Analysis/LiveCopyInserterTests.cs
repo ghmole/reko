@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,12 +22,12 @@ using Reko.Analysis;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.UnitTests.Mocks;
+using Moq;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Rhino.Mocks;
 
 namespace Reko.UnitTests.Analysis
 {
@@ -35,13 +35,14 @@ namespace Reko.UnitTests.Analysis
 	public class LiveCopyInserterTests : AnalysisTestBase
 	{
 		private Procedure proc;
+        private SsaState ssa;
 		private SsaIdentifierCollection ssaIds;
 
 		[Test]
 		public void LciFindCopyslots()
 		{
 			Build(new LiveLoopMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
+			var lci = new LiveCopyInserter(ssa);
 			Assert.AreEqual(2, lci.IndexOfInsertedCopy(proc.ControlGraph.Blocks[0]));
             Assert.AreEqual(0, lci.IndexOfInsertedCopy(proc.ControlGraph.Blocks[2].Succ[0]));
             Assert.AreEqual(0, lci.IndexOfInsertedCopy(proc.ControlGraph.Blocks[2].Succ[0].Succ[0]));
@@ -51,9 +52,10 @@ namespace Reko.UnitTests.Analysis
 		public void LciLiveAtLoop()
 		{
 			Build(new LiveLoopMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
+			var lci = new LiveCopyInserter(ssa);
 
-			var i = ssaIds.Where(s => s.Identifier.Name == "i").Single().Identifier;
+            ssa.Dump(true);
+            var i = ssaIds.Where(s => s.Identifier.Name == "i").Single().Identifier;
 			var i_3 = ssaIds.Where(s => s.Identifier.Name == "i_3").Single().Identifier;
             var loopHdr = proc.ControlGraph.Blocks[2];
 			Assert.IsFalse(lci.IsLiveAtCopyPoint(i, loopHdr));
@@ -64,26 +66,27 @@ namespace Reko.UnitTests.Analysis
 		public void LciLiveAtCopy()
 		{
 			Build(new LiveCopyMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
+			var lci = new LiveCopyInserter(ssa);
 
 			var reg   = ssaIds.Where(s => s.Identifier.Name == "reg").Single();
-			var reg_5 = ssaIds.Where(s => s.Identifier.Name == "reg_2").Single();
-			Assert.IsTrue(ssaIds.Where(s => s.Identifier.Name == "reg_3").Any());
+			var reg_3 = ssaIds.Where(s => s.Identifier.Name == "reg_3").Single();
+            var reg_4 = ssaIds.Where(s => s.Identifier.Name == "reg_4").Single();
 
-			Assert.AreEqual("reg_2 = PHI(reg, reg_3)", reg_5.DefStatement.Instruction.ToString());
-			Assert.IsTrue(lci.IsLiveOut(reg.Identifier, reg_5.DefStatement));
+            ssa.Dump(true);
+			Assert.AreEqual("reg_4 = PHI((reg, l1), (reg_3, l2))", reg_4.DefStatement.Instruction.ToString());
+			Assert.IsTrue(lci.IsLiveOut(reg.Identifier, reg_4.DefStatement));
 		}
 
 		[Test]
 		public void LciInsertAssignmentCopy()
 		{
 			Build(new LiveCopyMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
+			var lci = new LiveCopyInserter(ssa);
 
 			int i = lci.IndexOfInsertedCopy(proc.ControlGraph.Blocks[2]);
 			Assert.AreEqual(i, 0);
             var idNew = lci.InsertAssignmentNewId(ssaIds.Where(s => s.Identifier.Name == "reg").Single().Identifier, proc.ControlGraph.Blocks[2], i);
-            Assert.AreEqual("reg_4 = reg", proc.ControlGraph.Blocks[2].Statements[0].Instruction.ToString());
+            Assert.AreEqual("reg_6 = reg", proc.ControlGraph.Blocks[2].Statements[0].Instruction.ToString());
             Assert.AreSame(proc.ControlGraph.Blocks[2].Statements[0], ssaIds[idNew].DefStatement);
 		}
 
@@ -91,11 +94,11 @@ namespace Reko.UnitTests.Analysis
 		public void LciInsertAssignmentLiveLoop()
 		{
 			Build(new LiveLoopMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
+			var lci = new LiveCopyInserter(ssa);
 
-            var i_4 = ssaIds.Where(s => s.Identifier.Name == "i_1").Single();
-			var idNew = lci.InsertAssignmentNewId(i_4.Identifier, proc.ControlGraph.Blocks[2], 2);
-			Assert.AreEqual("i_5 = i_1", proc.ControlGraph.Blocks[2].Statements[2].Instruction.ToString());
+            var i_3 = ssaIds.Where(s => s.Identifier.Name == "i_3").Single();
+			var idNew = lci.InsertAssignmentNewId(i_3.Identifier, proc.ControlGraph.Blocks[2], 2);
+			Assert.AreEqual("i_7 = i_3", proc.ControlGraph.Blocks[2].Statements[2].Instruction.ToString());
 			Assert.AreSame(proc.ControlGraph.Blocks[2].Statements[2], ssaIds[idNew].DefStatement);
 		}
 
@@ -103,18 +106,19 @@ namespace Reko.UnitTests.Analysis
 		public void LciRenameDominatedIdentifiers()
 		{
 			Build(new LiveLoopMock().Procedure, new FakeArchitecture());
-			var lci = new LiveCopyInserter(proc, ssaIds);
-            var i_1 = ssaIds.Where(s => s.Identifier.Name == "i_1").Single();
-            var idNew = lci.InsertAssignmentNewId(i_1.Identifier, proc.ControlGraph.Blocks[2], 2);
-			lci.RenameDominatedIdentifiers(i_1, ssaIds[idNew]);
-            Assert.AreEqual("return i_5", proc.ControlGraph.Blocks[2].ElseBlock.Statements[0].Instruction.ToString());
+			var lci = new LiveCopyInserter(ssa);
+
+            var i_3 = ssaIds.Where(s => s.Identifier.Name == "i_3").Single();
+            var idNew = lci.InsertAssignmentNewId(i_3.Identifier, proc.ControlGraph.Blocks[2], 2);
+			lci.RenameDominatedIdentifiers(i_3, ssaIds[idNew]);
+            Assert.AreEqual("return i_1", proc.ControlGraph.Blocks[2].ElseBlock.Statements[0].Instruction.ToString());
 		}
 
 		[Test]
 		public void LciLiveLoop()
 		{
 			Build(new LiveLoopMock().Procedure, new FakeArchitecture());
-			LiveCopyInserter lci = new LiveCopyInserter(proc, ssaIds);
+			LiveCopyInserter lci = new LiveCopyInserter(ssa);
 			lci.Transform();
 			using (FileUnitTester fut = new FileUnitTester("Analysis/LciLiveLoop.txt"))
 			{
@@ -127,7 +131,7 @@ namespace Reko.UnitTests.Analysis
 		public void LciLiveCopy()
 		{
 			Build(new LiveCopyMock().Procedure, new FakeArchitecture());
-			LiveCopyInserter lci = new LiveCopyInserter(proc, ssaIds);
+			LiveCopyInserter lci = new LiveCopyInserter(ssa);
 			lci.Transform();
 			using (FileUnitTester fut = new FileUnitTester("Analysis/LciLiveCopy.txt"))
 			{
@@ -158,7 +162,7 @@ namespace Reko.UnitTests.Analysis
 		{
 			Program program = RewriteFile(sourceFile);
 			Build(program.Procedures.Values[0], program.Architecture);
-			LiveCopyInserter lci = new LiveCopyInserter(proc, ssaIds);
+			LiveCopyInserter lci = new LiveCopyInserter(ssa);
 			lci.Transform();
 			using (FileUnitTester fut = new FileUnitTester(outputFile))
 			{
@@ -170,33 +174,41 @@ namespace Reko.UnitTests.Analysis
 		private void Build(Procedure proc, IProcessorArchitecture arch)
 		{
             var platform = new DefaultPlatform(null, arch);
-			this.proc = proc;
-            var importResolver = MockRepository.GenerateStub<IImportResolver>();
-            importResolver.Replay();
-            Aliases alias = new Aliases(proc);
-			alias.Transform();
+            var program = new Program()
+            {
+                Architecture = arch,
+                Platform = platform,
+            };
+            this.proc = proc;
+            var importResolver = new Mock<IImportResolver>().Object;
 			var gr = proc.CreateBlockDominatorGraph();
-			SsaTransform sst = new SsaTransform(
-                new ProgramDataFlow(),
+            SsaTransform sst = new SsaTransform(
+                program,
                 proc,
+                new HashSet<Procedure>(),
                 null,
-                gr,
-                new HashSet<RegisterStorage>());
-			SsaState ssa = sst.SsaState;
+                new ProgramDataFlow());
+            sst.Transform();
+            this.ssa = sst.SsaState;
 			this.ssaIds = ssa.Identifiers;
 
 			ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, platform);
 			cce.Transform();
-			DeadCode.Eliminate(proc, ssa);
+			DeadCode.Eliminate(ssa);
 
             var segmentMap = new SegmentMap(Address.Ptr32(0x00400000));
-			ValuePropagator vp = new ValuePropagator(segmentMap, ssa, new FakeDecompilerEventListener());
+			ValuePropagator vp = new ValuePropagator(
+                segmentMap, 
+                ssa,
+                program.CallGraph, 
+                null, 
+                new FakeDecompilerEventListener());
 			vp.Transform();
 
-			Coalescer coa = new Coalescer(proc, ssa);
+			Coalescer coa = new Coalescer(ssa);
 			coa.Transform();
 
-			DeadCode.Eliminate(proc, ssa);
+			DeadCode.Eliminate(ssa);
 		}
 	}
 }

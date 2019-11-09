@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,61 +18,24 @@
  */
 #endregion
 
-using System;
+using Reko.Core;
 using Reko.Core.Machine;
 
 namespace Reko.Arch.Tms7000
 {
     public class Tms7000Instruction : MachineInstruction
     {
-        public Opcode Opcode;
-        public MachineOperand op1;
-        public MachineOperand op2;
-        public MachineOperand op3;
+        public Mnemonic Mnemonic;
 
-        public override InstructionClass InstructionClass
-        {
-            get
-            {
-                throw new System.NotImplementedException();
-            }
-        }
-
-        public override bool IsValid
-        {
-            get
-            {
-                throw new System.NotImplementedException();
-            }
-        }
-
-        public override int OpcodeAsInteger
-        {
-            get
-            {
-                throw new System.NotImplementedException();
-            }
-        }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            throw new System.NotImplementedException();
-        }
+        public override int OpcodeAsInteger => (int) Mnemonic;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteOpcode(this.Opcode.ToString());
-            if (op1 == null)
-                return;
-            writer.Tab();
-            RenderOperand(op1, writer, options);
-            if (op2 == null)
-                return;
-            writer.WriteChar(',');
-            RenderOperand(op2, writer, options);
+            writer.WriteOpcode(this.Mnemonic.ToString());
+            RenderOperands(writer, options);
         }
 
-        private void RenderOperand(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        protected override void RenderOperand(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
             switch (op)
             {

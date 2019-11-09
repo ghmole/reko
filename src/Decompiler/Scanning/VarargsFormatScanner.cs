@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,13 +62,15 @@ namespace Reko.Scanning
             this.services = services;
         }
 
-        public Instruction BuildInstruction(Expression callee, CallSite site)
+        public Instruction BuildInstruction(
+            Expression callee, 
+            CallSite site,
+            ProcedureCharacteristics chr)
         {
-            var pc = callee as ProcedureConstant;
-            if (pc != null)
+            if (callee is ProcedureConstant pc)
                 pc.Procedure.Signature = this.expandedSig;
-            var ab = CreateApplicationBuilder(callee, this.expandedSig, site);
-            return ab.CreateInstruction();
+            var ab = arch.CreateFrameApplicationBuilder(frame, site, callee);
+            return ab.CreateInstruction(this.expandedSig, chr);
         }
 
         public bool TryScan(Address addrInstr, Expression callee, FunctionType sig, ProcedureCharacteristics chr)
@@ -87,21 +89,6 @@ namespace Reko.Scanning
             var argTypes = ParseVarargsFormat(addrInstr, chr, format);
             this.expandedSig = ReplaceVarargs(program.Platform, sig, argTypes);
             return true;
-        }
-
-        private ApplicationBuilder CreateApplicationBuilder(
-            Expression callee,
-            FunctionType sig,
-            CallSite site)
-        {
-            var ab = new ApplicationBuilder(
-                arch,
-                frame,
-                site,
-                callee,
-                sig,
-                false);
-            return ab;
         }
 
         private Expression GetValue(Expression op)
@@ -155,7 +142,7 @@ namespace Reko.Scanning
 
         private string ReadCString(Constant cAddr)
         {
-            var addr = program.Platform.MakeAddressFromConstant(cAddr);
+            var addr = program.Platform.MakeAddressFromConstant(cAddr, false);
             return ReadCString(addr);
         }
 
@@ -164,7 +151,7 @@ namespace Reko.Scanning
             if (!program.SegmentMap.IsValidAddress(addr))
                 throw new ApplicationException(
                     string.Format("Varargs: invalid address: {0}", addr));
-            var rdr = program.CreateImageReader(addr);
+            var rdr = program.CreateImageReader(program.Architecture, addr);
             var c = rdr.ReadCString(PrimitiveType.Char, program.TextEncoding);
             return c.ToString();
         }

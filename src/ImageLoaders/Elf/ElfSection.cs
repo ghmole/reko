@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,13 @@ namespace Reko.ImageLoaders.Elf
 {
     public class ElfSection
     {
+        public const ushort SHN_LORESERVE = 0xFF00;
+        public const ushort SHN_LOPROC    = 0xFF00;
+        public const ushort SHN_HIPROC    = 0xFF1F;
+        public const ushort SHN_ABS       = 0xFFF1;
+        public const ushort SHN_COMMON    = 0xFFF2;
+        public const ushort SHN_HIRESERVE = 0xFFFF;
+
         public string Name;
         public uint Number;
         public SectionHeaderType Type;
@@ -46,6 +53,11 @@ namespace Reko.ImageLoaders.Elf
                 return 0;
             else
                 return (uint)(Size / EntrySize);
+        }
+
+        public override string ToString()
+        {
+            return $"[{Address} - 0x{Size:X}] - {Name ?? "(no name)"}";
         }
     }
 

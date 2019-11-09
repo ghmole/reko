@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,15 +32,16 @@ using Reko.Core.Types;
 
 namespace Reko.Scanning
 {
-    public class ScannerInLinq : ScanResults
+    using block = ScanResults.block;
+    using instr = ScanResults.instr;
+    using link = ScanResults.link;
+
+    public class ScannerInLinq
     {
-        // change @binary_size to simulate a large executable
-        //private const int binary_size = 10;
-        private IServiceProvider services;
-        private Program program;
-        private IRewriterHost host;
-        private DecompilerEventListener eventListener;
-        private ScanResults sr;
+        private readonly IServiceProvider services;
+        private readonly Program program;
+        private readonly IRewriterHost host;
+        private readonly DecompilerEventListener eventListener;
 
         public ScannerInLinq(IServiceProvider services, Program program, IRewriterHost host, DecompilerEventListener eventListener)
         {
@@ -50,63 +51,11 @@ namespace Reko.Scanning
             this.eventListener = eventListener;
         }
 
-        #region Simulate binary
-        public void SimulateBinary(int binary_size)
-        {
-            sr.FlatInstructions = new SortedList<Address, instr>();
-            // links betweeen instructions
-            sr.FlatEdges = new List<link>();
-
-
-            // Create a simulated program ----------------------------------------------------
-
-            long @offset = 0x40000;
-            long @end = @offset + @binary_size;
-            while (@offset < @end)
-            {
-                AddInstr(1 + @offset, 1, 'l'); ;
-                AddLink(1 + @offset, 2 + @offset);
-
-                AddInstr(2 + @offset, 1, 'l'); ;
-                AddLink(2 + @offset, 4 + @offset);
-
-                AddInstr(3 + @offset, 1, 'C'); ; // Capital 'C' means this was called by someone.
-                AddLink(3 + @offset, 4 + @offset);
-
-                AddInstr(4 + @offset, 1, 'c');
-                AddLink(4 + @offset, 5 + @offset);
-                AddLink(4 + @offset, 6 + @offset);
-
-                AddInstr(5 + @offset, 1, 'l');
-                AddLink(5 + @offset, 6 + @offset);
-
-                AddInstr(6 + @offset, 1, 'x');
-                AddLink(6 + @offset, 2 + @offset);
-                AddLink(6 + @offset, 7 + @offset);
-
-                AddInstr(7 + @offset, 1, 'l');
-                AddLink(7 + @offset, 8 + @offset);
-
-                AddInstr(8 + @offset, 1, 'l');
-                AddLink(8 + @offset, 9 + @offset);
-
-                AddInstr(9 + @offset, 1, 'l');
-                AddLink(9 + @offset, 10 + @offset);
-
-                AddInstr(10 + @offset, 1, 'l');
-
-                @offset = @offset + 20;
-
-            }
-        }
-        #endregion
-
         public ScanResults ScanImage(ScanResults sr)
         {
-            this.sr = sr;
-
-           // sr.WatchedAddresses.Add(Address.Ptr64(0x0000000000405EF3)); //$DEBUG
-
+            sr.WatchedAddresses.Add(Address.Ptr32(0x001126FC)); //$DEBUG
+            sr.WatchedAddresses.Add(Address.Ptr32(0x00112762)); //$DEBUG
+            
             // At this point, we have some entries in the image map
             // that are data, and unscanned ranges in betweeen. We
             // have hopefully a bunch of procedure addresses to
@@ -122,7 +71,7 @@ namespace Reko.Scanning
             // Remove blocks that fall off the end of the segment
             // or into data.
             Probe(sr);
-            sr.ICFG = BuildIcfg(the_blocks);
+            sr.ICFG = BuildIcfg(sr, program.NamingPolicy, the_blocks);
             Probe(sr);
             sr.Dump("After shingle scan");
 
@@ -132,20 +81,26 @@ namespace Reko.Scanning
             // by the processor. Starting with known "roots", try to
             // remove as many invalid blocks as possible.
 
-            var hsc = new HeuristicProcedureScanner(
+            var hsc = new BlockConflictResolver(
                 program,
                 sr,
                 program.SegmentMap.IsValidAddress,
                 host);
-            Probe(sr);
             hsc.ResolveBlockConflicts(sr.KnownProcedures.Concat(sr.DirectlyCalledAddresses.Keys));
             Probe(sr);
             sr.Dump("After block conflict resolution");
-            // Collect weakly connected components and create 
-            // procedures from them.
+
+            // If we detect padding bytes between blocks, 
+            // we remove them now.
+            var ppf = new ProcedurePaddingFinder(sr);
+            var pads = ppf.FindPaddingBlocks();
+            ppf.Remove(pads);
+
+            // Detect procedures from the "soup" of baslic blocks in sr.
             var pd = new ProcedureDetector(program, sr, this.eventListener);
             var procs = pd.DetectProcedures();
             sr.Procedures = procs;
+            sr.RemovedPadding = pads;
             return sr;
         }
 
@@ -153,6 +108,7 @@ namespace Reko.Scanning
         {
             var ranges = FindUnscannedRanges().ToList();
             DumpRanges(ranges);
+            var workToDo = (ulong)ranges.Sum(r => r.Item4);
             var binder = new StorageBinder();
             var shsc = new ShingledScanner(this.program, this.host, binder, sr, this.eventListener);
             bool unscanned = false;
@@ -161,10 +117,12 @@ namespace Reko.Scanning
                 unscanned = true;
                 try
                 {
-                    shsc.ScanRange(range.Item1,
+                    shsc.ScanRange(
+                        range.Item1,
                         range.Item2,
                         range.Item3,
-                        range.Item3.ToLinear() - range.Item2.ToLinear());
+                        range.Item4,
+                        workToDo);
                 }
                 catch (AddressCorrelatedException aex)
                 {
@@ -181,11 +139,11 @@ namespace Reko.Scanning
         }
 
         [Conditional("DEBUG")]
-        private void DumpRanges(List<Tuple<MemoryArea, Address, Address>> ranges)
+        private void DumpRanges(List<(IProcessorArchitecture, MemoryArea, Address, uint)> ranges)
         {
             foreach (var range in ranges)
             {
-                Debug.Print("{0} - {1}", range.Item2, range.Item3);
+                Debug.Print("{0}: {1} - {2}", range.Item1, range.Item3, range.Item4);
             }
         }
 
@@ -200,27 +158,112 @@ namespace Reko.Scanning
         /// been identified as code/data yet.
         /// </summary>
         /// <returns></returns>
-        public IEnumerable<Tuple<MemoryArea, Address, Address>> FindUnscannedRanges()
+        public IEnumerable<(IProcessorArchitecture, MemoryArea, Address, uint)> FindUnscannedRanges()
         {
-            return this.program.ImageMap.Items
-                .Where(de => de.Value.DataType is UnknownType)
-                .Select(de => CreateUnscannedArea(de))
-                .Where(tup => tup != null);
+            return MakeTriples(program.ImageMap.Items.Values)
+                .Select(triple => CreateUnscannedArea(triple))
+                .Where(triple => triple.HasValue)
+                .Select(triple => triple.Value);
         }
 
-        private Tuple<MemoryArea, Address, Address> CreateUnscannedArea(KeyValuePair<Address, ImageMapItem> de)
+        /// <summary>
+        /// From an <see cref="IEnumerable{T}"/> of items, generate an <see cref="IEnumerable{T}"/> of 
+        /// triples, where the middle item of each triple corresponds to the items from <paramref name="items"/>.
+        /// </summary>
+        /// <remarks>
+        /// Consider the sequence A B C D..X Y Z. The output of this method is:
+        /// (_ A B)
+        /// (A B C)
+        /// (B C D)
+        /// ...
+        /// (X Y Z)
+        /// (Y Z _)
+        /// (where '_' is the default element.
+        /// </remarks>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="items"></param>
+        /// <returns>A sequence of triples</returns>
+        private static IEnumerable<(T, T, T)> MakeTriples<T>(IEnumerable<T> items)
         {
-            if (!this.program.SegmentMap.TryFindSegment(de.Key, out ImageSegment seg))
+            T prev = default(T);
+            var e = items.GetEnumerator();
+            if (!e.MoveNext())
+                yield break;
+            T item = e.Current;
+            while (e.MoveNext())
+            {
+                var next = e.Current;
+                yield return (prev, item, next);
+                prev = item;
+                item = next;
+            }
+            yield return (prev, item, default(T));
+        }
+
+        /// <summary>
+        /// Given a triple of blocks, decides whether the middle block is an unscanned area
+        /// that could be fed to the shingle scanner.
+        /// </summary>
+        /// <param name="triple"></param>
+        /// <returns></returns>
+        private (IProcessorArchitecture, MemoryArea, Address, uint)? CreateUnscannedArea((ImageMapItem, ImageMapItem, ImageMapItem) triple)
+        {
+            var (prev, item, next) = triple;
+            if (!(item.DataType is UnknownType unk))
+                return null;
+            if (unk.Size > 0)
+                return null;
+            if (!this.program.SegmentMap.TryFindSegment(item.Address, out ImageSegment seg))
                 return null;
             if (!seg.IsExecutable)
                 return null;
-            return Tuple.Create(
+
+            // Determine an architecture for the item.
+            var prevArch = GetBlockArchitecture(prev);
+            var nextArch = GetBlockArchitecture(next);
+            IProcessorArchitecture arch = null;
+            if (prevArch == null)
+            {
+                arch = nextArch ?? program.Architecture;
+            }
+            else if (nextArch == null)
+            {
+                arch = prevArch ?? program.Architecture;
+            }
+            else
+            {
+                // Both prev and next have an architecture.
+                if (prevArch == nextArch)
+                {
+                    arch = prevArch;
+                }
+                else
+                {
+                    // Different architectures on both sides. 
+                    // Arbitrarily pick the architecture of the largest 
+                    // adjacent block. If they're the same size, default 
+                    // to the predecessor.
+                    arch = (prev.Size < next.Size)
+                        ? nextArch
+                        : prevArch;
+                }
+            }
+
+            return (
+                arch,
                 seg.MemoryArea,
-                de.Key,
-                de.Key + de.Value.Size);
+                item.Address,
+                item.Size);
         }
 
-        private void BuildWeaklyConnectedComponents(Dictionary<long, block> the_blocks)
+        private static IProcessorArchitecture GetBlockArchitecture(ImageMapItem item)
+        {
+            return (item is ImageMapBlock imb)
+                ? imb.Block.Procedure.Architecture
+                : null;
+        }
+
+        private void BuildWeaklyConnectedComponents(ScanResults sr, Dictionary<long, block> the_blocks)
         {
             while (true)
             {
@@ -253,7 +296,7 @@ namespace Reko.Scanning
                             source = g.Key,
                             target = g.Min(gg => gg.second)
                         }) on bb.component_id equals cc.source
-                     select new { block = bb, target = cc.target }))
+                     select new { block = bb, cc.target }))
                 {
                     bc.block.component_id = Address.Min(bc.block.component_id, bc.target);
                 }
@@ -266,37 +309,57 @@ namespace Reko.Scanning
                 select string.Format("{0:X8}:{1}", g.Key, g.Count())));
         }
 
-        public Dictionary<Address, block> BuildBasicBlocks(ScanResults sr)
+        /// <summary>
+        /// From the "soup" of instructions and links, we construct
+        /// basic blocks by finding those instructions that have 0 or more than
+        /// 1 predecessor or successors. These instructions delimit the start and 
+        /// end of the basic blocks.
+        /// </summary>
+        public static Dictionary<Address, block> BuildBasicBlocks(ScanResults sr)
         {
-            // Count and save the # of predecessors and successors for each
-            // instruction.
+            // Count and save the # of successors for each instruction.
             foreach (var cSucc in
                     from link in sr.FlatEdges
                     group link by link.first into g
                     select new { addr = g.Key, Count = g.Count() })
             {
-                instr instr;
-                if (sr.FlatInstructions.TryGetValue(cSucc.addr, out instr))
+                if (sr.FlatInstructions.TryGetValue(cSucc.addr.ToLinear(), out var instr))
                     instr.succ = cSucc.Count;
             }
+            // Count and save the # of predecessors for each instruction.
             foreach (var cPred in
                     from link in sr.FlatEdges
                     group link by link.second into g
                     select new { addr = g.Key, Count = g.Count() })
             {
-                instr instr;
-                if (sr.FlatInstructions.TryGetValue(cPred.addr, out instr))
+                if (sr.FlatInstructions.TryGetValue(cPred.addr.ToLinear(), out var instr))
                     instr.pred = cPred.Count;
             }
 
             var the_excluded_edges = new HashSet<link>();
             foreach (var instr in sr.FlatInstructions.Values)
             {
-                if (instr.type != (ushort)RtlClass.Linear)
+                // All blocks must start with a linear instruction.
+                if ((instr.type & (ushort)InstrClass.Linear) == 0)
                     continue;
-                ScanResults.instr succ;
-                if (!sr.FlatInstructions.TryGetValue(instr.addr + instr.size, out succ))
+                // Find the instruction that is located directly after instr.
+                if (!sr.FlatInstructions.TryGetValue(instr.addr.ToLinear() + (uint) instr.size, out instr succ))
                     continue;
+                // If the first instruction was padding the next one must also be padding, 
+                // otherwise we start a new block.
+                if (((instr.type ^ succ.type) & (ushort)InstrClass.Padding) != 0)
+                    continue;
+                // If the first instruction was a zero instruction the next one must also be zero,
+                // otherwise we start a new block.
+                if (((instr.type ^ succ.type) & (ushort) InstrClass.Zero) != 0)
+                    continue;
+
+                // If succ follows instr and it's not the entry of a known procedure
+                // or a called address, we don't need the edge between them since they're inside
+                // a basic block. We also mark succ as belonging to the same block as instr.
+                // Since we're iterating through FlatInstructions in ascending address order,
+                // the block_id's will propagate from the first instruction in each block 
+                // to the next.
                 if (instr.succ == 1 && succ.pred == 1 &&
                     !sr.KnownProcedures.Contains(succ.addr) &&
                     !sr.DirectlyCalledAddresses.ContainsKey(succ.addr))
@@ -306,7 +369,7 @@ namespace Reko.Scanning
                 }
             }
 
-            // Build global block graph
+            // Build the blocks by grouping the instructions.
             var the_blocks =
                 (from i in sr.FlatInstructions.Values
                  group i by i.block_id into g
@@ -316,6 +379,7 @@ namespace Reko.Scanning
                      instrs = g.OrderBy(ii => ii.addr).ToArray()
                  })
                 .ToDictionary(b => b.id);
+            // Exclude the now useless edges.
             sr.FlatEdges = 
                 (from link in sr.FlatEdges
                 join f in sr.FlatInstructions.Values on link.first equals f.addr
@@ -326,17 +390,23 @@ namespace Reko.Scanning
             return the_blocks;
         }
 
-        public Dictionary<Address, block> RemoveInvalidBlocks(ScanResults sr, Dictionary<Address, block> blocks)
+        /// <summary>
+        /// From the candidate set of <paramref name="blocks"/>, remove blocks that 
+        /// are invalid.
+        /// </summary>
+        /// <returns>A (hopefully smaller) set of blocks.</returns>
+        public static Dictionary<Address, block> RemoveInvalidBlocks(ScanResults sr, Dictionary<Address, block> blocks)
         {
             // Find transitive closure of bad instructions 
 
             var bad_blocks =
                 (from i in sr.FlatInstructions.Values
-                 where i.type == (ushort)RtlClass.Invalid
+                 where i.type == (ushort)InstrClass.Invalid
                  select i.block_id).ToHashSet();
             var new_bad = bad_blocks;
             var preds = sr.FlatEdges.ToLookup(e => e.second);
             //Debug.Print("Bad {0}",
+
             //    string.Join(
             //        "\r\n      ",
             //        bad_blocks
@@ -383,17 +453,20 @@ namespace Reko.Scanning
             return blocks;
         }
 
-        private bool BlockEndsWithCall(block block)
+        private static bool BlockEndsWithCall(block block)
         {
             int len = block.instrs.Length;
             if (len < 1)
                 return false;
-            if (block.instrs[len - 1].type == (uint)(RtlClass.Call | RtlClass.Transfer))
+            if (block.instrs[len - 1].type == (uint)(InstrClass.Call | InstrClass.Transfer))
                 return true;
             return false;
         }
 
-        public DiGraph<RtlBlock> BuildIcfg(Dictionary<Address, block> blocks)
+        public static DiGraph<RtlBlock> BuildIcfg(
+            ScanResults sr,
+            NamingPolicy namingPolicy,
+            Dictionary<Address, block> blocks)
         {
             var icfg = new DiGraph<RtlBlock>();
             var map = new Dictionary<Address, RtlBlock>();
@@ -401,7 +474,7 @@ namespace Reko.Scanning
                 from b in blocks.Values
                 join i in sr.FlatInstructions.Values on b.id equals i.block_id into instrs
                 orderby b.id
-                select new RtlBlock(b.id, b.id.GenerateName("l", ""))
+                select new RtlBlock(b.id, namingPolicy.BlockName(b.id))
                 {
                     Instructions = instrs.Select(x => x.rtl).ToList()
                 };
@@ -413,9 +486,8 @@ namespace Reko.Scanning
             }
             foreach (var edge in sr.FlatEdges)
             {
-                RtlBlock from, to;
-                if (!map.TryGetValue(edge.first, out from) ||
-                    !map.TryGetValue(edge.second, out to))
+                if (!map.TryGetValue(edge.first, out var from) ||
+                    !map.TryGetValue(edge.second, out var to))
                     continue;
                 icfg.AddEdge(from, to);
             }
@@ -443,7 +515,7 @@ namespace Reko.Scanning
             DumpBlocks(sr, blocks, s => Debug.WriteLine(s));
         }
 
-        // Writes the start and end addresses, size, and successor edge of each block, 
+        // Writes the start and end addresses, size, and successor edges of each block, 
         public void DumpBlocks(ScanResults sr, Dictionary<Address, block> blocks, Action<string> writeLine)
         {
             writeLine(
@@ -454,15 +526,33 @@ namespace Reko.Scanning
                     group ii by ii.block_id into g
                     select new { block_id = g.Key, max = g.Max(iii => iii.addr.ToLinear() + (uint) iii.size ) })
                     on b.id equals i.block_id
+               join l in sr.FlatInstructions.Values on b.id equals l.addr
                join e in sr.FlatEdges on b.id equals e.first into es
                from e in new[] { string.Join(", ", es.Select(ee => string.Format("{0:X8}", ee.second))) }
                orderby b.id
                select string.Format(
-                   "{0:X8}-{1:X8} ({2}): {3}",
+                   "{0:X8}-{1:X8} ({2}): {3}{4}",
                        b.id,
                        b.id + (i.max - b.id.ToLinear()),
                        i.max - b.id.ToLinear(),
+                       RenderType(b.instrs.Last().type),
                        e)));
+
+            string RenderType(ushort type)
+            {
+                var t = (InstrClass)type;
+                if ((t & InstrClass.Zero) != 0)
+                    return "Zer ";
+                if ((t & InstrClass.Padding) != 0)
+                    return "Pad ";
+                if ((t & InstrClass.Call) != 0)
+                    return "Cal ";
+                if ((t & InstrClass.ConditionalTransfer) == InstrClass.ConditionalTransfer)
+                    return "Bra ";
+                if ((t & InstrClass.Transfer) != 0)
+                    return "End";
+                return "Lin ";
+            }
         }
 
         private void DumpBadBlocks(ScanResults sr, Dictionary<long, block> blocks, IEnumerable<link> edges, HashSet<Address> bad_blocks)
@@ -515,28 +605,5 @@ namespace Reko.Scanning
                     i.addr, i.size, i.type, i.block_id, i.pred, i.succ);
             }
         }
-
-        [Conditional("DEBUG")]
-        private void AddInstr(long uAddr, int size, char type)
-        {
-            var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new instr
-            {
-                addr = addr,
-                size = size,
-                type = type,
-                block_id = addr,
-            });
-        }
-
-        [Conditional("DEBUG")]
-        private void AddLink(long from, long to)
-        {
-            var f = Address.Ptr32((uint)from);
-            var t = Address.Ptr32((uint)to);
-
-            sr.FlatEdges.Add(new link { first = f, second = t });
-        }
-
     }
 }

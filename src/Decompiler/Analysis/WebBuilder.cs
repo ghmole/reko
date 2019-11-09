@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,9 +22,11 @@ using Reko.Core;
 using Reko.Core.Code;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
+using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Reko.Analysis
 {
@@ -39,8 +41,10 @@ namespace Reko.Analysis
     /// </remarks>
 	public class WebBuilder
 	{
-		private Procedure proc;
+        private readonly Program program;
+		private SsaState ssa;
 		private SsaIdentifierCollection ssaIds;
+        private readonly DecompilerEventListener listener;
 		private SsaLivenessAnalysis sla;
 		private BlockDominatorGraph doms;
 		private Dictionary<Identifier,LinearInductionVariable>ivs;
@@ -48,13 +52,15 @@ namespace Reko.Analysis
 		private List<Web> webs;
 		private Statement stmCur;
 
-        public WebBuilder(Procedure proc, SsaIdentifierCollection ssaIds, Dictionary<Identifier,LinearInductionVariable> ivs)
+        public WebBuilder(Program program, SsaState ssa, Dictionary<Identifier,LinearInductionVariable> ivs,DecompilerEventListener listener)
         {
-            this.proc = proc;
-            this.ssaIds = ssaIds;
+            this.program = program;
+            this.ssa = ssa;
+            this.ssaIds = ssa.Identifiers;
             this.ivs = ivs;
-            this.sla = new SsaLivenessAnalysis(proc, ssaIds);
-            this.doms = proc.CreateBlockDominatorGraph();
+            this.listener = listener;
+            this.sla = new SsaLivenessAnalysis(ssa);
+            this.doms = ssa.Procedure.CreateBlockDominatorGraph();
             this.webs = new List<Web>();
         }
 
@@ -72,48 +78,71 @@ namespace Reko.Analysis
 
 		public void InsertDeclarations()
 		{
-			DeclarationInserter deci = new DeclarationInserter(ssaIds, doms);
+			var deci = new DeclarationInserter(ssaIds, doms);
 			foreach (Web web in this.webs)
 			{
-				if (!(web.Identifier is MemoryIdentifier))
-					deci.InsertDeclaration(web);
+                bool isLive = web.Uses.Count > 0;
+                bool isOnlyUsedByPhis = web.Uses.All(u => u.Instruction is PhiAssignment);
+                bool isMemoryId = web.Identifier is MemoryIdentifier;
+                if (isLive && !isOnlyUsedByPhis && !isMemoryId)
+                {
+                    deci.InsertDeclaration(web);
+                }
+                else
+                {
+                    var isDefinedByOutArg = OutDefinitionFinder.Find(web.Members);
+                    if (isDefinedByOutArg)
+                    {
+                        deci.InsertDeclaration(web);
+                    }
+                }
 			}
 		}
 
 		public void Transform()
 		{
-			new LiveCopyInserter(proc, ssaIds).Transform();
-			BuildWebOf();
+            try
+            {
+                new LiveCopyInserter(ssa).Transform();
+                BuildWebOf();
 
-			foreach (SsaIdentifier id in ssaIds)
-			{
-				if (id.DefStatement != null && !(id.Identifier is MemoryIdentifier))
-					VisitStatement(id.DefStatement);
-			}
+                foreach (SsaIdentifier id in ssaIds)
+                {
+                    if (id.DefStatement != null && !(id.Identifier is MemoryIdentifier))
+                        VisitStatement(id.DefStatement);
+                }
 
-			InsertDeclarations();
+                InsertDeclarations();
 
-			WebReplacer replacer = new WebReplacer(this);
-			foreach (Block bl in proc.ControlGraph.Blocks)
-			{
-				for (int i = bl.Statements.Count - 1; i >= 0; --i)
-				{
-					Statement stm = bl.Statements[i];
-					stm.Instruction = stm.Instruction.Accept(replacer);
-					if (stm.Instruction == null)
-					{
-						bl.Statements.RemoveAt(i);
-					}
-				}
-			}
+                WebReplacer replacer = new WebReplacer(this);
+                foreach (Block bl in ssa.Procedure.ControlGraph.Blocks)
+                {
+                    for (int i = bl.Statements.Count - 1; i >= 0; --i)
+                    {
+                        Statement stm = bl.Statements[i];
+                        stm.Instruction = stm.Instruction.Accept(replacer);
+                        if (stm.Instruction == null)
+                        {
+                            bl.Statements.RemoveAt(i);
+                        }
+                    }
+                }
 
-			foreach (Web w in webs)
-			{
-				if (w.InductionVariable != null)
-				{
-					ivs.Add(w.Identifier, w.InductionVariable);
-				}
-			}
+                foreach (Web w in webs)
+                {
+                    if (w.InductionVariable != null)
+                    {
+                        ivs.Add(w.Identifier, w.InductionVariable);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                listener.Error(
+                    listener.CreateProcedureNavigator(program, ssa.Procedure),
+                    ex,
+                    "An error occurred while renaming variables.");
+            }
 		}
 
 		private void Merge(Web a, Web b)
@@ -142,12 +171,12 @@ namespace Reko.Analysis
 
 		public void VisitPhiAssignment(PhiAssignment p)
 		{
-			Identifier idDst = (Identifier) p.Dst;
+			Identifier idDst = p.Dst;
 			PhiFunction phi = p.Src;
-			for (int i = 0; i < phi.Arguments.Length; ++i)
+			foreach (var de in phi.Arguments)
 			{
-                Identifier id = phi.Arguments[i] as Identifier;
-				Block pred = stmCur.Block.Pred[i];
+                Identifier id = de.Value as Identifier;
+                Block pred = de.Block;
 				if (id != null && id != idDst)
 					Merge(webOf[idDst], webOf[id]);
 			}
@@ -185,6 +214,8 @@ namespace Reko.Analysis
 
 			public override Expression VisitIdentifier(Identifier id)
 			{
+                if (id.Storage is OutArgumentStorage)
+                    return id;
 				return bld.webOf[id].Identifier;
 			}
 
@@ -200,5 +231,36 @@ namespace Reko.Analysis
 					return a;
 			}
 		}
+
+        public class OutDefinitionFinder : InstructionVisitorBase
+        {
+            private readonly Identifier id;
+            private bool usedAsOutArgument;
+
+            public static bool Find(IEnumerable<SsaIdentifier> sids)
+            {
+                foreach (var sid in sids)
+                {
+                    if (sid.DefStatement != null)
+                    {
+                        var odf = new OutDefinitionFinder(sid.Identifier);
+                        sid.DefStatement.Instruction.Accept(odf);
+                        if (odf.usedAsOutArgument)
+                            return true;
+                    }
+                }
+                return false;
+            }
+
+            public OutDefinitionFinder(Identifier id)
+            {
+                this.id = id;
+            }
+
+            public override void VisitOutArgument(OutArgument outArg)
+            {
+                usedAsOutArgument |= (outArg.Expression is Identifier id && this.id == id);
+            }
+        }
 	}
 }

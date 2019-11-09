@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,8 +43,7 @@ namespace Reko.Gui.Forms
     /// code. This will make it easier to port to other GUI platforms.
     /// </summary>
     public class MainFormInteractor :
-        ICommandTarget,
-        DecompilerHost
+        ICommandTarget
     {
         private IDecompilerShellUiService uiSvc;
         private IMainForm form;
@@ -53,6 +52,7 @@ namespace Reko.Gui.Forms
         private ISearchResultService srSvc;
         private IWorkerDialogService workerDlgSvc;
         private IProjectBrowserService projectBrowserSvc;
+        private IProcedureListService procedureListSvc;
         private IDialogFactory dlgFactory;
         private ITabControlHostService searchResultsTabControl;
         private ILoader loader;
@@ -76,7 +76,7 @@ namespace Reko.Gui.Forms
         {
             this.dlgFactory = services.RequireService<IDialogFactory>();
             this.mru = new MruList(MaxMruItems);
-            this.mru.Load(MruListFile);
+            this.mru.Load(services.RequireService<IFileSystemService>(), MruListFile);
             this.sc = services.RequireService<IServiceContainer>();
         }
 
@@ -130,7 +130,7 @@ namespace Reko.Gui.Forms
 
         private void CreateServices(IServiceFactory svcFactory, IServiceContainer sc)
         {
-            sc.AddService<DecompilerHost>(this);
+            sc.AddService<IDecompiledFileService>(svcFactory.CreateDecompiledFileService());
 
             config = svcFactory.CreateDecompilerConfiguration();
             sc.AddService(typeof(IConfigurationService), config);
@@ -175,14 +175,17 @@ namespace Reko.Gui.Forms
             this.projectBrowserSvc = svcFactory.CreateProjectBrowserService();
             sc.AddService<IProjectBrowserService>(projectBrowserSvc);
 
+            this.procedureListSvc = svcFactory.CreateProcedureListService();
+            sc.AddService<IProcedureListService>(procedureListSvc);
+
             var upSvc = svcFactory.CreateUiPreferencesService();
             sc.AddService<IUiPreferencesService>(upSvc);
 
-            var fsSvc = svcFactory.CreateFileSystemService();
-            sc.AddService<IFileSystemService>(fsSvc);
-
             srSvc = svcFactory.CreateSearchResultService();
             sc.AddService<ISearchResultService>(srSvc);
+
+            var callHierSvc = svcFactory.CreateCallHierarchyService();
+            sc.AddService<ICallHierarchyService>(callHierSvc);
 
             this.searchResultsTabControl = svcFactory.CreateTabControlHost();
             sc.AddService<ITabControlHostService>(this.searchResultsTabControl);
@@ -208,6 +211,9 @@ namespace Reko.Gui.Forms
             if (string.IsNullOrEmpty(filename))
                 return StreamWriter.Null;
             var fsSvc = Services.RequireService<IFileSystemService>();
+            var dir = Path.GetDirectoryName(filename);
+            if (!string.IsNullOrEmpty(dir))
+                fsSvc.CreateDirectory(dir);
             return new StreamWriter(fsSvc.CreateFileStream(filename, FileMode.Create, FileAccess.Write), new UTF8Encoding(false));
         }
 
@@ -222,9 +228,10 @@ namespace Reko.Gui.Forms
             get { return form; }
         }
 
+        //$REFACTOR: only seems to be opened in unit tests?
         public void OpenBinary(string file)
         {
-            OpenBinary(file, (f) => pageInitial.OpenBinary(f));
+            OpenBinary(file, (f) => pageInitial.OpenBinary(f), f => OpenBinaryAs(f));
         }
 
         /// <summary>
@@ -232,15 +239,18 @@ namespace Reko.Gui.Forms
         /// </summary>
         /// <param name="file"></param>
         /// <param name="openAction"></param>
-        public void OpenBinary(string file, Func<string,bool> openAction)
+        public void OpenBinary(string file, Func<string,bool> openAction, Func<string, bool> onFailAction)
         {
             try
             {
                 CloseProject();
                 SwitchInteractor(InitialPageInteractor);
-                if (openAction(file))
+                if (openAction(file) || onFailAction(file))
                 {
-                    ProjectFileName = file;
+                    if (file.EndsWith(Project_v3.FileExtension))
+                    {
+                        ProjectFileName = file;
+                    }
                 }
             }
             catch (Exception ex)
@@ -251,7 +261,7 @@ namespace Reko.Gui.Forms
             finally
             {
                 Services.RequireService<IStatusBarService>().SetText("");
-        }
+            }
         }
 
         public void OpenBinaryWithPrompt()
@@ -260,10 +270,19 @@ namespace Reko.Gui.Forms
             var fileName = uiSvc.ShowOpenFileDialog(null);
             if (fileName != null)
             {
-                mru.Use(fileName);
-                uiSvc.WithWaitCursor(() => OpenBinary(fileName, (f) => pageInitial.OpenBinary(f)));
-                }
+                RememberFilenameInMru(fileName);
+                uiSvc.WithWaitCursor(() => OpenBinary(
+                    fileName, 
+                    f => pageInitial.OpenBinary(f),
+                    f => OpenBinaryAs(f)));
             }
+        }
+
+        private void RememberFilenameInMru(string fileName)
+        {
+            mru.Use(fileName);
+            mru.Save(Services.RequireService<IFileSystemService>(), MruListFile);
+        }
 
         /// <summary>
         /// Prompts the user for a metadata file and adds to the project.
@@ -273,7 +292,6 @@ namespace Reko.Gui.Forms
             var fileName = uiSvc.ShowOpenFileDialog(null);
             if (fileName == null)
                 return;
-            mru.Use(fileName);
             var projectLoader = new ProjectLoader(
                 Services,
                 loader,
@@ -284,6 +302,7 @@ namespace Reko.Gui.Forms
             {
                 var metadata = projectLoader.LoadMetadataFile(fileName);
                 decompilerSvc.Decompiler.Project.MetadataFiles.Add(metadata);
+                RememberFilenameInMru(fileName);
             }
             catch (Exception e)
             {
@@ -300,12 +319,12 @@ namespace Reko.Gui.Forms
                 dlg.Services = sc;
                 if (uiSvc.ShowModalDialog(dlg) != DialogResult.OK)
                     return true;
-                mru.Use(dlg.FileName.Text);
 
                 var typeName = dlg.SelectedArchitectureTypeName;
                 var t = Type.GetType(typeName, true);
                 var asm = (Assembler) t.GetConstructor(Type.EmptyTypes).Invoke(null);
-                OpenBinary(dlg.FileName.Text, (f) => pageInitial.Assemble(f, asm));
+                OpenBinary(dlg.FileName.Text, (f) => pageInitial.Assemble(f, asm), f => false);
+                RememberFilenameInMru(dlg.FileName.Text);
             }
             catch (Exception e)
             {
@@ -314,35 +333,36 @@ namespace Reko.Gui.Forms
             return true;
         }
 
-        public bool OpenBinaryAs()
+        public bool OpenBinaryAs(string initialFilename)
         {
             IOpenAsDialog dlg = null;
             IProcessorArchitecture arch = null;
             try
             {
                 dlg = dlgFactory.CreateOpenAsDialog();
+                dlg.FileName.Text = initialFilename;
                 dlg.Services = sc;
                 dlg.ArchitectureOptions = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
                 if (uiSvc.ShowModalDialog(dlg) != DialogResult.OK)
-                    return true;
+                    return false;
 
                 var rawFileOption = (ListOption)dlg.RawFileTypes.SelectedValue;
                 string archName = null;
                 string envName = null;
                 string sAddr = null;
                 string loader = null;
-                EntryPointElement entry = null;
+                EntryPointDefinition entry = null;
                 if (rawFileOption != null && rawFileOption.Value != null)
                 {
-                    var raw = (RawFileElement)rawFileOption.Value;
+                    var raw = (RawFileDefinition)rawFileOption.Value;
                     loader = raw.Loader;
                     archName = raw.Architecture;
                     envName = raw.Environment;
                     sAddr = raw.BaseAddress;
                     entry = raw.EntryPoint;
                 }
-                Architecture archOption = dlg.GetSelectedArchitecture();
-                OperatingEnvironment envOption = dlg.GetSelectedEnvironment();
+                ArchitectureDefinition archOption = dlg.GetSelectedArchitecture();
+                PlatformDefinition envOption = dlg.GetSelectedEnvironment();
                 archName = archName ?? archOption?.Name;
                 envName = envName ?? envOption?.Name;
                 sAddr = sAddr ?? dlg.AddressTextBox.Text.Trim();
@@ -362,10 +382,7 @@ namespace Reko.Gui.Forms
                     EntryPoint = entry,
                 };
 
-                OpenBinary(dlg.FileName.Text, (f) =>
-                    pageInitial.OpenBinaryAs(
-                        f,
-                        details));
+                OpenBinary(dlg.FileName.Text, (f) =>pageInitial.OpenBinaryAs(f, details), f => false);
             }
             catch (Exception ex)
             {
@@ -378,7 +395,7 @@ namespace Reko.Gui.Forms
 
         public void CloseProject()
         {
-            if (decompilerSvc.Decompiler != null && decompilerSvc.Decompiler.Project != null)
+            if (IsDecompilerLoaded)
             {
                 if (uiSvc.Prompt("Do you want to save any changes made to the decompiler project?"))
                 {
@@ -389,8 +406,10 @@ namespace Reko.Gui.Forms
 
             CloseAllDocumentWindows();
             sc.RequireService<IProjectBrowserService>().Clear();
+            sc.RequireService<IProcedureListService>().Clear();
             diagnosticsSvc.ClearDiagnostics();
             decompilerSvc.Decompiler = null;
+            this.ProjectFileName = null;
         }
 
         private void CloseAllDocumentWindows()
@@ -428,8 +447,7 @@ namespace Reko.Gui.Forms
 
         public void RestartRecompilation()
         {
-            if (decompilerSvc.Decompiler == null ||
-                decompilerSvc.Decompiler.Project == null)
+            if (!IsDecompilerLoaded)
                 return;
 
             foreach (var program in decompilerSvc.Decompiler.Project.Programs)
@@ -441,6 +459,7 @@ namespace Reko.Gui.Forms
             CloseAllDocumentWindows();
             diagnosticsSvc.ClearDiagnostics();
             projectBrowserSvc.Reload();
+            projectBrowserSvc.Show();
         }
 
         public void NextPhase()
@@ -498,6 +517,7 @@ namespace Reko.Gui.Forms
                 prev.EnterPage();
                 CurrentPhase = prev;
                 projectBrowserSvc.Reload();
+                procedureListSvc.Load(decompilerSvc.Decompiler.Project);
             }
             catch (Exception ex)
             {
@@ -589,6 +609,16 @@ namespace Reko.Gui.Forms
                 throw new NotSupportedException();
         }
 
+        public void ViewProjectBrowser()
+        {
+            this.projectBrowserSvc.Show();
+        }
+
+        public void ViewProcedureList()
+        {
+            this.procedureListSvc.Show();
+        }
+
         public void FindProcedures(ISearchResultService svc)
         {
             var hits = this.decompilerSvc.Decompiler.Project.Programs
@@ -609,7 +639,7 @@ namespace Reko.Gui.Forms
                         .SelectMany(p => new StringFinder(p).FindStrings(criteria));
                     srSvc.ShowAddressSearchResults(
                        hits,
-                       new StringSearchDetails(criteria.Encoding));
+                       new StringSearchDetails(criteria));
                 }
             }
         }
@@ -685,7 +715,7 @@ namespace Reko.Gui.Forms
                 if (newName == null)
                     return false;
                 ProjectFileName = newName;
-                mru.Use(newName);
+                RememberFilenameInMru(newName);
             }
 
             var fsSvc = Services.RequireService<IFileSystemService>();
@@ -763,6 +793,8 @@ namespace Reko.Gui.Forms
                 return searchResultsTabControl;
             if (projectBrowserSvc.ContainsFocus)
                 return projectBrowserSvc;
+            if (procedureListSvc.ContainsFocus)
+                return procedureListSvc;
             return subWindowCommandTarget;
         }
 
@@ -785,6 +817,8 @@ namespace Reko.Gui.Forms
                 case CmdIds.FileExit:
                 case CmdIds.FileOpenAs:
                 case CmdIds.FileAssemble:
+                case CmdIds.ViewProjectBrowser:
+                case CmdIds.ViewProcedureList:
                 case CmdIds.ToolsOptions:
                 case CmdIds.WindowsCascade: 
                 case CmdIds.WindowsTileVertical:
@@ -831,7 +865,7 @@ namespace Reko.Gui.Forms
             if (0 <= iMru && iMru < mru.Items.Count)
             {
                 cmdStatus.Status = MenuStatus.Visible | MenuStatus.Enabled;
-                cmdText.Text = string.Format("&{0} {1}", iMru+1, mru.Items[iMru]);
+                cmdText.Text = string.Format("&{0} {1}", iMru + 1, mru.Items[iMru]);
                 return true;
             }
             return false;
@@ -868,7 +902,7 @@ namespace Reko.Gui.Forms
                 switch (cmdId.ID)
                 {
                 case CmdIds.FileOpen: OpenBinaryWithPrompt(); retval = true; break;
-                case CmdIds.FileOpenAs: retval = OpenBinaryAs(); break;
+                case CmdIds.FileOpenAs: retval = OpenBinaryAs(""); break;
                 case CmdIds.FileAssemble: retval = AssembleFile(); break;
                 case CmdIds.FileSave: Save(); retval = true; break;
                 case CmdIds.FileAddMetadata: AddMetadataFile(); retval = true; break;
@@ -881,6 +915,8 @@ namespace Reko.Gui.Forms
 
                 case CmdIds.EditFind: EditFind(); retval = true; break;
 
+                case CmdIds.ViewProjectBrowser: ViewProjectBrowser(); retval = true; break;
+                case CmdIds.ViewProcedureList: ViewProcedureList(); retval = true; break;
                 case CmdIds.ViewDisassembly: ViewDisassemblyWindow(); retval = true; break;
                 case CmdIds.ViewMemory: ViewMemoryWindow(); retval = true; break;
                 case CmdIds.ViewCallGraph: ViewCallGraph(); retval = true; break;
@@ -909,8 +945,8 @@ namespace Reko.Gui.Forms
             if (0 <= iMru && iMru < mru.Items.Count)
             {
                 string file = mru.Items[iMru];
-                OpenBinary(file, (f) => pageInitial.OpenBinary(file));
-                mru.Use(file);
+                OpenBinary(file, pageInitial.OpenBinary, OpenBinaryAs);
+                RememberFilenameInMru(file);
                 return true;
             }
             return false;
@@ -926,60 +962,6 @@ namespace Reko.Gui.Forms
             }
         }
         #endregion
-
-        #region DecompilerHost Members //////////////////////////////////
-
-        public IConfigurationService Configuration
-        {
-            get { return config; }
-        }
-
-        public TextWriter CreateDecompiledCodeWriter(string fileName)
-        {
-            return new StreamWriter(fileName, false, new UTF8Encoding(false));
-        }
-
-        public void WriteDisassembly(Program program, Action<Formatter> writer)
-        {
-            using (TextWriter output = CreateTextWriter(program.DisassemblyFilename))
-            {
-                writer(new TextFormatter(output));
-            }
-        }
-
-        public void WriteIntermediateCode(Program program, Action<TextWriter> writer)
-        {
-            using (TextWriter output = CreateTextWriter(program.IntermediateFilename))
-            {
-                writer(output);
-            }
-        }
-
-        public void WriteTypes(Program program, Action<TextWriter> writer)
-        {
-            using (TextWriter output = CreateTextWriter(program.TypesFilename))
-            {
-                writer(output);
-            }
-        }
-
-        public void WriteDecompiledCode(Program program, Action<TextWriter> writer)
-        {
-            using (TextWriter output = CreateTextWriter(program.OutputFilename))
-            {
-                writer(output);
-            }
-        }
-
-        public void WriteGlobals(Program program, Action<TextWriter> writer)
-        {
-            using (TextWriter output = CreateTextWriter(program.GlobalsFilename))
-            {
-                writer(output);
-            }
-        }
-
-        #endregion ////////////////////////////////////////////////////
 
         // Event handlers //////////////////////////////
 
@@ -997,7 +979,6 @@ namespace Reko.Gui.Forms
                 uiPrefsSvc.WindowSize = form.Size;
                 uiPrefsSvc.WindowState = form.WindowState;
                 uiPrefsSvc.Save();
-                mru.Save(MruListFile);
             }
             catch { }
         }
@@ -1006,5 +987,5 @@ namespace Reko.Gui.Forms
         {
             UpdateWindowTitle();
         }
-        }
+    }
 }

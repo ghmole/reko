@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,49 +18,47 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Assemblers.x86;
 using Reko.Core;
 using Reko.Core.Expressions;
-using Reko.Core.Rtl;
 using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Reko.UnitTests.Scanning
 {
     [TestFixture]
     public class ScannerInLinqTests
     {
-        private MockRepository mr;
+        private string nl = Environment.NewLine;
+
         private ScanResults sr;
         private ScannerInLinq siq;
         private Program program;
-        private string nl = Environment.NewLine;
         private RelocationDictionary rd;
-        private IRewriterHost host;
+        private Mock<IRewriterHost> host;
         private FakeDecompilerEventListener eventListener;
 
         [SetUp]
         public void Setup()
         {
-            this.mr = new MockRepository();
-            this.host = mr.Stub<IRewriterHost>();
-            this.sr = new ScanResults();
-            this.sr.FlatInstructions = new SortedList<Address, ScanResults.instr>();
-            this.sr.FlatEdges = new List<ScanResults.link>();
-            this.sr.KnownProcedures = new HashSet<Address>();
-            this.sr.DirectlyCalledAddresses = new Dictionary<Address, int>();
+            this.host = new Mock<IRewriterHost>();
+            this.sr = new ScanResults
+            {
+                FlatInstructions = new Dictionary<ulong, ScanResults.instr>(),
+                FlatEdges = new List<ScanResults.link>(),
+                KnownProcedures = new HashSet<Address>(),
+                DirectlyCalledAddresses = new Dictionary<Address, int>()
+            };
             this.eventListener = new FakeDecompilerEventListener();
         }
 
@@ -74,11 +72,20 @@ namespace Reko.UnitTests.Scanning
             CreateProgram(image, arch);
         }
 
+        private void Given_Image(IProcessorArchitecture arch, params byte[] bytes)
+        {
+            var image = new MemoryArea(
+                Address.Ptr32(0x10000),
+                bytes);
+            this.rd = image.Relocations;
+            CreateProgram(image, arch);
+        }
+
         private void Given_x86_Image(Action<X86Assembler> asm)
         {
             var addrBase = Address.Ptr32(0x100000);
-            var entry = new ImageSymbol(addrBase) { Type = SymbolType.Procedure };
             var arch = new X86ArchitectureFlat32("x86-protected-32");
+            var entry = ImageSymbol.Procedure(arch, addrBase);
             var m = new X86Assembler(null, new DefaultPlatform(null, arch), addrBase, new List<ImageSymbol> { entry });
             asm(m);
             this.program = m.GetImage();
@@ -102,10 +109,40 @@ namespace Reko.UnitTests.Scanning
                 platform);
         }
 
-        private void Inst(int uAddr, int len, RtlClass rtlc)
+        private void Given_CodeBlock(IProcessorArchitecture arch, uint uAddr, uint len)
+        {
+            var addr = Address.Ptr32(uAddr);
+            var proc = Procedure.Create(arch, addr, new Frame(PrimitiveType.Ptr32));
+            var block = new Block(proc, $"l{addr}");
+            program.ImageMap.AddItem(addr, new ImageMapBlock {
+                Address = addr,
+                Block = block,
+                Size = len
+            });
+        }
+
+        private void Given_UnknownBlock(uint uAddr, uint len)
+        {
+            var addr = Address.Ptr32(uAddr);
+            var item = new ImageMapItem { Address = addr, Size = len };
+            program.ImageMap.AddItem(addr, item);
+        }
+
+        private void Given_DataBlock(uint uAddr, uint len)
+        {
+            var addr = Address.Ptr32(uAddr);
+            var item = new ImageMapItem {
+                Address = addr,
+                Size = len,
+                DataType = new ArrayType(PrimitiveType.Byte, 0) };
+            program.ImageMap.AddItem(addr, item);
+
+        }
+
+        private void Inst(int uAddr, int len, InstrClass rtlc)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
@@ -117,25 +154,25 @@ namespace Reko.UnitTests.Scanning
         private void Lin(int uAddr, int len, int next)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
                 block_id = addr,
-                type = (ushort)RtlClass.Linear
+                type = (ushort)InstrClass.Linear
             });
             Link(addr, next);
         }
 
-        private void Call(int uAddr, int len, int next)
+        private void Call(int uAddr, int len, int next, int uAddrDst)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
                 block_id = addr,
-                type = (ushort)(RtlClass.Transfer|RtlClass.Call)
+                type = (ushort)(InstrClass.Transfer|InstrClass.Call)
             });
             Link(addr, next);
         }
@@ -143,12 +180,12 @@ namespace Reko.UnitTests.Scanning
         private void Bra(int uAddr, int len, int a, int b)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
                 block_id = addr,
-                type = (ushort)RtlClass.Linear
+                type = (ushort)InstrClass.ConditionalTransfer
             });
             Link(addr, a);
             Link(addr, b);
@@ -157,25 +194,38 @@ namespace Reko.UnitTests.Scanning
         private void Bad(int uAddr, int len)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
                 block_id = addr,
-                type = (ushort)RtlClass.Invalid,
+                type = (ushort)InstrClass.Invalid,
             });
         }
 
         private void End(int uAddr, int len)
         {
             var addr = Address.Ptr32((uint)uAddr);
-            sr.FlatInstructions.Add(addr, new ScanResults.instr
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
             {
                 addr = addr,
                 size = len,
                 block_id = addr,
-                type = (ushort)RtlClass.Transfer,
+                type = (ushort)InstrClass.Transfer,
             });
+        }
+
+        private void Pad(uint uAddr, int len, int next)
+        {
+            var addr = Address.Ptr32((uint)uAddr);
+            sr.FlatInstructions.Add(addr.ToLinear(), new ScanResults.instr
+            {
+                addr = addr,
+                size = len,
+                block_id = addr,
+                type = (ushort)(InstrClass.Linear | InstrClass.Padding),
+            });
+            Link(addr, next);
         }
 
         private void Link(Address addrFrom ,int uAddrTo)
@@ -195,7 +245,7 @@ namespace Reko.UnitTests.Scanning
 
         private void CreateScanner()
         {
-            this.siq = new ScannerInLinq(null, program, host, eventListener);
+            this.siq = new ScannerInLinq(null, program, host.Object, eventListener);
         }
 
         [Test]
@@ -204,7 +254,7 @@ namespace Reko.UnitTests.Scanning
             Given_OverlappingLinearTraces();
 
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
 
             Assert.AreEqual(2, blocks.Count);
         }
@@ -215,12 +265,12 @@ namespace Reko.UnitTests.Scanning
             Given_OverlappingLinearTraces();
 
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
 
             var sExp =
             #region Expected
-@"00000100-00000106 (6): 
+@"00000100-00000106 (6): End
 ";
             #endregion
 
@@ -242,20 +292,20 @@ namespace Reko.UnitTests.Scanning
             End(0x0001B0DE, 2);
 
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
             var sExp =
             #region Expected
-@"0001B0D7-0001B0DD (6): 0001B0DD, 0001B0DE
-0001B0D8-0001B0DE (6): 0001B0DE
-0001B0DC-0001B0DE (2): 0001B0DE
-0001B0DD-0001B0DE (1): 0001B0DE
-0001B0DE-0001B0E0 (2): 
+@"0001B0D7-0001B0DD (6): Bra 0001B0DD, 0001B0DE
+0001B0D8-0001B0DE (6): Lin 0001B0DE
+0001B0DC-0001B0DE (2): Lin 0001B0DE
+0001B0DD-0001B0DE (1): Lin 0001B0DE
+0001B0DE-0001B0E0 (2): End
 ";
             #endregion
             AssertBlocks(sExp, blocks);
         }
 
-        private void AssertBlocks(string sExp, Dictionary<Address, ScannerInLinq.block> blocks)
+        private void AssertBlocks(string sExp, Dictionary<Address, ScanResults.block> blocks)
         {
             var sw = new StringWriter();
             this.siq.DumpBlocks(sr, blocks, sw.WriteLine);
@@ -278,11 +328,11 @@ namespace Reko.UnitTests.Scanning
             Bad(0x00010002, 3);
             End(0x00010004, 1);
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
             var sExp =
             #region Expected
-@"00010001-00010005 (4): 
+@"00010001-00010005 (4): End
 ";
             #endregion
             AssertBlocks(sExp, blocks);
@@ -292,38 +342,41 @@ namespace Reko.UnitTests.Scanning
         public void Siq_Regression_0001()
         {
             Given_x86_Image(
-                0x55,
-                0x8B, 0xEC,
-                0x81, 0xEC, 0x68, 0x01, 0x00, 0x00,
-                0x53,
-                0x56,
-                0x57,
-                0x8D, 0xBD, 0x98, 0xFE, 0xFF, 0xFF,
-                0xB9, 0x5A, 0x00, 0x00, 0x00,
-                0xC3,
+                0x55,                               // 0000
+                0x8B, 0xEC,                         // 0001
+                0x81, 0xEC, 0x68, 0x01, 0x00, 0x00, // 0003
+                0x53,                               // 0009
+                0x56,                               // 000A
+                0x57,                               // 000B
+                0x8D, 0xBD, 0x98, 0xFE, 0xFF, 0xFF, // 000C
+                0xB9, 0x5A, 0x00, 0x00, 0x00,       // 0012
+                0xC3,                               // 0017
                 0xC3,
                 0xC3);
             CreateScanner();
             var seg = program.SegmentMap.Segments.Values.First();
             var scseg = siq.ScanInstructions(sr);
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
             var sExp =
-                "00010000-00010003 (3): 00010003" + nl +
-                "00010002-00010003 (1): 00010003" + nl +
-                "00010003-00010009 (6): 00010009" + nl +
-                "00010004-0001000A (6): 0001000A" + nl +
-                "00010006-0001000B (5): 0001000B" + nl +
-                "00010007-00010009 (2): 00010009" + nl +
-                "00010009-0001000A (1): 0001000A" + nl +
-                "0001000A-0001000B (1): 0001000B" + nl +
-                "0001000B-00010012 (7): 00010012" + nl +
-                "0001000D-00010012 (5): 00010012" + nl +
-                "00010012-00010017 (5): 00010017" + nl +
-                "00010013-00010019 (6): " + nl +
-                "00010015-00010017 (2): 00010017" + nl +
-                "00010017-00010018 (1): " + nl +
-                "00010019-0001001A (1): " + nl;
+                "00010000-00010003 (3): Lin 00010003" + nl +
+                "00010002-00010003 (1): Lin 00010003" + nl +
+                "00010003-00010009 (6): Lin 00010009" + nl +
+                "00010004-0001000A (6): Lin 0001000A" + nl +
+                "00010006-00010008 (2): Lin 00010008" + nl +
+                "00010007-00010009 (2): Zer 00010009" + nl +
+                "00010008-0001000B (3): Zer 0001000B" + nl +
+                "00010009-0001000A (1): Lin 0001000A" + nl +
+                "0001000A-0001000B (1): Lin 0001000B" + nl +
+                "0001000B-00010012 (7): Lin 00010012" + nl +
+                "0001000D-00010012 (5): Lin 00010012" + nl +
+                "00010012-00010017 (5): Lin 00010017" + nl +
+                "00010013-00010014 (1): Lin 00010014" + nl +
+                "00010014-00010018 (4): Zer 00010018" + nl +
+                "00010015-00010017 (2): Zer 00010017" + nl +
+                "00010017-00010018 (1): End" + nl +
+                "00010018-00010019 (1): End" + nl +
+                "00010019-0001001A (1): End" + nl;
             AssertBlocks(sExp, blocks);
         }
 
@@ -337,21 +390,20 @@ namespace Reko.UnitTests.Scanning
                 m.Ret();
             });
             CreateScanner();
-            host.Stub(h => h.PseudoProcedure(
-                Arg<string>.Is.Equal("__hlt"),
-                Arg<ProcedureCharacteristics>.Is.NotNull,
-                Arg<DataType>.Is.NotNull,
-                Arg<Expression>.Is.Anything)).
-                Return(new Application(
+            host.Setup(h => h.PseudoProcedure(
+                "__hlt",
+                It.IsNotNull<ProcedureCharacteristics>(),
+                It.IsNotNull<DataType>(),
+                It.IsAny<Expression>())).
+                Returns(new Application(
                     new ProcedureConstant(
                         new UnknownType(),
                         new PseudoProcedure("__hlt", VoidType.Instance, 0)),
                     VoidType.Instance));
-            mr.ReplayAll();
 
             siq.ScanInstructions(sr);
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
 
             var from = blocks.Values.Single(n => n.id == Address.Ptr32(0x00100000));
             var to = blocks.Values.Single(n => n.id == Address.Ptr32(0x00100001));
@@ -363,18 +415,17 @@ namespace Reko.UnitTests.Scanning
         {
             Lin(0x1000, 3, 0x1003);
             Lin(0x1003, 2, 0x1005);
-            Call(0x1005, 5, 0x100A);
+            Call(0x1005, 5, 0x100A, 0x1010);
             End(0x100A, 1);
-            mr.ReplayAll();
 
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
 
             var sExp =
             #region Expected
-@"00001000-0000100A (10): 0000100A
-0000100A-0000100B (1): 
+@"00001000-0000100A (10): Cal 0000100A
+0000100A-0000100B (1): End
 ";
             #endregion
             AssertBlocks(sExp, blocks);
@@ -385,17 +436,16 @@ namespace Reko.UnitTests.Scanning
         {
             Lin(0x1000, 3, 0x1003);
             Lin(0x1003, 2, 0x1005);
-            Call(0x1005, 5, 0x100A);
+            Call(0x1005, 5, 0x100A, 0x1010);
             Bad(0x100A, 1);
-            mr.ReplayAll();
 
             CreateScanner();
-            var blocks = siq.BuildBasicBlocks(sr);
-            blocks = siq.RemoveInvalidBlocks(sr, blocks);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
 
             var sExp =
             #region Expected
-@"00001000-0000100A (10): 
+@"00001000-0000100A (10): Cal 
 ";
             #endregion
             AssertBlocks(sExp, blocks);
@@ -408,7 +458,6 @@ namespace Reko.UnitTests.Scanning
             Lin(0x1003, 5, 0x1008);
             Lin(0x1008, 4, 0x100C);
             End(0x100C, 4);
-            mr.ReplayAll();
 
             CreateScanner();
             sr.KnownProcedures = new HashSet<Address>();
@@ -416,8 +465,127 @@ namespace Reko.UnitTests.Scanning
             {
                 { Address.Ptr32(0x1008), 2 }
             };
-            var blocks = siq.BuildBasicBlocks(sr);
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
             Assert.IsTrue(blocks.ContainsKey(Address.Ptr32(0x1008)));
+        }
+
+        [Test]
+        public void Siq_PaddingBlocks()
+        {
+            Lin(0x1000, 4, 0x1004);
+            End(0x1004, 4);
+            Pad(0x1008, 4, 0x100C);
+            Pad(0x100C, 4, 0x1010);
+            Lin(0x1010, 4, 0x1014);
+            End(0x1014, 4);
+
+            CreateScanner();
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            var sExp =
+            #region Expected
+@"00001000-00001008 (8): End
+00001008-00001010 (8): Pad 00001010
+00001010-00001018 (8): End
+";
+            #endregion
+
+            AssertBlocks(sExp, blocks);
+        }
+
+        [Test]
+        public void Shsc_FindUnscannedRanges_AUA()
+        {
+            var A = new Mock<IProcessorArchitecture>();
+            A.Setup(a => a.Name).Returns("A");
+            Given_Image(A.Object, new byte[100]);
+            Given_CodeBlock(A.Object, 0x1000, 20);
+            Given_UnknownBlock(0x1020, 20);
+            Given_CodeBlock(A.Object, 0x1040, 60);
+            CreateScanner();
+
+            var ranges = siq.FindUnscannedRanges().ToArray();
+
+            Assert.AreEqual(1, ranges.Length);
+            Assert.AreSame(A.Object, ranges[0].Item1);
+        }
+
+        [Test]
+        public void Shsc_FindUnscannedRanges_UA()
+        {
+            var A = new Mock<IProcessorArchitecture>();
+            A.Setup(a => a.Name).Returns("A");
+            Given_Image(A.Object, new byte[100]);
+            Given_UnknownBlock(0x1020, 20);
+            Given_CodeBlock(A.Object, 0x1040, 80);
+            CreateScanner();
+
+            var ranges = siq.FindUnscannedRanges().ToArray();
+
+            Assert.AreEqual(1, ranges.Length);
+            Assert.AreSame(A.Object, ranges[0].Item1);
+        }
+
+        [Test]
+        public void Shsc_FindUnscannedRanges_BUB()
+        {
+            var A = new Mock<IProcessorArchitecture>();
+            var B = new Mock<IProcessorArchitecture>();
+            A.Setup(a => a.Name).Returns("A");
+            B.Setup(a => a.Name).Returns("B");
+
+            Given_Image(A.Object, new byte[100]);
+            Given_CodeBlock(B.Object, 0x1000, 20);
+            Given_UnknownBlock(0x1020, 20);
+            Given_CodeBlock(B.Object, 0x1040, 60);
+            CreateScanner();
+
+            var ranges = siq.FindUnscannedRanges().ToArray();
+
+            Assert.AreEqual(1, ranges.Length);
+            Assert.AreSame(B.Object, ranges[0].Item1);
+        }
+
+        [Test]
+        public void Shsc_FindUnscannedRanges_AUBB()
+        {
+            var A = new Mock<IProcessorArchitecture>();
+            var B = new Mock<IProcessorArchitecture>();
+            A.Setup(a => a.Name).Returns("A");
+            B.Setup(a => a.Name).Returns("B");
+
+            Given_Image(A.Object, new byte[100]);
+            Given_CodeBlock(A.Object, 0x1000, 20);
+            Given_UnknownBlock(0x1020, 20);
+            Given_CodeBlock(B.Object, 0x1040, 60);
+            CreateScanner();
+
+            var ranges = siq.FindUnscannedRanges().ToArray();
+
+            Assert.AreEqual(1, ranges.Length);
+            Assert.AreSame(B.Object, ranges[0].Item1);
+        }
+
+        [Test(Description = "Stop tracing invalid blocks at call boundaries")]
+        public void Siq_CallThen_()
+        {
+            Call(0x1000, 4, 0x1004, 0x1010);
+            Bra(0x1004, 4, 0x1008, 0x100C);
+            Bad(0x1008, 4);
+            Bad(0x100C, 4);
+
+            Lin(0x1010, 4, 0x1014);
+            Bad(0x1014, 4);
+
+            CreateScanner();
+            var blocks = ScannerInLinq.BuildBasicBlocks(sr);
+            blocks = ScannerInLinq.RemoveInvalidBlocks(sr, blocks);
+
+            var sExp =
+            #region Expected
+@"00001000-00001004 (4): Cal 
+";
+            #endregion
+            AssertBlocks(sExp, blocks);
         }
     }
 }

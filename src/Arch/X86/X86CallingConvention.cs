@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,6 +134,23 @@ namespace Reko.Arch.X86
                 ccr.RegReturn(Registers.al);
                 return;
             }
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            return stg is StackStorage;
+        }
+
+
+        public bool IsOutArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return
+                    reg.Domain == Registers.eax.Domain ||
+                    reg.Domain == Registers.eax.Domain;
+            }
+            return false;
         }
     }
 }

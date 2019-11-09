@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@ namespace Reko.Gui.Controls
     public interface ITreeView : IControl
     {
         event EventHandler AfterSelect;
+        event EventHandler<TreeViewEventArgs> AfterExpand;
+        event EventHandler<TreeViewEventArgs> BeforeExpand;
+
         event DragEventHandler DragEnter;
         event DragEventHandler DragOver;
         event DragEventHandler DragDrop;
@@ -63,7 +66,9 @@ namespace Reko.Gui.Controls
         string Text { get; set; }
         string ToolTipText { get; set; }
 
+        void Collapse();
         void Expand();
         void Invoke(Action action);
+        void Remove();
     }
 }

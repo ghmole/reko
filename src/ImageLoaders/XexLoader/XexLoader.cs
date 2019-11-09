@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 2018 Stefano Moioli <smxdev4@gmail.com>.
+ * Copyright (C) 2018-2019 Stefano Moioli <smxdev4@gmail.com>.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -613,7 +613,7 @@ namespace Reko.ImageLoaders.Xex
                     UInt32 importAddress = xexData.import_records[i];
 
                     var theAddress = new Address32(importAddress);
-                    imports.Add(theAddress, new OrdinalImportReference(theAddress, importLibName, (int)importOrdinal));
+                    imports.Add(theAddress, new OrdinalImportReference(theAddress, importLibName, (int)importOrdinal, SymbolType.ExternalProcedure));
                 } else if(type == 1) {
                     if (libIndex >= xexData.libNames.Count) {
                         throw new BadImageFormatException($"XEX: invalid import type 0 record lib index ({libIndex}, max:{xexData.libNames.Count})");
@@ -624,7 +624,7 @@ namespace Reko.ImageLoaders.Xex
                     UInt32 importAddress = xexData.import_records[i];
 
                     var theAddress = new Address32(importAddress);
-                    imports.Add(theAddress, new OrdinalImportReference(theAddress, importLibName, (int)importOrdinal));
+                    imports.Add(theAddress, new OrdinalImportReference(theAddress, importLibName, (int)importOrdinal, SymbolType.ExternalProcedure));
                 }
             }
         }
@@ -645,7 +645,7 @@ namespace Reko.ImageLoaders.Xex
             var segmentMap = new SegmentMap(addrLoad, segments.ToArray());
 
             var entryPointAddress = new Address32(xexData.exe_entry_point);
-            var entryPoint = new ImageSymbol(entryPointAddress) { Type = SymbolType.Procedure };
+            var entryPoint = ImageSymbol.Procedure(arch, entryPointAddress);
 
             var program = new Program(
                 segmentMap,

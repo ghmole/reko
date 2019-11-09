@@ -1,8 +1,8 @@
 ﻿#region License
 /* 
- * Copyright (C) 2017-2018 Christian Hostelet.
+ * Copyright (C) 2017-2019 Christian Hostelet.
  * inspired by work of:
- * Copyright (C) 1999-2017 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -190,11 +190,11 @@ namespace Reko.UnitTests.Arch.Microchip.PIC18
         {
             var arch = GetArch(PIC18EggName);
             PICMemoryDescriptor.ExecMode = PICExecMode.Traditional;
-            Assert.AreEqual(Opcode.MOVWF, (Opcode)arch.GetOpcodeNumber("MOVWF"));
-            Assert.AreEqual(Opcode.LFSR, (Opcode)arch.GetOpcodeNumber("LFSR"));
+            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetOpcodeNumber("MOVWF"));
+            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetOpcodeNumber("LFSR"));
             PICMemoryDescriptor.ExecMode = PICExecMode.Extended;
-            Assert.AreEqual(Opcode.MOVWF, (Opcode)arch.GetOpcodeNumber("MOVWF"));
-            Assert.AreEqual(Opcode.LFSR, (Opcode)arch.GetOpcodeNumber("LFSR"));
+            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetOpcodeNumber("MOVWF"));
+            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetOpcodeNumber("LFSR"));
         }
 
         [Test]

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,21 +27,51 @@ namespace Reko.UnitTests
 {
     public static class Categories
     {
+        /// <summary>
+        /// The Regressions category marks unit tests written
+        /// in response to regressions in unit tests or failures reported
+        /// by users.
+        /// </summary>
         public const string Regressions = "Regressions";
+
+        /// <summary>
+        /// The UnitTests category is used for unit tests that do not require
+        /// any I/O. They should complete in at most 1 ms, which  means not
+        /// using "recordings" saved on disk or popping up windows during the test.
+        /// </summary>
+
         public const string UnitTests = "UnitTests";
 
-        // The purpose of FailedTests category is to avoid running such unit
-        // tests under Travis CI before fixing of Reko so that they could pass
+        /// <summary>
+        /// Tests that are slower, because they show UI or hit
+        /// the file system, are considered integration tests.
+        /// </summary>
+        public const string IntegrationTests = "IntegrationTests";
+
+        /// <summary>
+        /// The purpose of FailedTests category is to avoid running such unit
+        /// tests under Travis CI before fixing of Reko so that they could pass
+        /// </summary>
         public const string FailedTests = "FailedTests";
 
-        // The purpose of UserInterface is to avoid running such unit tests
-        // under Travis CI, since they require an X server to pass, and
-        // the Travis CI environment doesn't provide one.
+        /// <summary>
+        /// The purpose of UserInterface is to avoid running such unit tests
+        /// under Travis CI, since they require an X server to pass, and
+        /// the Travis CI environment doesn't provide one.
+        /// </summary>
         public const string UserInterface = "UserInterface";
 
-        // The Capstone disassembler has bugs. We can't hope to get 
-        // them fixed soon, so we turn off some tests until the fixes are done.
+        /// <summary>
+        /// The Capstone disassembler has bugs. We can't hope to get 
+        /// them fixed soon, so we turn off some tests until the fixes are done.
+        /// </summary>
         public const string Capstone = "Capstone";
+        // Tests that are currently failing in the "analysis-development"
+        // branch. Before merging back into "master", these must all be 
+        // running again.
+        public const string AnalysisDevelopment = "AnalysisDevelopment";
 
+        // Tests that may fail due to work in progress
+        public const string WorkInProgress = "WIP";
     }
 }

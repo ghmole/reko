@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core;
+using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Types;
 using System;
@@ -64,12 +65,12 @@ namespace Reko.Arch.X86
         public static readonly RegisterStorage fs;
         public static readonly RegisterStorage gs;
 
-        public static readonly RegisterStorage S;
-        public static readonly RegisterStorage C;
-        public static readonly RegisterStorage Z;
-        public static readonly RegisterStorage D;
-        public static readonly RegisterStorage O;
-        public static readonly RegisterStorage P;
+        public static readonly FlagGroupStorage S;
+        public static readonly FlagGroupStorage C;
+        public static readonly FlagGroupStorage Z;
+        public static readonly FlagGroupStorage D;
+        public static readonly FlagGroupStorage O;
+        public static readonly FlagGroupStorage P;
 
         public static readonly RegisterStorage eflags;
 
@@ -176,18 +177,22 @@ namespace Reko.Arch.X86
         public static readonly RegisterStorage mm14;
         public static readonly RegisterStorage mm15;
 
-        public static readonly RegisterStorage rip;
+        public static readonly RegisterStorage rip;     
+        public static readonly RegisterStorage Top;     // The x87 stack pointer is modelled explicitly.
+        public static readonly MemoryIdentifier ST;
 
         public static readonly RegisterStorage mxcsr;
 
-        internal static readonly Dictionary<RegisterStorage, Dictionary<uint, RegisterStorage>> SubRegisters;
+        internal static readonly Dictionary<StorageDomain, RegisterStorage[]> SubRegisters;
 
         internal static readonly RegisterStorage[] All;
 
         internal static readonly RegisterStorage[] Gp64BitRegisters;
 
-        public const int ControlRegisterMin = 76;
-        public const int DebugRegisterMin = 85;
+        public const int ControlRegisterMin = 80;
+        public const int DebugRegisterMin = 89;
+
+        internal static readonly FlagGroupStorage[] EflagsBits;
 
         static Registers()
         {
@@ -221,14 +226,16 @@ namespace Reko.Arch.X86
             ds = SegmentRegister("ds", 27);
             fs = SegmentRegister("fs", 28);
             gs = SegmentRegister("gs", 29);
-            S = FlagRegister("S", 32);
-            C = FlagRegister("C", 33);
-            Z = FlagRegister("Z", 34);
-            D = FlagRegister("D", 35);
-            O = FlagRegister("O", 36);
-            P = FlagRegister("P", 37);
-            eflags = new RegisterStorage("eflags", 38, 0, PrimitiveType.Word32);
-            FPUF = new RegisterStorage("FPUF", 39, 0, PrimitiveType.Byte);
+            eflags = new RegisterStorage("eflags", 32, 0, PrimitiveType.Word32);
+            S = FlagRegister("S", eflags, FlagM.SF);
+            C = FlagRegister("C", eflags, FlagM.CF);
+            Z = FlagRegister("Z", eflags, FlagM.ZF);
+            D = FlagRegister("D", eflags, FlagM.DF);
+            O = FlagRegister("O", eflags, FlagM.OF);
+            P = FlagRegister("P", eflags, FlagM.PF);
+            EflagsBits = new FlagGroupStorage[] { S, C, Z, D, O, P };
+
+            FPUF = new RegisterStorage("FPUF", 38, 0, PrimitiveType.Byte);
             FPST = new RegisterStorage("FPST", 39, 0, PrimitiveType.Byte); 
 
             rax = new RegisterStorage("rax", 0, 0, PrimitiveType.Word64);
@@ -268,6 +275,8 @@ namespace Reko.Arch.X86
             bpl = new RegisterStorage("bpl", 5, 0, PrimitiveType.Byte);
             sil = new RegisterStorage("sil", 6, 0, PrimitiveType.Byte);
             dil = new RegisterStorage("dil", 7, 0, PrimitiveType.Byte);
+
+            rip = new RegisterStorage("rip", 23, 0, PrimitiveType.Ptr64);
 
             r8b = new RegisterStorage("r8b",    8, 0, PrimitiveType.Byte);
             r9b = new RegisterStorage("r9b",    9, 0, PrimitiveType.Byte);
@@ -329,10 +338,15 @@ namespace Reko.Arch.X86
             ymm14 = new RegisterStorage("ymm14", 74, 0, PrimitiveType.Word256);
             ymm15 = new RegisterStorage("ymm15", 75, 0, PrimitiveType.Word256);
 
-            // Control registers: 76 - 84
-            // Debug registers: 85 - 92
 
-            rip = new RegisterStorage("rip", 23, 0, PrimitiveType.Ptr64);
+            // Pseudo registers used to reify the x87 FPU stack. Top is the 
+            // index into the FPU stack, while ST is the memory identifier that
+            // identifies the address space that the FPU stack constitutes.
+            Top = new RegisterStorage("Top", 76, 0, PrimitiveType.SByte);
+            ST = new MemoryIdentifier("ST", PrimitiveType.Ptr32, new MemoryStorage("x87Stack", StorageDomain.Register + 400));
+            
+            // Control registers: 80 - 88
+            // Debug registers: 89 - 96
             mxcsr = new RegisterStorage("mxcsr", 93, 0, PrimitiveType.Word32);
 
             All = new RegisterStorage[] {
@@ -374,13 +388,13 @@ namespace Reko.Arch.X86
 				null,
 
                 // 32
-				S ,
-				C ,
-				Z ,
-				D ,
+				eflags,
+				null ,
+				null,
+				null,
 
-				O ,
-                P,
+				null,
+                null,
                 FPUF,
                 null,
 
@@ -485,421 +499,41 @@ namespace Reko.Arch.X86
                  ymm15,
             };
 
-            SubRegisters = new Dictionary<RegisterStorage, Dictionary<uint, RegisterStorage>>
+            // For each register storage domain, arrange the registers in order of size.
+            SubRegisters = new Dictionary<StorageDomain, RegisterStorage[]>
             {
-                {
-                    rax,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, al },
-                        { 0x0808, ah },
-                        { 0x0010, ax },
-                        { 0x0020, eax },
-                    }
-                },
-                {
-                    rcx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, cl },
-                        { 0x0808, ch },
-                        { 0x0010, cx },
-                        { 0x0020, ecx },
-                    }
-                },
-                {
-                    rdx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dl },
-                        { 0x0808, dh },
-                        { 0x0010, dx },
-                        { 0x0020, edx },
-                    }
-                },
-                {
-                    rbx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bl },
-                        { 0x0808, bh },
-                        { 0x0010, bx },
-                        { 0x0020, ebx },
-                    }
-                },
-                {
-                    rsp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, spl },
-                        { 0x0010, sp },
-                        { 0x0020, esp },
-                    }
-                },
-                {
-                    rbp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bpl },
-                        { 0x0010, bp },
-                        { 0x0020, ebp },
-                    }
-                },
-                {
-                    rsi,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, sil },
-                        { 0x0010, si },
-                        { 0x0020, esi },
-                    }
-                },
-                {
-                    rdi,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dil },
-                        { 0x0010, di },
-                        { 0x0020, edi },
-                    }
-                },
-                {
-                    r8,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r8b },
-                        { 0x0010, r8w },
-                        { 0x0020, r8d },
-                    }
-                },
-                {
-                    r9,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r9b },
-                        { 0x0010, r9w },
-                        { 0x0020, r9d },
-                    }
-                },
-                {
-                    r10,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r10b },
-                        { 0x0010, r10w },
-                        { 0x0020, r10d },
-                    }
-                },
-                {
-                    r11,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r11b },
-                        { 0x0010, r11w },
-                        { 0x0020, r11d },
-                    }
-                },
-                {
-                    r12,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r12b },
-                        { 0x0010, r12w },
-                        { 0x0020, r12d },
-                    }
-                },
-                {
-                    r13,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r13b },
-                        { 0x0010, r13w },
-                        { 0x0020, r13d },
-                    }
-                },
-                {
-                    r14,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r14b },
-                        { 0x0010, r14w },
-                        { 0x0020, r14d },
-                    }
-                },
-                {
-                    r15,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r15b },
-                        { 0x0010, r15w },
-                        { 0x0020, r15d },
-                    }
-                },
-                {
-                    eax,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, al },
-                        { 0x0808, ah },
-                        { 0x0010, ax },
-                    }
-                },
-                {
-                    ecx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, cl },
-                        { 0x0808, ch },
-                        { 0x0010, cx },
-                    }
-                },
-                {
-                    edx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dl },
-                        { 0x0808, dh },
-                        { 0x0010, dx },
-                    }
-                },
-                {
-                    ebx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bl },
-                        { 0x0808, bh },
-                        { 0x0010, bx },
-                    }
-                },
-                {
-                    esp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, spl },
-                        { 0x0010, sp },
-                    }
-                },
-                {
-                    ebp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bpl },
-                        { 0x0010, bp },
-                    }
-                },
-                {
-                    esi,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, sil },
-                        { 0x0010, si },
-                    }
-                },
-                {
-                    edi,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dil },
-                        { 0x0010, di },
-                    }
-                },
-                {
-                    r8d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r8b },
-                        { 0x0010, r8w },
-                    }
-                },
-                {
-                    r9d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r9b },
-                        { 0x0010, r9w },
-                    }
-                },
-                {
-                    r10d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r10b },
-                        { 0x0010, r10w },
-                    }
-                },
-                {
-                    r11d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r11b },
-                        { 0x0010, r11w },
-                    }
-                },
-                {
-                    r12d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r12b },
-                        { 0x0010, r12w },
-                    }
-                },
-                {
-                    r13d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r13b },
-                        { 0x0010, r13w },
-                    }
-                },
-                {
-                    r14d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r14b },
-                        { 0x0010, r14w },
-                    }
-                },
-                {
-                    r15d,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r15b },
-                        { 0x0010, r15w },
-                    }
-                },
-                {
-                    ax,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, al },
-                        { 0x0808, ah },
-                    }
-                },
-                {
-                    cx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, cl },
-                        { 0x0808, ch },
-                    }
-                },
-                {
-                    dx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dl },
-                        { 0x0808, dh },
-                    }
-                },
-                {
-                    bx,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bl },
-                        { 0x0808, bh },
-                    }
-                },
-                {
-                    sp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, spl },
-                    }
-                },
-                {
-                    bp,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, bpl },
-                    }
-                },
-                {
-                    si,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, sil },
-                    }
-                },
-                {
-                    di,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, dil },
-                    }
-                },
-                {
-                    r8w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r8b },
-                    }
-                },
-                {
-                    r9w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r9b },
-                    }
-                },
-                {
-                    r10w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r10b },
-                    }
-                },
-                {
-                    r11w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r11b },
-                    }
-                },
-                {
-                    r12w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r12b },
-                    }
-                },
-                {
-                    r13w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r13b },
-                    }
-                },
-                {
-                    r14w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r14b },
-                    }
-                },
-                {
-                    r15w,
-                    new Dictionary<uint, RegisterStorage>
-                    {
-                        { 0x0008, r15b },
-                    }
-                },
-                { ymm0, new Dictionary<uint, RegisterStorage> { { 0x128, xmm0 } } },
-                { ymm1, new Dictionary<uint, RegisterStorage> { { 0x128, xmm1 } } },
-                { ymm2, new Dictionary<uint, RegisterStorage> { { 0x128, xmm2 } } },
-                { ymm3, new Dictionary<uint, RegisterStorage> { { 0x128, xmm3 } } },
-                { ymm4, new Dictionary<uint, RegisterStorage> { { 0x128, xmm4 } } },
-                { ymm5, new Dictionary<uint, RegisterStorage> { { 0x128, xmm5 } } },
-                { ymm6, new Dictionary<uint, RegisterStorage> { { 0x128, xmm6 } } },
-                { ymm7, new Dictionary<uint, RegisterStorage> { { 0x128, xmm7 } } },
-
-                { ymm8, new Dictionary<uint, RegisterStorage> { { 0x128, xmm8 } } },
-                { ymm9, new Dictionary<uint, RegisterStorage> { { 0x128, xmm9 } } },
-                { ymm10, new Dictionary<uint, RegisterStorage> { { 0x128, xmm10 } } },
-                { ymm11, new Dictionary<uint, RegisterStorage> { { 0x128, xmm11 } } },
-                { ymm12, new Dictionary<uint, RegisterStorage> { { 0x128, xmm12 } } },
-                { ymm13, new Dictionary<uint, RegisterStorage> { { 0x128, xmm13 } } },
-                { ymm14, new Dictionary<uint, RegisterStorage> { { 0x128, xmm14 } } },
-                { ymm15, new Dictionary<uint, RegisterStorage> { { 0x128, xmm15 } } },
+                { rax.Domain, new [] { rax, eax, ax, al, ah,  } },
+                { rcx.Domain, new [] { rcx, ecx, cx, cl, ch,  } },
+                { rdx.Domain, new [] { rdx, edx, dx, dl, dh,  } },
+                { rbx.Domain, new [] { rbx, ebx, bx, bl, bh,  } },
+                { rsp.Domain, new [] { rsp, esp, sp, spl, } },
+                { rbp.Domain, new [] { rbp, ebp, bp, bpl, } },
+                { rsi.Domain, new [] { rsi, esi, si, sil, } },
+                { rdi.Domain, new [] { rdi, edi, di, dil, } },
+                { r8.Domain, new []  { r8,  r8d, r8w, r8b, } },
+                { r9.Domain, new []  { r9,  r9d, r9w, r9b, } },
+                { r10.Domain, new [] { r10, r10d, r10w, r10b, } },
+                { r11.Domain, new [] { r11, r11d, r11w, r11b, } },
+                { r12.Domain, new [] { r12, r12d, r12w, r12b, } },
+                { r13.Domain, new [] { r13, r13d, r13w, r13b, } },
+                { r14.Domain, new [] { r14, r14d, r14w, r14b, } },
+                { r15.Domain, new [] { r15, r15d, r15w, r15b, } },
+                { ymm0.Domain, new [] { xmm0 } },
+                { ymm1.Domain, new [] { xmm1 } },
+                { ymm2.Domain, new [] { xmm2 } },
+                { ymm3.Domain, new [] { xmm3 } },
+                { ymm4.Domain, new [] { xmm4 } },
+                { ymm5.Domain, new [] { xmm5 } },
+                { ymm6.Domain, new [] { xmm6 } },
+                { ymm7.Domain, new [] { xmm7 } },
+                { ymm8.Domain, new [] { xmm8 } },
+                { ymm9.Domain, new [] { xmm9 } },
+                { ymm10.Domain, new [] { xmm10 } },
+                { ymm11.Domain, new [] { xmm11 } },
+                { ymm12.Domain, new [] { xmm12 } },
+                { ymm13.Domain, new [] { xmm13 } },
+                { ymm14.Domain, new [] { xmm14 } },
+                { ymm15.Domain, new [] { xmm15 } },
             };
 
             Gp64BitRegisters = new[]
@@ -908,9 +542,9 @@ namespace Reko.Arch.X86
             };
         }
 
-        private static  RegisterStorage FlagRegister(string name, int grf)
+        private static FlagGroupStorage FlagRegister(string name, RegisterStorage freg, FlagM grf)
         {
-            return new RegisterStorage(name, grf, 0, PrimitiveType.Bool);
+            return new FlagGroupStorage(freg, (uint)grf, name, PrimitiveType.Bool);
         }
 
         private static RegisterStorage SegmentRegister(string name, int reg)

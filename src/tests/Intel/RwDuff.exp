@@ -1,15 +1,15 @@
 // fn0C00_0000
 // Return size: 2
-// Mem0:Global memory
+// Mem0:Mem
 // fp:fp
 // sp:sp
 // bx:bx
 // ds:ds
 // cx:cx
-// SZO:Flags
-// C:Flags
+// SZO:SZO
+// C:C
 // si:si
-// SCZO:Flags
+// SCZO:SCZO
 // di:di
 // v11:v11
 // es:es
@@ -20,12 +20,14 @@
 // v17:v17
 // v18:v18
 // v19:v19
+// Top:Top
 // return address size: 2
-void fn0C00_0000()
+define fn0C00_0000
 fn0C00_0000_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
 	bx = Mem0[ds:0x003E:word16]
 	cx = Mem0[ds:0x003E:word16]
 	bx = bx & 0x0007

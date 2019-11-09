@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,6 +63,12 @@ namespace Reko.Arch.M68k
         public static readonly AddressRegister pc;
         public static readonly RegisterStorage fpsr;
 
+        public static readonly FlagGroupStorage C;
+        public static readonly FlagGroupStorage V;
+        public static readonly FlagGroupStorage Z;
+        public static readonly FlagGroupStorage N;
+        public static readonly FlagGroupStorage X;
+
         internal static RegisterStorage[] regs;
         internal static int Max;
         internal static readonly Dictionary<string, RegisterStorage> regsByName;
@@ -87,14 +93,14 @@ namespace Reko.Arch.M68k
             a6 = new AddressRegister("a6", 14, PrimitiveType.Word32);
             a7 = new AddressRegister("a7", 15, PrimitiveType.Word32);
 
-            fp0 = new FpRegister("fp0", 16, PrimitiveType.Real80);
-            fp1 = new FpRegister("fp1", 17, PrimitiveType.Real80);
-            fp2 = new FpRegister("fp2", 18, PrimitiveType.Real80);
-            fp3 = new FpRegister("fp3", 19, PrimitiveType.Real80);
-            fp4 = new FpRegister("fp4", 20, PrimitiveType.Real80);
-            fp5 = new FpRegister("fp5", 21, PrimitiveType.Real80);
-            fp6 = new FpRegister("fp6", 22, PrimitiveType.Real80);
-            fp7 = new FpRegister("fp7", 23, PrimitiveType.Real80);
+            fp0 = new FpRegister("fp0", 16, PrimitiveType.Real96);
+            fp1 = new FpRegister("fp1", 17, PrimitiveType.Real96);
+            fp2 = new FpRegister("fp2", 18, PrimitiveType.Real96);
+            fp3 = new FpRegister("fp3", 19, PrimitiveType.Real96);
+            fp4 = new FpRegister("fp4", 20, PrimitiveType.Real96);
+            fp5 = new FpRegister("fp5", 21, PrimitiveType.Real96);
+            fp6 = new FpRegister("fp6", 22, PrimitiveType.Real96);
+            fp7 = new FpRegister("fp7", 23, PrimitiveType.Real96);
 
             ccr = new RegisterStorage("ccr", 24, 0, PrimitiveType.Byte);
             sr = new RegisterStorage("sr", 25, 0, PrimitiveType.Word16);
@@ -102,7 +108,13 @@ namespace Reko.Arch.M68k
             pc = new AddressRegister("pc", 27, PrimitiveType.Ptr32);
             fpsr = new RegisterStorage("fpsr", 28, 0, PrimitiveType.Word32);
 
-            Max = 28;
+            C = new FlagGroupStorage(ccr, (uint) FlagM.CF, "C", PrimitiveType.Bool);
+            V = new FlagGroupStorage(ccr, (uint) FlagM.VF, "V", PrimitiveType.Bool);
+            Z = new FlagGroupStorage(ccr, (uint) FlagM.ZF, "Z", PrimitiveType.Bool);
+            N = new FlagGroupStorage(ccr, (uint) FlagM.NF, "N", PrimitiveType.Bool);
+            X = new FlagGroupStorage(ccr, (uint) FlagM.XF, "X", PrimitiveType.Bool);
+
+            Max = 29;
 
             regs = new RegisterStorage[] { 
                 d0, 
@@ -152,9 +164,19 @@ namespace Reko.Arch.M68k
             return regs[reg];
         }
 
+        public static RegisterStorage DataRegister(uint reg)
+        {
+            return regs[reg];
+        }
+
         public static AddressRegister AddressRegister(int reg)
         {
             return (AddressRegister)regs[reg + 8];
+        }
+
+        public static AddressRegister AddressRegister(uint reg)
+        {
+            return (AddressRegister) regs[reg + 8];
         }
 
         public static RegisterStorage FpRegister(int reg)
@@ -207,5 +229,4 @@ namespace Reko.Arch.M68k
         {
         }
     }
-
 }

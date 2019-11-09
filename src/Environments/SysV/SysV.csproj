@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -53,13 +53,16 @@
     <Compile Include="ArchSpecific\Arm64CallingConvention.cs" />
     <Compile Include="ArchSpecific\ArmCallingConvention.cs" />
     <Compile Include="ArchSpecific\Avr8CallingConvention.cs" />
+    <Compile Include="ArchSpecific\BlackfinCallingConvention.cs" />
     <Compile Include="ArchSpecific\M68kCallingConvention.cs" />
     <Compile Include="ArchSpecific\MipsCallingConvention.cs" />
+    <Compile Include="ArchSpecific\Msp430CallingConvention.cs" />
     <Compile Include="ArchSpecific\PowerPcCallingConvention.cs" />
     <Compile Include="ArchSpecific\SparcCallingConvention.cs" />
     <Compile Include="ArchSpecific\SuperHCallingConvention.cs" />
     <Compile Include="ArchSpecific\X86_64CallingConvention.cs" />
     <Compile Include="ArchSpecific\XtensaCallingConvention.cs" />
+    <Compile Include="ArchSpecific\zSeriesCallingConvention.cs" />
     <Compile Include="GccMangledNameParser.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Content Include="sysvcharacteristics.xml">
@@ -81,6 +84,7 @@
     <TranslateHeader Include="lp32.inc" />
     <TranslateHeader Include="libc.so.inc" />
     <TranslateHeader Include="Xlib.inc" />
+    <TranslateHeader Include="opengl.inc" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="linux-syscalls-i386.xml" />
@@ -92,8 +96,8 @@
   <Target Name="AfterBuild">
     <Copy SourceFiles="$(ProjectDir)bin\$(Configuration)\Reko.Environments.SysV.dll" DestinationFolder="$(SolutionDir)tools" />
     <Copy SourceFiles="$(SolutionDir)Arch\X86\bin\$(Configuration)\Reko.Arch.X86.dll" DestinationFolder="$(SolutionDir)tools" />
-    <Exec Condition=" '$(OS)' == 'Unix' " Command="mono $(SolutionDir)tools/c2xml.exe -a x86-protected-32 -e elf-neutral %(TranslateHeader.Identity) &gt; %(TranslateHeader.Filename).xml" />
-    <Exec Condition=" '$(OS)' != 'Unix' " Command="&quot;$(SolutionDir)tools\c2xml.exe&quot; -a x86-protected-32 -e elf-neutral %(TranslateHeader.Identity) &gt; %(TranslateHeader.Filename).xml" />
+    <Exec Condition=" '$(OS)' == 'Unix' " Command="mono $(SolutionDir)tools/c2xml.exe -a x86-protected-32 -e elf-neutral %(TranslateHeader.Identity) %(TranslateHeader.Filename).xml" />
+    <Exec Condition=" '$(OS)' != 'Unix' " Command="&quot;$(SolutionDir)tools\c2xml.exe&quot; -a x86-protected-32 -e elf-neutral %(TranslateHeader.Identity) %(TranslateHeader.Filename).xml" />
   </Target>
   <!--
   <Target Name="AfterBuild">

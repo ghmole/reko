@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,10 +31,13 @@ using System.Threading.Tasks;
 
 namespace Reko.Arch.Tlcs.Tlcs90
 {
+    using Decoder = Decoder<Tlcs90Disassembler, Mnemonic, Tlcs90Instruction>;
+
     public partial class Tlcs90Disassembler : DisassemblerBase<Tlcs90Instruction>
     {
-        private EndianImageReader rdr;
-        private Tlcs90Architecture arch;
+        private readonly EndianImageReader rdr;
+        private readonly Tlcs90Architecture arch;
+        private readonly List<MachineOperand> ops;
         private PrimitiveType dataWidth;
         private RegisterOperand byteReg;
         private RegisterOperand wordReg;
@@ -44,6 +47,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
         {
             this.arch = arch;
             this.rdr = rdr;
+            this.ops = new List<MachineOperand>();
         }
 
         public override Tlcs90Instruction DisassembleInstruction()
@@ -55,143 +59,196 @@ namespace Reko.Arch.Tlcs.Tlcs90
             this.byteReg = null;
             this.wordReg = null;
             this.backPatchOp = -1;
+            this.ops.Clear();
 
-            var instr = Oprecs[b].Decode(b, this);
+            var instr = Decoders[b].Decode(b, this);
             if (instr == null)
-                instr = new Tlcs90Instruction { Opcode = Opcode.invalid };
+                instr = CreateInvalidInstruction();
             var len = rdr.Address - addr;
             instr.Address = addr;
             instr.Length = (int) len;
             return instr;
         }
 
-        private Tlcs90Instruction DecodeOperands(byte b, Opcode opcode, string format)
+        protected override Tlcs90Instruction CreateInvalidInstruction()
         {
-            int op = 0;
-            var ops = new MachineOperand[2];
-            Constant c;
-            PrimitiveType size;
-
-            for (int i = 0; i < format.Length; ++i)
-            {
-                switch (format[i])
-                {
-                case ',':
-                    continue;
-                case 'a':
-                    this.dataWidth = PrimitiveType.Byte;
-                    ops[op] = new RegisterOperand(Registers.a);
-                    break;
-                case '@':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.af_);
-                    break;
-                case 'A':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.af);
-                    break;
-                case 'B':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.bc);
-                    break;
-                case 'c':
-                    ops[op] = new ConditionOperand((CondCode)(b & 0xF));
-                    break;
-                case 'D':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.de);
-                    break;
-                case 'I':
-                    // Immediate value
-                    this.dataWidth = GetSize(format[++i]);
-                    if (!rdr.TryReadLe(this.dataWidth, out c))
-                        return null;
-                    ops[op] = new ImmediateOperand(c);
-                    break;
-                case 'i': // immediate value from opcode bits
-                    ops[op] = ImmediateOperand.Byte((byte)(b & 0x7));
-                    break;
-                case 'g':
-                    Debug.Assert(byteReg != null);
-                    ops[op] = this.byteReg;
-                    break;
-                case 'G':
-                    Debug.Assert(wordReg != null);
-                    ops[op] = this.wordReg;
-                    break;
-                case 'H':
-                    ops[op] = new RegisterOperand(Registers.hl);
-                    break;
-                case 'J':
-                    // Absolute jump.
-                    size = GetSize(format[++i]);
-                    if (!rdr.TryReadLe(size, out c))
-                        return null;
-                    ops[op] = AddressOperand.Ptr16(c.ToUInt16());
-                    break;
-                case 'j':
-                    // relative jump
-                    size = GetSize(format[++i]);
-                    Address dest;
-                    if (size.Size == 1)
-                    {
-                        if (!rdr.TryReadByte(out b))
-                            return null;
-                        dest = rdr.Address + (sbyte)b;
-                    }
-                    else
-                    {
-                        if (!rdr.TryReadLeInt16(out short off))
-                            return null;
-                        dest = rdr.Address + off;
-                    }
-                    ops[op] = AddressOperand.Create(dest);
-                    break;
-                case 'M':
-                    this.dataWidth = GetSize(format[++i]);
-                    ushort absAddr;
-                    if (!rdr.TryReadLeUInt16(out absAddr))
-                        return null;
-                    ops[op] = MemoryOperand.Absolute(this.dataWidth, absAddr);
-                    break;
-                case 'm':
-                    size = GetSize(format[++i]);
-                    byte pageAddr;
-                    if (!rdr.TryReadByte(out pageAddr))
-                        return null;
-                    ops[op] = MemoryOperand.Absolute(size, (ushort)(0xFF00|pageAddr));
-                    break;
-                case 'S':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.sp);
-                    break;
-                case 'X':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.ix);
-                    break;
-                case 'Y':
-                    this.dataWidth = PrimitiveType.Word16;
-                    ops[op] = new RegisterOperand(Registers.iy);
-                    break;
-                case 'r':
-                    // Register encoded in low 3 bits of b.
-                    ops[op] = new RegisterOperand(Registers.byteRegs[b & 7]);
-                    dataWidth = PrimitiveType.Byte;
-                    break;
-                case 'x':
-                    this.backPatchOp = op;
-                    break;
-                default: throw new NotImplementedException(string.Format("Encoding '{0}' not implemented yet.", format[i]));
-                }
-                ++op;
-            }
             return new Tlcs90Instruction
             {
-                Opcode = opcode,
-                op1 = op > 0 ? ops[0] : null,
-                op2 = op > 1 ? ops[1] : null,
+                Mnemonic = Mnemonic.invalid,
+                InstructionClass = InstrClass.Invalid,
+                Operands = new MachineOperand[0]
             };
         }
+
+        #region Mutators
+
+        private static bool a(uint b, Tlcs90Disassembler dasm) {
+            dasm.dataWidth = PrimitiveType.Byte;
+            dasm.ops.Add(new RegisterOperand(Registers.a));
+            return true;
+        }
+
+        // '@'
+        private static bool af_(uint b, Tlcs90Disassembler dasm)
+        {
+            dasm.dataWidth = PrimitiveType.Word16;
+            dasm.ops.Add(new RegisterOperand(Registers.af_));
+            return true;
+        }
+
+            private static bool A(uint b, Tlcs90Disassembler dasm) {
+                    dasm.dataWidth = PrimitiveType.Word16;
+                    dasm.ops.Add(new RegisterOperand(Registers.af));
+                    return true;
+                }
+
+            private static bool B(uint b, Tlcs90Disassembler dasm) {
+                    dasm.dataWidth = PrimitiveType.Word16;
+                    dasm.ops.Add(new RegisterOperand(Registers.bc));
+                    return true;
+                }
+
+            private static bool c(uint b, Tlcs90Disassembler dasm) {
+                    dasm.ops.Add(new ConditionOperand((CondCode)(b & 0xF)));
+                    return true;
+                }
+
+            private static bool D(uint b, Tlcs90Disassembler dasm) {
+                    dasm.dataWidth = PrimitiveType.Word16;
+                    dasm.ops.Add(new RegisterOperand(Registers.de));
+                    return true;
+                }
+
+        private static Mutator<Tlcs90Disassembler> I(PrimitiveType size)
+        {
+            return (b, dasm) => {
+                // Immediate value
+                dasm.dataWidth = size;
+                if (!dasm.rdr.TryReadLe(dasm.dataWidth, out var c))
+                    return false;
+                dasm.ops.Add(new ImmediateOperand(c));
+                return true;
+            };
+        }
+        private static readonly Mutator<Tlcs90Disassembler> Ib = I(PrimitiveType.Byte);
+        private static readonly Mutator<Tlcs90Disassembler> Iw = I(PrimitiveType.Word16);
+
+            private static bool i(uint b, Tlcs90Disassembler dasm) { // immediate value from opcode bits
+                    dasm.ops.Add(ImmediateOperand.Byte((byte)(b & 0x7)));
+                    return true;
+                }
+
+            private static bool g(uint b, Tlcs90Disassembler dasm) {
+                    Debug.Assert(dasm.byteReg != null);
+                    dasm.ops.Add(dasm.byteReg);
+                    return true;
+                }
+
+            private static bool G(uint b, Tlcs90Disassembler dasm) {
+                    Debug.Assert(dasm.wordReg != null);
+                    dasm.ops.Add(dasm.wordReg);
+                    return true;
+                }
+
+            private static bool H(uint b, Tlcs90Disassembler dasm)
+        {
+                    dasm.ops.Add(new RegisterOperand(Registers.hl));
+                    return true;
+                }
+
+        // Absolute jump.
+        private static Mutator<Tlcs90Disassembler> J(PrimitiveType size)
+        {
+            return (b, dasm) =>
+            {
+                if (!dasm.rdr.TryReadLe(size, out var c))
+                    return false;
+                dasm.ops.Add(AddressOperand.Ptr16(c.ToUInt16()));
+                return true;
+            };
+        }
+        private static Mutator<Tlcs90Disassembler> Jb = J(PrimitiveType.Byte);
+        private static Mutator<Tlcs90Disassembler> Jw = J(PrimitiveType.Word16);
+
+        // relative jump
+        private static bool jb(uint u, Tlcs90Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadByte(out byte b))
+                return false;
+            var dest = dasm.rdr.Address + (sbyte) b;
+            dasm.ops.Add(AddressOperand.Create(dest));
+            return true;
+        }
+
+        private static bool jw(uint b, Tlcs90Disassembler dasm)
+        {
+            if (!dasm.rdr.TryReadLeInt16(out short off))
+                return false;
+            var dest = dasm.rdr.Address + off;
+            dasm.ops.Add(AddressOperand.Create(dest));
+            return true;
+        }
+
+        private static Mutator<Tlcs90Disassembler> M(PrimitiveType size)
+        {
+            return (u, d) =>
+            {
+                d.dataWidth = size;
+                if (!d.rdr.TryReadLeUInt16(out ushort absAddr))
+                    return false;
+                d.ops.Add(MemoryOperand.Absolute(d.dataWidth, absAddr));
+                return true;
+            };
+        }
+        private static readonly Mutator<Tlcs90Disassembler> Mb = M(PrimitiveType.Byte);
+        private static readonly Mutator<Tlcs90Disassembler> Mw = M(PrimitiveType.Word16);
+
+        private static Mutator<Tlcs90Disassembler> m(PrimitiveType size)
+        {
+            return (u, d) =>
+            {
+                if (!d.rdr.TryReadByte(out byte pageAddr))
+                    return false;
+                d.ops.Add(MemoryOperand.Absolute(size, (ushort) (0xFF00 | pageAddr)));
+                return true;
+            };
+        }
+        private static readonly Mutator<Tlcs90Disassembler> mb = m(PrimitiveType.Byte);
+        private static readonly Mutator<Tlcs90Disassembler> mw = m(PrimitiveType.Word16);
+
+        private static bool S(uint b, Tlcs90Disassembler dasm) {
+            dasm.dataWidth = PrimitiveType.Word16;
+            dasm.ops.Add(new RegisterOperand(Registers.sp));
+            return true;
+        }
+
+        private static bool X(uint b, Tlcs90Disassembler dasm) {
+            dasm.dataWidth = PrimitiveType.Word16;
+            dasm.ops.Add(new RegisterOperand(Registers.ix));
+            return true;
+        }
+
+        private static bool Y(uint b, Tlcs90Disassembler dasm)
+        {
+            dasm.dataWidth = PrimitiveType.Word16;
+            dasm.ops.Add(new RegisterOperand(Registers.iy));
+            return true;
+        }
+
+        private static bool r(uint b, Tlcs90Disassembler dasm)
+        {
+            // Register encoded in low 3 bits of b.
+            dasm.dataWidth = PrimitiveType.Byte;
+            dasm.ops.Add(new RegisterOperand(Registers.byteRegs[b & 7]));
+            return true;
+        }
+
+        private static bool x(uint b, Tlcs90Disassembler dasm) {
+            dasm.backPatchOp = dasm.ops.Count;
+            return true;
+        }
+
+        #endregion
 
         private PrimitiveType GetSize(char v)
         {
@@ -202,42 +259,49 @@ namespace Reko.Arch.Tlcs.Tlcs90
             throw new NotImplementedException();
         }
 
-        private abstract class OpRecBase
+        private class InstrDecoder : Decoder
         {
-            public abstract Tlcs90Instruction Decode(byte b, Tlcs90Disassembler dasm);
-        }
+            private Mnemonic opcode;
+            private InstrClass iclass;
+            private Mutator<Tlcs90Disassembler>[] mutators;
 
-        private class OpRec : OpRecBase
-        {
-            private Opcode opcode;
-            private string format;
-
-            public OpRec(Opcode opcode, string format)
+            public InstrDecoder(Mnemonic opcode, InstrClass iclass, Mutator<Tlcs90Disassembler> [] mutators)
             {
                 this.opcode = opcode;
-                this.format = format;
+                this.iclass = iclass;
+                this.mutators = mutators;
             }
 
-            public override Tlcs90Instruction Decode(byte b, Tlcs90Disassembler dasm)
+            public override Tlcs90Instruction Decode(uint b, Tlcs90Disassembler dasm)
             {
-                return dasm.DecodeOperands(b, opcode, format);
+                foreach (var m in mutators)
+                {
+                    if (!m(b, dasm))
+                        return dasm.CreateInvalidInstruction();
+                }
+                return new Tlcs90Instruction
+                {
+                    Mnemonic = opcode,
+                    InstructionClass = iclass,
+                    Operands = dasm.ops.ToArray()
+                };
             }
         }
 
-        private class RegOpRec : OpRecBase
+        private class RegDecoder : Decoder
         {
-            private RegisterStorage regByte;
-            private RegisterStorage regWord;
+            private readonly RegisterStorage regByte;
+            private readonly RegisterStorage regWord;
 
-            public RegOpRec(RegisterStorage regByte, RegisterStorage regWord)
+            public RegDecoder(RegisterStorage regByte, RegisterStorage regWord)
             {
                 this.regByte = regByte;
                 this.regWord = regWord;
             }
 
-            public override Tlcs90Instruction Decode(byte b, Tlcs90Disassembler dasm)
+            public override Tlcs90Instruction Decode(uint bPrev, Tlcs90Disassembler dasm)
             {
-                if (!dasm.rdr.TryReadByte(out b))
+                if (!dasm.rdr.TryReadByte(out byte b))
                     return null;
                 dasm.byteReg = new RegisterOperand(regByte);
                 if (regWord != null)
@@ -246,16 +310,16 @@ namespace Reko.Arch.Tlcs.Tlcs90
             }
         }
 
-        private class DstOpRec : OpRecBase
+        private class DstDecoder : Decoder
         {
             private string format;
 
-            public DstOpRec(string format)
+            public DstDecoder(string format)
             {
                 this.format = format;
             }
 
-            public override Tlcs90Instruction Decode(byte b, Tlcs90Disassembler dasm)
+            public override Tlcs90Instruction Decode(uint bPrev, Tlcs90Disassembler dasm)
             {
                 RegisterStorage baseReg = null;
                 RegisterStorage idxReg = null;
@@ -292,14 +356,14 @@ namespace Reko.Arch.Tlcs.Tlcs90
                     }
                     if (idxReg == null)
                     {
-                        if (!dasm.rdr.TryReadByte(out b))
+                        if (!dasm.rdr.TryReadByte(out byte bOff))
                             return null;
-                        offset = Constant.SByte((sbyte)b);
+                        offset = Constant.SByte((sbyte)bOff);
                     }
                     break;
                 default: throw new NotImplementedException(string.Format("Tlcs-90: dst {0}", format));
                 }
-                if (!dasm.rdr.TryReadByte(out b))
+                if (!dasm.rdr.TryReadByte(out byte b))
                     return null;
                 var instr = dstEncodings[b].Decode(b, dasm);
                 if (instr == null)
@@ -314,28 +378,39 @@ namespace Reko.Arch.Tlcs.Tlcs90
                 };
                 if (dasm.backPatchOp == 0)
                 {
-                    instr.op1 = operand;
-                    if (instr.op2 != null)
+                    if (instr.Operands.Length == 0)
                     {
-                        instr.op1.Width = instr.op2.Width;
+                        instr.Operands = new MachineOperand[] { operand };
+                    }
+                    else
+                    {
+                        instr.Operands = new MachineOperand[] { operand, instr.Operands[0] };
+                    }
+                    if (instr.Operands.Length == 2)
+                    {
+                        instr.Operands[0].Width = instr.Operands[1].Width;
                     }
                 }
                 else if (dasm.backPatchOp == 1)
                 {
-                    if ((instr.Opcode == Opcode.jp || instr.Opcode == Opcode.call)
+                    if ((instr.Mnemonic == Mnemonic.jp || instr.Mnemonic == Mnemonic.call)
                         &&
                         operand.Base == null &&
                         operand.Index == null &&
                         operand.Offset != null)
                     {
                         // JP cc,(XXXX) should be JP cc,XXXX
-                        instr.op2 = AddressOperand.Ptr16(operand.Offset.ToUInt16());
-                        instr.op2.Width = PrimitiveType.Ptr16;
+                        var op = AddressOperand.Ptr16(operand.Offset.ToUInt16());
+                        op.Width = PrimitiveType.Ptr16;
+                        instr.Operands = new MachineOperand[] { instr.Operands[0], op };
                     }
                     else
                     {
-                        instr.op2 = operand;
-                        instr.op2.Width = instr.op1.Width;
+                        instr.Operands = new MachineOperand[] {
+                            instr.Operands[0],
+                            operand
+                        };
+                        instr.Operands[1].Width = instr.Operands[0].Width;
                     }
                 }
                 else
@@ -344,16 +419,16 @@ namespace Reko.Arch.Tlcs.Tlcs90
             }
         }
 
-        private class SrcOpRec : OpRecBase
+        private class SrcDecoder : Decoder
         {
             private string format;
 
-            public SrcOpRec(string format)
+            public SrcDecoder(string format)
             {
                 this.format = format;
             }
 
-            public override Tlcs90Instruction Decode(byte b, Tlcs90Disassembler dasm)
+            public override Tlcs90Instruction Decode(uint bPrev, Tlcs90Disassembler dasm)
             {
                 Tlcs90Instruction instr;
                 Constant offset = null;
@@ -373,9 +448,9 @@ namespace Reko.Arch.Tlcs.Tlcs90
                     };
                     if (idxReg == null)
                     {
-                        if (!dasm.rdr.TryReadByte(out b))
+                        if (!dasm.rdr.TryReadByte(out byte bOff))
                             return null;
-                        offset = Constant.SByte((sbyte)b);
+                        offset = Constant.SByte((sbyte)bOff);
                     }
                     break;
                 case 'B': baseReg = Registers.bc; break;
@@ -399,7 +474,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
                 default: throw new NotImplementedException(string.Format("Tlcs-90: src {0}", format));
                 }
 
-                if (!dasm.rdr.TryReadByte(out b))
+                if (!dasm.rdr.TryReadByte(out byte b))
                     return null;
                 instr = srcEncodings[b].Decode(b, dasm);
                 if (instr == null)
@@ -414,16 +489,26 @@ namespace Reko.Arch.Tlcs.Tlcs90
 
                 if (dasm.backPatchOp == 0)
                 {
-                    instr.op1 = operand;
-                    if (instr.op2 != null)
+                    if (instr.Operands.Length == 1)
                     {
-                        operand.Width = instr.op2.Width;
+                        instr.Operands = new MachineOperand[] { operand, instr.Operands[0] };
+                    }
+                    else
+                    {
+                        instr.Operands = new MachineOperand[] { operand };
+                    }
+                    if (instr.Operands.Length >= 2)
+                    {
+                        operand.Width = instr.Operands[1].Width;
                     }
                 }
                 else if (dasm.backPatchOp == 1)
                 {
-                    instr.op2 = operand;
-                    operand.Width = instr.op1.Width;
+                    if (operand != null)
+                    {
+                        instr.Operands = new MachineOperand[] { instr.Operands[0], operand };
+                    }
+                    operand.Width = instr.Operands[0].Width;
                 }
                 else
                     return null;
@@ -431,356 +516,368 @@ namespace Reko.Arch.Tlcs.Tlcs90
             }
         }
 
-        private static OpRecBase[] oprecs = new OpRecBase[]
+        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<Tlcs90Disassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, InstrClass.Linear, mutators);
+        }
+
+        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<Tlcs90Disassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, iclass, mutators);
+        }
+
+        private static Decoder invalid = Instr(Mnemonic.invalid, InstrClass.Invalid);
+
+        private static Decoder[] decoders = new Decoder[256]
         {
             // 00
-            new OpRec(Opcode.nop, ""),
-            new OpRec(Opcode.halt, ""),
-            new OpRec(Opcode.di, ""),
-            new OpRec(Opcode.ei, ""),
+            Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding|InstrClass.Zero),
+            Instr(Mnemonic.halt, InstrClass.Terminates),
+            Instr(Mnemonic.di),
+            Instr(Mnemonic.ei),
 
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.incx, "mw"),
+            invalid,
+            invalid,
+            invalid,
+            Instr(Mnemonic.incx, mw),
 
-            new OpRec(Opcode.ex, "D,H"),
-            new OpRec(Opcode.ex, "A,@"),
-            new OpRec(Opcode.exx, ""),
-            new OpRec(Opcode.daa, "a"),
+            Instr(Mnemonic.ex, D,H),
+            Instr(Mnemonic.ex, A,af_),
+            Instr(Mnemonic.exx),
+            Instr(Mnemonic.daa, a),
 
-            new OpRec(Opcode.rcf, ""),
-            new OpRec(Opcode.scf, ""),
-            new OpRec(Opcode.ccf, ""),
-            new OpRec(Opcode.decx, "mb"),
+            Instr(Mnemonic.rcf),
+            Instr(Mnemonic.scf),
+            Instr(Mnemonic.ccf),
+            Instr(Mnemonic.decx, mb),
 
             // 10
-            new OpRec(Opcode.cpl, "a"),
-            new OpRec(Opcode.neg, "a"),
-            new OpRec(Opcode.mul, "H,Ib"),
-            new OpRec(Opcode.div, "H,Ib"),
+            Instr(Mnemonic.cpl, a),
+            Instr(Mnemonic.neg, a),
+            Instr(Mnemonic.mul, H,Ib),
+            Instr(Mnemonic.div, H,Ib),
 
-            new OpRec(Opcode.add, "X,Iw"),
-            new OpRec(Opcode.add, "Y,Iw"),
-            new OpRec(Opcode.add, "S,Iw"),
-            new OpRec(Opcode.ldar, "H,jw"),
+            Instr(Mnemonic.add, X,Iw),
+            Instr(Mnemonic.add, Y,Iw),
+            Instr(Mnemonic.add, S,Iw),
+            Instr(Mnemonic.ldar, H,jw),
 
-            new OpRec(Opcode.djnz, "jb"),
-            new OpRec(Opcode.djnz, "B,jb"),
-            new OpRec(Opcode.jp, "Jw"),
-            new OpRec(Opcode.jr, "jw"),
+            Instr(Mnemonic.djnz, InstrClass.ConditionalTransfer, jb ),
+            Instr(Mnemonic.djnz, InstrClass.ConditionalTransfer, B,jb),
+            Instr(Mnemonic.jp, InstrClass.Transfer, Jw),
+            Instr(Mnemonic.jr, InstrClass.Transfer, jw),
 
-            new OpRec(Opcode.call, "Jw"),
-            new OpRec(Opcode.callr, "jw"),
-            new OpRec(Opcode.ret, ""),
-            new OpRec(Opcode.reti, ""), 
+            Instr(Mnemonic.call, InstrClass.Transfer|InstrClass.Call, Jw),
+            Instr(Mnemonic.callr, InstrClass.Transfer|InstrClass.Call, jw),
+            Instr(Mnemonic.ret, InstrClass.Transfer),
+            Instr(Mnemonic.reti, InstrClass.Transfer), 
 
             // 20
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,r"),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,r),
 
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,r"),
-            new OpRec(Opcode.ld, "a,mb"),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,r),
+            Instr(Mnemonic.ld, a,mb),
 
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "r,a"),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, r,a),
 
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "r,a"),
-            new OpRec(Opcode.ld, "mb,a"),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, r,a),
+            Instr(Mnemonic.ld, mb,a),
 
             // 30
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "r,Ib"),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, r,Ib),
 
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "r,Ib"),
-            new OpRec(Opcode.ld, "mb,Ib"),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, r,Ib),
+            Instr(Mnemonic.ld, mb,Ib),
 
-            new OpRec(Opcode.ld, "B,Iw"),
-            new OpRec(Opcode.ld, "D,Iw"),
-            new OpRec(Opcode.ld, "H,Iw"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.ld, B,Iw),
+            Instr(Mnemonic.ld, D,Iw),
+            Instr(Mnemonic.ld, H,Iw),
+            invalid,
 
-            new OpRec(Opcode.ld, "X,Iw"),
-            new OpRec(Opcode.ld, "Y,Iw"),
-            new OpRec(Opcode.ld, "S,Iw"),
-            new OpRec(Opcode.ldw, "mw,Iw"),
+            Instr(Mnemonic.ld, X,Iw),
+            Instr(Mnemonic.ld, Y,Iw),
+            Instr(Mnemonic.ld, S,Iw),
+            Instr(Mnemonic.ldw, mw,Iw),
 
             // 40
-            new OpRec(Opcode.ld, "H,B"),
-            new OpRec(Opcode.ld, "H,D"),
-            new OpRec(Opcode.ld, "H,H"),    // lolwut
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.ld, H,B),
+            Instr(Mnemonic.ld, H,D),
+            Instr(Mnemonic.ld, H,H),    // lolwut
+            invalid,
 
-            new OpRec(Opcode.ld, "H,X"),
-            new OpRec(Opcode.ld, "H,Y"),
-            new OpRec(Opcode.ld, "H,S"),
-            new OpRec(Opcode.ld, "H,mw"),
+            Instr(Mnemonic.ld, H,X),
+            Instr(Mnemonic.ld, H,Y),
+            Instr(Mnemonic.ld, H,S),
+            Instr(Mnemonic.ld, H,mw),
 
-            new OpRec(Opcode.ld, "B,H"),
-            new OpRec(Opcode.ld, "D,H"),
-            new OpRec(Opcode.ld, "H,H"),    // lolwut
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.ld, B,H),
+            Instr(Mnemonic.ld, D,H),
+            Instr(Mnemonic.ld, H,H),    // lolwut
+            invalid,
 
-            new OpRec(Opcode.ld, "X,H"),
-            new OpRec(Opcode.ld, "Y,H"),
-            new OpRec(Opcode.ld, "S,H"),
-            new OpRec(Opcode.ld, "mw,H"),
+            Instr(Mnemonic.ld, X,H),
+            Instr(Mnemonic.ld, Y,H),
+            Instr(Mnemonic.ld, S,H),
+            Instr(Mnemonic.ld, mw,H),
 
             // 50
-            new OpRec(Opcode.push, "B"),
-            new OpRec(Opcode.push, "D"),
-            new OpRec(Opcode.push, "H"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.push, B),
+            Instr(Mnemonic.push, D),
+            Instr(Mnemonic.push, H),
+            invalid,
 
-            new OpRec(Opcode.push, "X"),
-            new OpRec(Opcode.push, "Y"),
-            new OpRec(Opcode.push, "A"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.push, X),
+            Instr(Mnemonic.push, Y),
+            Instr(Mnemonic.push, A),
+            invalid,
 
-            new OpRec(Opcode.pop, "B"),
-            new OpRec(Opcode.pop, "D"),
-            new OpRec(Opcode.pop, "H"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.pop, B),
+            Instr(Mnemonic.pop, D),
+            Instr(Mnemonic.pop, H),
+            invalid,
 
-            new OpRec(Opcode.pop, "X"),
-            new OpRec(Opcode.pop, "Y"),
-            new OpRec(Opcode.pop, "A"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.pop, X),
+            Instr(Mnemonic.pop, Y),
+            Instr(Mnemonic.pop, A),
+            invalid,
 
             // 60
-            new OpRec(Opcode.add, "a,mb"),
-            new OpRec(Opcode.adc, "a,mb"),
-            new OpRec(Opcode.sub, "a,mb"),
-            new OpRec(Opcode.sbc, "a,mb"),
+            Instr(Mnemonic.add, a,mb),
+            Instr(Mnemonic.adc, a,mb),
+            Instr(Mnemonic.sub, a,mb),
+            Instr(Mnemonic.sbc, a,mb),
 
-            new OpRec(Opcode.and, "a,mb"),
-            new OpRec(Opcode.xor, "a,mb"),
-            new OpRec(Opcode.or,  "a,mb"),
-            new OpRec(Opcode.cp,  "a,mb"),
+            Instr(Mnemonic.and, a,mb),
+            Instr(Mnemonic.xor, a,mb),
+            Instr(Mnemonic.or,  a,mb),
+            Instr(Mnemonic.cp,  a,mb),
 
-            new OpRec(Opcode.add, "a,Ib"),
-            new OpRec(Opcode.adc, "a,Ib"),
-            new OpRec(Opcode.sub, "a,Ib"),
-            new OpRec(Opcode.sbc, "a,Ib"),
+            Instr(Mnemonic.add, a,Ib),
+            Instr(Mnemonic.adc, a,Ib),
+            Instr(Mnemonic.sub, a,Ib),
+            Instr(Mnemonic.sbc, a,Ib),
 
-            new OpRec(Opcode.and, "a,Ib"),
-            new OpRec(Opcode.xor, "a,Ib"),
-            new OpRec(Opcode.or,  "a,Ib"),
-            new OpRec(Opcode.cp,  "a,Ib"),
+            Instr(Mnemonic.and, a,Ib),
+            Instr(Mnemonic.xor, a,Ib),
+            Instr(Mnemonic.or,  a,Ib),
+            Instr(Mnemonic.cp,  a,Ib),
 
             // 70
-            new OpRec(Opcode.add, "H,Mw"),
-            new OpRec(Opcode.adc, "H,Mw"),
-            new OpRec(Opcode.sub, "H,Mw"),
-            new OpRec(Opcode.sbc, "H,Mw"),
+            Instr(Mnemonic.add, H,Mw),
+            Instr(Mnemonic.adc, H,Mw),
+            Instr(Mnemonic.sub, H,Mw),
+            Instr(Mnemonic.sbc, H,Mw),
 
-            new OpRec(Opcode.and, "H,Mw"),
-            new OpRec(Opcode.xor, "H,Mw"),
-            new OpRec(Opcode.or,  "H,Mw"),
-            new OpRec(Opcode.cp,  "H,Mw"),
+            Instr(Mnemonic.and, H,Mw),
+            Instr(Mnemonic.xor, H,Mw),
+            Instr(Mnemonic.or,  H,Mw),
+            Instr(Mnemonic.cp,  H,Mw),
 
-            new OpRec(Opcode.add, "H,Iw"),
-            new OpRec(Opcode.adc, "H,Iw"),
-            new OpRec(Opcode.sub, "H,Iw"),
-            new OpRec(Opcode.sbc, "H,Iw"),
+            Instr(Mnemonic.add, H,Iw),
+            Instr(Mnemonic.adc, H,Iw),
+            Instr(Mnemonic.sub, H,Iw),
+            Instr(Mnemonic.sbc, H,Iw),
 
-            new OpRec(Opcode.and, "H,Iw"),
-            new OpRec(Opcode.xor, "H,Iw"),
-            new OpRec(Opcode.or,  "H,Iw"),
-            new OpRec(Opcode.cp,  "H,Iw"),
+            Instr(Mnemonic.and, H,Iw),
+            Instr(Mnemonic.xor, H,Iw),
+            Instr(Mnemonic.or,  H,Iw),
+            Instr(Mnemonic.cp,  H,Iw),
 
             // 80
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "r"),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, r),
 
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "r"),
-            new OpRec(Opcode.inc, "mb"),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, r),
+            Instr(Mnemonic.inc, mb),
 
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "r"),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, r),
 
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "r"),
-            new OpRec(Opcode.dec, "mb"),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, r),
+            Instr(Mnemonic.dec, mb),
 
             // 90
-            new OpRec(Opcode.inc, "B"),
-            new OpRec(Opcode.inc, "D"),
-            new OpRec(Opcode.inc, "H"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.inc, B),
+            Instr(Mnemonic.inc, D),
+            Instr(Mnemonic.inc, H),
+            invalid,
 
-            new OpRec(Opcode.inc, "X"),
-            new OpRec(Opcode.inc, "Y"),
-            new OpRec(Opcode.inc, "A"),
-            new OpRec(Opcode.incw, "mw"),
+            Instr(Mnemonic.inc, X),
+            Instr(Mnemonic.inc, Y),
+            Instr(Mnemonic.inc, A),
+            Instr(Mnemonic.incw, mw),
 
-            new OpRec(Opcode.dec, "B"),
-            new OpRec(Opcode.dec, "D"),
-            new OpRec(Opcode.dec, "H"),
-            new OpRec(Opcode.invalid, ""),
+            Instr(Mnemonic.dec, B),
+            Instr(Mnemonic.dec, D),
+            Instr(Mnemonic.dec, H),
+            invalid,
 
-            new OpRec(Opcode.dec, "X"),
-            new OpRec(Opcode.dec, "Y"),
-            new OpRec(Opcode.dec, "A"),
-            new OpRec(Opcode.decw, "mw"),
+            Instr(Mnemonic.dec, X),
+            Instr(Mnemonic.dec, Y),
+            Instr(Mnemonic.dec, A),
+            Instr(Mnemonic.decw, mw),
 
             // A0
-            new OpRec(Opcode.rrc, ""),
-            new OpRec(Opcode.rrc, ""),
-            new OpRec(Opcode.rl, ""),
-            new OpRec(Opcode.rr, ""),
+            Instr(Mnemonic.rrc),
+            Instr(Mnemonic.rrc),
+            Instr(Mnemonic.rl),
+            Instr(Mnemonic.rr),
 
-            new OpRec(Opcode.sla, ""),
-            new OpRec(Opcode.sra, ""),
-            new OpRec(Opcode.sll, ""),
-            new OpRec(Opcode.srl, ""),
+            Instr(Mnemonic.sla),
+            Instr(Mnemonic.sra),
+            Instr(Mnemonic.sll),
+            Instr(Mnemonic.srl),
 
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
 
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
-            new OpRec(Opcode.bit, "i,mb"),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
+            Instr(Mnemonic.bit, i,mb),
 
             // B0
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
 
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
-            new OpRec(Opcode.res, "i,mb"),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
+            Instr(Mnemonic.res, i,mb),
 
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
 
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
-            new OpRec(Opcode.set, "i,mb"),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
+            Instr(Mnemonic.set, i,mb),
 
             // C0
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
 
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
 
-            new OpRec(Opcode.jr, "jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
+            Instr(Mnemonic.jr, InstrClass.Transfer, jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
 
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
-            new OpRec(Opcode.jr, "c,jb"),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
+            Instr(Mnemonic.jr, InstrClass.ConditionalTransfer, c,jb),
 
             // D0
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
+            invalid,
+            invalid,
+            invalid,
+            invalid,
 
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
+            invalid,
+            invalid,
+            invalid,
+            invalid,
 
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
+            invalid,
+            invalid,
+            invalid,
+            invalid,
 
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
-            new OpRec(Opcode.invalid, ""),
+            invalid,
+            invalid,
+            invalid,
+            invalid,
 
             // E0
-            new SrcOpRec("B"),
-            new SrcOpRec("D"),
-            new SrcOpRec("H"),
-            new SrcOpRec("M"),
+            new SrcDecoder("B"),
+            new SrcDecoder("D"),
+            new SrcDecoder("H"),
+            new SrcDecoder("M"),
 
-            new SrcOpRec("X"),
-            new SrcOpRec("Y"),
-            new SrcOpRec("S"),
-            new SrcOpRec("m"),
+            new SrcDecoder("X"),
+            new SrcDecoder("Y"),
+            new SrcDecoder("S"),
+            new SrcDecoder("m"),
 
-            new DstOpRec("B"),
-            new DstOpRec("D"),
-            new DstOpRec("H"),
-            new DstOpRec("M"),
+            new DstDecoder("B"),
+            new DstDecoder("D"),
+            new DstDecoder("H"),
+            new DstDecoder("M"),
 
-            new DstOpRec("X"),
-            new DstOpRec("Y"),
-            new DstOpRec("S"),
-            new DstOpRec("m"),
+            new DstDecoder("X"),
+            new DstDecoder("Y"),
+            new DstDecoder("S"),
+            new DstDecoder("m"),
 
             // F0
-            new SrcOpRec("EX"),
-            new SrcOpRec("EY"),
-            new SrcOpRec("ES"),
-            new SrcOpRec("EH"),
+            new SrcDecoder("EX"),
+            new SrcDecoder("EY"),
+            new SrcDecoder("ES"),
+            new SrcDecoder("EH"),
 
-            new DstOpRec("EX"),
-            new DstOpRec("EY"),
-            new DstOpRec("ES"),
-            new DstOpRec("EH"),
+            new DstDecoder("EX"),
+            new DstDecoder("EY"),
+            new DstDecoder("ES"),
+            new DstDecoder("EH"),
 
-            new RegOpRec(Registers.b, Registers.bc),
-            new RegOpRec(Registers.c, Registers.de),
-            new RegOpRec(Registers.d, Registers.hl),
-            new RegOpRec(Registers.e, null),
+            new RegDecoder(Registers.b, Registers.bc),
+            new RegDecoder(Registers.c, Registers.de),
+            new RegDecoder(Registers.d, Registers.hl),
+            new RegDecoder(Registers.e, null),
 
-            new RegOpRec(Registers.h, Registers.ix),
-            new RegOpRec(Registers.l, Registers.iy),
-            new RegOpRec(Registers.a, Registers.sp),
-            new OpRec(Opcode.swi, ""), 
+            new RegDecoder(Registers.h, Registers.ix),
+            new RegDecoder(Registers.l, Registers.iy),
+            new RegDecoder(Registers.a, Registers.sp),
+            Instr(Mnemonic.swi, InstrClass.Transfer|InstrClass.Call), 
         };
         private Address addr;
 
-        private static OpRecBase[] Oprecs
+        private static Decoder[] Decoders
         {
             get
             {
-                return oprecs;
+                return decoders;
             }
 
             set
             {
-                oprecs = value;
+                decoders = value;
             }
         }
     }

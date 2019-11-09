@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 Pavel Tomin.
+ * Copyright (C) 1999-2019 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,7 +54,8 @@ namespace Reko.Analysis
         {
             base.VisitCallInstruction(ci);
             definitions.AddRange(ci.Definitions
-                .Select(d => d.Identifier));
+                .Select(d => d.Expression as Identifier)
+                .Where(i => i != null));
         }
 
         public override void VisitDefInstruction(DefInstruction def)

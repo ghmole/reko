@@ -70,6 +70,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AddressOperand.cs" />
+    <Compile Include="BitfieldOperand.cs" />
     <Compile Include="IndexedOperand.cs" />
     <Compile Include="M68kArchitecture.cs" />
     <Compile Include="M68kDisassembler.cs" />
@@ -78,7 +79,7 @@
     <Compile Include="M68kCallingConvention.cs" />
     <Compile Include="M68kState.cs" />
     <Compile Include="MemoryOperand.cs" />
-    <Compile Include="Opcode.cs" />
+    <Compile Include="Mnemonic.cs" />
     <Compile Include="OperandFormatDecoder.cs" />
     <Compile Include="OperandRewriter.cs" />
     <Compile Include="M68kPointerScanner.cs" />

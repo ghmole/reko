@@ -52,7 +52,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Opcode.cs" />
+    <Compile Include="MemoryOperand.cs" />
+    <Compile Include="Mnemonic.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="RiscVArchitecture.cs" />
     <Compile Include="RiscVCallingConvention.cs" />

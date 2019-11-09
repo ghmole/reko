@@ -1,4 +1,4 @@
-﻿using Reko.Core.Machine;
+using Reko.Core.Machine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,34 +9,12 @@ namespace Reko.Core.NativeInterface
 {
     public class NativeMachineInstruction : MachineInstruction
     {
-        public override InstructionClass InstructionClass
-        {
-            get
-            {
-                throw new NotImplementedException();
-            }
-        }
-
-        public override bool IsValid
-        {
-            get
-            {
-                throw new NotImplementedException();
-            }
-        }
-
         public override int OpcodeAsInteger
         {
             get
             {
                 throw new NotImplementedException();
             }
-        }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            // GetOperand is only ever used by X86 code and that may be going away soon.
-            throw new NotSupportedException();
         }
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)

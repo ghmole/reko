@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -207,8 +207,7 @@ namespace Reko.Analysis
                 var sorted = de.Value.ToSortedList(k => k.offset);
                 foreach (var se in sorted)
                 {
-                    UnalignedAccess other;
-                    if (!sorted.TryGetValue(se.Key + 3, out other))
+                    if (!sorted.TryGetValue(se.Key + 3, out UnalignedAccess other))
                         continue;
                     if (se.Value.isLeft == other.isLeft)
                         continue;
@@ -248,8 +247,7 @@ namespace Reko.Analysis
                 }
                 else
                 {
-                    var ass = stm.Instruction as Assignment;
-                    if (ass == null)
+                    if (!(stm.Instruction is Assignment ass))
                         continue;
                     src = ass.Src;
                 }
@@ -282,8 +280,7 @@ namespace Reko.Analysis
 
         private Expression GetModifiedMemory(Instruction instruction)
         {
-            Assignment ass = instruction as Assignment;
-            if (ass != null)
+            if (instruction is Assignment ass)
                 return ass.Dst;
             else
                 return ((Store)instruction).Dst;
@@ -306,8 +303,7 @@ namespace Reko.Analysis
 
         private int GetOffsetOf(Expression e)
         {
-            var id = e as Identifier;
-            if (id != null)
+            if (e is Identifier id)
             {
                 if (id.Storage is RegisterStorage)
                 {
@@ -322,8 +318,7 @@ namespace Reko.Analysis
             else
             {
                 var mem = (MemoryAccess)e;
-                var binL = mem.EffectiveAddress as BinaryExpression;
-                if (binL != null)
+                if (mem.EffectiveAddress is BinaryExpression binL)
                 {
                     return ((Constant)binL.Right).ToInt32();
                 }
@@ -336,18 +331,17 @@ namespace Reko.Analysis
 
         private Tuple<string, Application> MatchIntrinsicApplication(Expression e, string [] names)
         {
-            var app = e as Application;
-            if (app == null)
+            if (e is Application app &&
+                app.Procedure is ProcedureConstant pc &&
+                pc.Procedure is PseudoProcedure intrinsic &&
+                names.Contains(intrinsic.Name))
+            {
+                return Tuple.Create(intrinsic.Name, app);
+            }
+            else
+            {
                 return null;
-            var pc = app.Procedure as ProcedureConstant;
-            if (pc == null)
-                return null;
-            var ppp = pc.Procedure as PseudoProcedure;
-            if (ppp == null)
-                return null;
-            if (!names.Contains(ppp.Name))
-                return null;
-            return Tuple.Create(ppp.Name, app);
+            }
         }
     }
 }

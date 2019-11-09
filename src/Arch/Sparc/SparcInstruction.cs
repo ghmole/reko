@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,97 +29,35 @@ namespace Reko.Arch.Sparc
 {
     public class SparcInstruction : MachineInstruction
     {
-        private const InstructionClass Transfer = InstructionClass.Delay | InstructionClass.Transfer;
-        private const InstructionClass CondTransfer = InstructionClass.Delay | InstructionClass.Transfer | InstructionClass.Conditional;
-        private const InstructionClass LinkTransfer = InstructionClass.Delay | InstructionClass.Transfer | InstructionClass.Call;
-        private static Dictionary<Opcode, InstructionClass> classOf;
+        public Mnemonic Mnemonic;
 
-        public Opcode Opcode;
-        public bool Annul;
+        public override int OpcodeAsInteger => (int)Mnemonic; 
 
-        public MachineOperand Op1;
-        public MachineOperand Op2;
-        public MachineOperand Op3;
-
-        public override bool IsValid { get { return Opcode != Opcode.illegal; } }
-
-        public override int OpcodeAsInteger { get { return (int)Opcode; } }
-
-        public override InstructionClass InstructionClass
-        {
-            get
-            {
-                InstructionClass cl;
-                if (!classOf.TryGetValue(Opcode, out cl))
-                {
-                    cl = InstructionClass.Linear;
-                }
-                else if (Annul)
-                {
-                    cl |= InstructionClass.Annul;
-                }
-                return cl;
-            }
-        }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            switch (i)
-            {
-            case 0: return Op1;
-            case 1: return Op2;
-            case 2: return Op3;
-            default: return null; 
-            }
-        }
+        public bool Annul => (InstructionClass & InstrClass.Annul) != 0;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
             writer.WriteOpcode(
                 string.Format("{0}{1}",
-                Opcode.ToString(),
+                Mnemonic.ToString(),
                 Annul ? ",a" : ""));
-
-            if (Op1 != null)
-            {
-                writer.Tab();
-                Write(Op1, writer, options);
-                if (Op2 != null)
-                {
-                    writer.WriteChar(',');
-                    Write(Op2, writer, options);
-                    if (Op3 != null)
-                    {
-                        writer.WriteChar(',');
-                        Write(Op3, writer, options);
-                    }
-                }
-            }
+            RenderOperands(writer, options);
         }
 
-        private void Write(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        protected override void RenderOperand(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            var reg = op as RegisterOperand;
-            if (reg != null)
+            switch (op)
             {
+            case RegisterOperand reg:
                 writer.WriteFormat("%{0}", reg.Register.Name);
                 return;
-            }
-            var imm = op as ImmediateOperand;
-            if (imm != null)
-            {
+            case ImmediateOperand imm:
                 writer.WriteString(imm.Value.ToString());
                 return;
-            }
-            var mem = op as MemoryOperand;
-            if (mem != null)
-            {
+            case MemoryOperand mem:
                 mem.Write(writer, options);
                 return;
-            }
-            var idx = op as IndexedMemoryOperand;
-            if (idx != null)
-            {
+            case IndexedMemoryOperand idx:
                 idx.Write(writer, options);
                 return;
             }
@@ -130,53 +68,6 @@ namespace Reko.Arch.Sparc
         public enum Flags
         {
             Annul = 1,
-        }
-
-        static SparcInstruction()
-        {
-            classOf = new Dictionary<Opcode, InstructionClass>
-            {
-                { Opcode.illegal, InstructionClass.Invalid },
-
-                { Opcode.call,   LinkTransfer },
-                { Opcode.tvc,    CondTransfer },
-                { Opcode.tpos,   CondTransfer },
-                { Opcode.tcc,    CondTransfer },
-                { Opcode.tgu,    CondTransfer },
-                { Opcode.tge,    CondTransfer },
-                { Opcode.tg,     CondTransfer },
-                { Opcode.tne,    CondTransfer },
-                { Opcode.ta,     CondTransfer },
-                { Opcode.tvs,    CondTransfer },
-                { Opcode.tneg,   CondTransfer },
-                { Opcode.tcs,    CondTransfer },
-                { Opcode.tleu,   CondTransfer },
-                { Opcode.tl,     CondTransfer },
-                { Opcode.tle,    CondTransfer },
-                { Opcode.te,     CondTransfer },
-                { Opcode.be,     CondTransfer },
-                { Opcode.bvc,    CondTransfer },
-                { Opcode.bpos,   CondTransfer },
-                { Opcode.bcc,    CondTransfer },
-                { Opcode.bgu,    CondTransfer },
-                { Opcode.bge,    CondTransfer },
-                { Opcode.bg,     CondTransfer },
-                { Opcode.bne,    CondTransfer },
-                { Opcode.ba,     Transfer },
-                { Opcode.bvs,    CondTransfer },
-                { Opcode.bneg,   CondTransfer },
-                { Opcode.bcs,    CondTransfer },
-                { Opcode.bleu,   CondTransfer },
-                { Opcode.bl,     CondTransfer },
-                { Opcode.ble,    CondTransfer },
-                { Opcode.fbe,    CondTransfer },
-                { Opcode.fbge,   CondTransfer },
-                { Opcode.fbg,    CondTransfer },
-                { Opcode.fbne,   CondTransfer },
-                { Opcode.fba,    CondTransfer },
-                { Opcode.fble,   CondTransfer },
-                { Opcode.jmpl,   LinkTransfer },
-            };
         }
     }
 }

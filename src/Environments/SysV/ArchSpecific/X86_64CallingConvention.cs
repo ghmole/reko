@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@ namespace Reko.Environments.SysV.ArchSpecific
             this.iregs = new[] { "rdi", "rsi", "rdx", "rcx", "r8", "r9" }
                 .Select(r => arch.GetRegister(r))
                 .ToArray();
-            this.fregs = new []{ "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7" }
+            this.fregs = new[] { "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7" }
                 .Select(r => arch.GetRegister(r))
                 .ToArray();
             this.al = arch.GetRegister("al");
@@ -156,6 +156,29 @@ namespace Reko.Environments.SysV.ArchSpecific
                 return;
             }
             throw new NotImplementedException();
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return iregs.Contains(reg) || fregs.Contains(reg);
+            }
+            //$TODO: handle stack args.
+            return false;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            if (stg is RegisterStorage reg)
+            {
+                return
+                    reg.Domain == rax.Domain ||
+                    reg.Domain == rdx.Domain ||
+                    reg.Domain == fregs[0].Domain ||
+                    reg.Domain == fregs[1].Domain;
+            }
+            return false;
         }
     }
 }

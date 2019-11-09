@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,11 +47,10 @@ namespace Reko.Core
 			args = new List<Identifier>();
 		}
 
-		public void AddFlagGroupReturnValue(uint bitMask, IStorageBinder binder)
+		public void AddFlagGroupReturnValue(KeyValuePair<RegisterStorage, uint> bits, IStorageBinder binder)
 		{
-			PrimitiveType dt = Bits.IsSingleBitSet(bitMask) ? PrimitiveType.Bool : PrimitiveType.Byte;
-            var grf = arch.GetFlagGroup(bitMask);
-			ret = binder.EnsureFlagGroup(grf.FlagRegister, bitMask, grf.Name, dt);
+            var grf = arch.GetFlagGroup(bits.Key, bits.Value);
+			ret = binder.EnsureFlagGroup(grf);
 		}
 
 		public void AddFpuStackArgument(int x, Identifier id)
@@ -64,11 +63,17 @@ namespace Reko.Core
 			AddInParam(binder.EnsureRegister(reg));
 		}
 
-        public void AddOutParam(Identifier idOrig)
+        public void AddSequenceArgument(SequenceStorage seq)
         {
-            if (ret == null)
+			AddInParam(binder.EnsureSequence(seq.DataType, seq.Elements));
+        }
+
+        public Identifier AddOutParam(Identifier idOrig)
+        {
+            if (this.ret == null)
             {
-                ret = idOrig;
+                this.ret = idOrig;
+                return ret;
             }
             else
             {
@@ -77,6 +82,7 @@ namespace Reko.Core
                 // explicitly instead of using destructive updates of this kind.
                 var arg = binder.EnsureOutArgument(idOrig, PrimitiveType.Create(Domain.Pointer, arch.FramePointerType.BitSize));
                 args.Add(arg);
+                return arg;
             }
         }
 
@@ -90,9 +96,5 @@ namespace Reko.Core
 			return new FunctionType(ret, args.ToArray());
 		}
 
-		public Identifier CreateOutIdentifier(Procedure proc, Identifier id)
-		{
-			return proc.Frame.CreateTemporary(id.Name + "Out", id.DataType);
-		}
-	}
+    }
 }

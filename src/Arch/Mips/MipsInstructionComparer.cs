@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,9 +35,10 @@ namespace Reko.Arch.Mips
         {
             var a = (MipsInstruction)x;
             var b = (MipsInstruction)y;
-            return Compare(a.op1, b.op1) &&
-                   Compare(a.op2, b.op2) &&
-                   Compare(a.op3, b.op3);
+            return Compare(a.Operands[0], b.Operands[0]) &&
+                   Compare(a.Operands[1], b.Operands[1]) &&
+                   Compare(a.Operands[2], b.Operands[2]) &&
+                   Compare(a.Operands[3], b.Operands[3]);
         }
 
         private bool Compare(MachineOperand a, MachineOperand b)
@@ -89,9 +90,10 @@ namespace Reko.Arch.Mips
         {
             int h = 0;
             var instr = (MipsInstruction)oinstr;
-            h = h*23 ^ GetHashCode(instr.op1);
-            h = h*23 ^ GetHashCode(instr.op2);
-            h = h*23 ^ GetHashCode(instr.op3);
+            h = h*23 ^ GetHashCode(instr.Operands[0]);
+            h = h*23 ^ GetHashCode(instr.Operands[1]);
+            h = h*23 ^ GetHashCode(instr.Operands[2]);
+            h = h*23 ^ GetHashCode(instr.Operands[3]);
             return h;
         }
 

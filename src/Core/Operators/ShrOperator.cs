@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core.Expressions;
+using Reko.Core.Types;
 using System;
 
 namespace Reko.Core.Operators
@@ -29,8 +30,16 @@ namespace Reko.Core.Operators
 		{
             if (!ValidArgs(c1, c2))
                 return Constant.Invalid;
-            return BuildConstant(c1.DataType, c2.DataType, (int) (c1.ToUInt32() >> c2.ToInt32()));
+            return Constant.Create(
+                PrimitiveType.Create(Domain.UnsignedInt, c1.DataType.BitSize),
+                c1.ToUInt64() >> c2.ToInt32());
 		}
+
+        public override string AsCompound()
+        {
+            return " >>= ";
+        }
+
 		public override string ToString()
 		{
 			return " >>u ";

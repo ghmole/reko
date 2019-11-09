@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,9 +27,11 @@ namespace Reko.Core.Code
 	/// <summary>
 	/// Base class for rebuilding instructions -- and expressions therein.
 	/// </summary>
-    /// <remarks>Use this class if most of your transformations will be simple copies, but you need to make 
-    /// exceptions for a few types of expressions. If your transformation will affect most or all of the instruction
-    /// and/or expression types, use <code>ExpressionVisitor</code> directly instead.</remarks>
+    /// <remarks>Use this class if most of your transformations will be simple
+    /// copies, but you need to make exceptions for a few types of 
+    /// expressions. If your transformation will affect most or all of the
+    /// instruction and/or expression types, use <code>ExpressionVisitor</code>
+    /// directly instead.</remarks>
 	public class InstructionTransformer : ExpressionVisitor<Expression>
 	{
 		public InstructionTransformer()
@@ -87,9 +89,11 @@ namespace Reko.Core.Code
 
 		public virtual Instruction TransformPhiAssignment(PhiAssignment phi)
 		{
-			for (int i = 0; i < phi.Src.Arguments.Length; ++i)
+            var args = phi.Src.Arguments;
+			for (int i = 0; i < args.Length; ++i)
 			{
-				phi.Src.Arguments[i] = phi.Src.Arguments[i].Accept(this);
+                var value = args[i].Value.Accept(this);
+                args[i] = new PhiArgument(args[i].Block, value);
 			}
 			phi.Dst = (Identifier) phi.Dst.Accept(this);
 			return phi;
@@ -160,11 +164,11 @@ namespace Reko.Core.Code
             return new BinaryExpression(binExp.Operator, binExp.DataType, left, right);
 		}
 
-		public virtual Expression VisitCast(Cast cast)
-		{
-			cast.Expression = cast.Expression.Accept(this);
-			return cast;
-		}
+        public virtual Expression VisitCast(Cast cast)
+        {
+            var e = cast.Expression.Accept(this);
+            return new Cast(cast.DataType, e);
+        }
 
         public virtual Expression VisitConditionalExpression(ConditionalExpression cond)
         {
@@ -200,8 +204,8 @@ namespace Reko.Core.Code
 
 		public virtual Expression VisitFieldAccess(FieldAccess acc)
 		{
-			acc.Structure = acc.Structure.Accept(this);
-			return acc;
+			var str = acc.Structure.Accept(this);
+            return new FieldAccess(acc.DataType, str, acc.Field);
 		}
 
 		public virtual Expression VisitIdentifier(Identifier id)
@@ -241,7 +245,10 @@ namespace Reko.Core.Code
 		{
 			for (int i = 0; i < phi.Arguments.Length; ++i)
 			{
-				phi.Arguments[i] = phi.Arguments[i].Accept(this);
+                var value = phi.Arguments[i].Value.Accept(this);
+                phi.Arguments[i] = new PhiArgument(
+                    phi.Arguments[i].Block,
+                    value);
 			}
 			return phi;
 		}
@@ -271,8 +278,8 @@ namespace Reko.Core.Code
 
 		public virtual Expression VisitSlice(Slice slice)
 		{
-			slice.Expression = slice.Expression.Accept(this);
-			return slice;
+			var e = slice.Expression.Accept(this);
+			return new Slice(slice.DataType, e, slice.Offset);
 		}
 
 		public virtual Expression VisitTestCondition(TestCondition tc)

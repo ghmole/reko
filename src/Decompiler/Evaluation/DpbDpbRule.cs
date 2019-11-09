@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core;
+using Reko.Core.Code;
 using Reko.Core.Expressions;
 using System;
 using System.Collections.Generic;
@@ -30,7 +31,6 @@ namespace Reko.Evaluation
     public class DpbDpbRule
     {
         private EvaluationContext ctx;
-        private DepositBits dpbDef;
         private DepositBits dpbUse;
         private Identifier idDef;
         private Identifier idSrc;
@@ -45,17 +45,35 @@ namespace Reko.Evaluation
             this.dpbUse = dpb;
             if (!(dpb.Source is Identifier idDef))
                 return false;
-            var expDef = ctx.GetDefiningExpression(idDef);
-            if (expDef == null)
+            var stms = ctx.GetDefiningStatementClosure(idDef);
+            if (stms.Count == 0)
                 return false;
-            if (!(expDef is DepositBits dpbDef))
+            var items = stms.Select(GetDpbDetails).ToList();
+            var first = items[0].idSrc;
+            if (items.All(i => i.idSrc != null && i.idSrc == first && i.dpbDef.BitPosition == dpbUse.BitPosition))
+            {
+                this.idDef = idDef;
+                this.idSrc = items[0].idSrc;
+                return true;
+            }
+            else
+            {
                 return false;
-            if (!(dpbDef.Source is Identifier idSrc))
-                return false;
-            this.idDef = idDef;
-            this.dpbDef = dpbDef;
-            this.idSrc = idSrc;
-            return dpbDef.BitPosition == dpbUse.BitPosition;
+            }
+        }
+
+        private (DepositBits dpbDef, Identifier idSrc) GetDpbDetails(Statement stm)
+        {
+            if (stm.Instruction is Assignment ass &&
+                ass.Src is DepositBits dpbDef &&
+                dpbDef.Source is Identifier idSrc)
+            {
+                return (dpbDef, idSrc);
+            }
+            else
+            {
+                return (null, null);
+            }
         }
 
         public DepositBits Transform()

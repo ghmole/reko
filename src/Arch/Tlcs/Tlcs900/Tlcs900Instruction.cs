@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,60 +18,26 @@
  */
 #endregion
 
+using Reko.Core;
 using Reko.Core.Machine;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Opcode = Reko.Arch.Tlcs.Tlcs900.Tlcs900Opcode;
+using Opcode = Reko.Arch.Tlcs.Tlcs900.Tlcs900Mnemonic;
 
 namespace Reko.Arch.Tlcs.Tlcs900
 {
     public class Tlcs900Instruction : MachineInstruction
     {
-        public override InstructionClass InstructionClass
-        {
-            get { return InstructionClass.Linear; }
-        }
+        public Opcode Mnemonic;
 
-        public Opcode Opcode;
-        public MachineOperand op1;
-        public MachineOperand op2;
-        public MachineOperand op3;
-
-        public override bool IsValid 
-        {
-            get { return Opcode != Opcode.invalid; }
-        }
-
-        public override int OpcodeAsInteger
-        {
-            get { return (int)Opcode; }
-        }
-
-        public override MachineOperand GetOperand(int i)
-        {
-            throw new NotImplementedException();
-        }
+        public override int OpcodeAsInteger => (int) Mnemonic;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteOpcode(Opcode.ToString());
-            if (op1 != null)
-            {
-                writer.Tab();
-                op1.Write(writer, options);
-                if (op2 != null)
-                {
-                    writer.WriteString(",");
-                    op2.Write(writer, options);
-                    if (op3 != null)
-                    {
-                        writer.WriteString(",");
-                        op3.Write(writer, options);
-                    }
-                }
-            }
+            writer.WriteOpcode(Mnemonic.ToString());
+            RenderOperands(writer, options);
         }
     }
 }

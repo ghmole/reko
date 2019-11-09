@@ -1,8 +1,8 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 2017-2018 Christian Hostelet.
+ * Copyright (C) 2017-2019 Christian Hostelet.
  * inspired by work from:
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using Reko.Core.Rtl;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Reko.Core.Lib;
 
 namespace Reko.Arch.MicrochipPIC.Common
 {
@@ -44,7 +45,7 @@ namespace Reko.Arch.MicrochipPIC.Common
 
         protected IEnumerator<PICInstruction> dasm;
         protected PICInstruction instrCurr;
-        protected RtlClass rtlc;
+        protected InstrClass rtlc;
         protected List<RtlInstruction> rtlInstructions;
         protected RtlEmitter m;
         protected Identifier Wreg;    // cached WREG register identifier
@@ -77,7 +78,7 @@ namespace Reko.Arch.MicrochipPIC.Common
             while (dasm.MoveNext())
             {
                 instrCurr = dasm.Current;
-                rtlc = RtlClass.Linear;
+                rtlc = InstrClass.Linear;
                 rtlInstructions = new List<RtlInstruction>();
                 m = new RtlEmitter(rtlInstructions);
 
@@ -101,7 +102,15 @@ namespace Reko.Arch.MicrochipPIC.Common
         protected abstract void SetStatusFlags(Expression dst);
 
         protected Identifier FlagGroup(FlagM flags)
-            => binder.EnsureFlagGroup(PICRegisters.STATUS, (uint)flags, arch.GrfToString((uint)flags), PrimitiveType.Byte);
+            => binder.EnsureFlagGroup(
+                PICRegisters.STATUS, 
+                (uint)flags, 
+                arch.GrfToString(PICRegisters.STATUS, 
+                    "",
+                    (uint)flags), 
+                Bits.IsSingleBitSet((uint)flags)
+                    ? PrimitiveType.Bool
+                    : PrimitiveType.Byte);
 
         protected static MemoryAccess DataMem8(Expression ea)
             => new MemoryAccess(PICRegisters.GlobalData, ea, PrimitiveType.Byte);
@@ -178,7 +187,7 @@ namespace Reko.Arch.MicrochipPIC.Common
 
         protected void ArithCondSkip(Expression dst, Expression src, Expression cond, FSRIndexedMode indMode, Expression memPtr)
         {
-            rtlc = RtlClass.ConditionalTransfer;
+            rtlc = InstrClass.ConditionalTransfer;
             switch (indMode)
             {
                 case FSRIndexedMode.None:
@@ -217,18 +226,18 @@ namespace Reko.Arch.MicrochipPIC.Common
 
         protected void CondBranch(TestCondition test)
         {
-            rtlc = RtlClass.ConditionalTransfer;
-            if (instrCurr.op1 is PICOperandProgMemoryAddress brop)
+            rtlc = InstrClass.ConditionalTransfer;
+            if (instrCurr.Operands[0] is PICOperandProgMemoryAddress brop)
             {
                 m.Branch(test, PICProgAddress.Ptr(brop.CodeTarget.ToUInt32()), rtlc);
                 return;
             }
-            throw new InvalidOperationException($"Wrong PIC program relative address: op1={instrCurr.op1}.");
+            throw new InvalidOperationException($"Wrong PIC program relative address: op1={instrCurr.Operands[0]}.");
         }
 
         protected void CondSkipIndirect(Expression cond, FSRIndexedMode indMode, Expression memPtr)
         {
-            rtlc = RtlClass.ConditionalTransfer;
+            rtlc = InstrClass.ConditionalTransfer;
             switch (indMode)
             {
                 case FSRIndexedMode.None:
@@ -365,8 +374,8 @@ namespace Reko.Arch.MicrochipPIC.Common
                 return false;
             }
 
-            var (indMode, memPtr) = GetUnaryPtrs(instrCurr.op1, out memExpr);
-            dst = (DestIsWreg(instrCurr.op2) ? Wreg : memExpr);
+            var (indMode, memPtr) = GetUnaryPtrs(instrCurr.Operands[0], out memExpr);
+            dst = (DestIsWreg(instrCurr.Operands[1]) ? Wreg : memExpr);
             return (indMode, memPtr);
         }
 

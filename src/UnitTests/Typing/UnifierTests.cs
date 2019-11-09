@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ namespace Reko.UnitTests.Typing
 		public void Setup()
 		{
 			factory = new TypeFactory();
-			un = new Unifier(factory);
+			un = new Unifier(factory, null);
 		}
 
         private Identifier Id(string name, int regno)
@@ -399,8 +399,8 @@ namespace Reko.UnitTests.Typing
 			TypeVariable tv = new TypeVariable(1);
 			TypeVariable tv2 = new TypeVariable(2);
 			TypeVariable tv3 = new TypeVariable(3);
-			MemberPointer mp2 = new MemberPointer(tv, tv2, 0);
-			MemberPointer mp3 = new MemberPointer(tv, tv3, 0);
+			MemberPointer mp2 = new MemberPointer(tv, tv2, 2);
+			MemberPointer mp3 = new MemberPointer(tv, tv3, 2);
 			UnionType ut = new UnionType(null, null);
 			un.UnifyIntoUnion(ut, mp2);
 			un.UnifyIntoUnion(ut, mp3);
@@ -482,8 +482,8 @@ namespace Reko.UnitTests.Typing
 		[Test]
 		public void CompatibleFunctions()
 		{
-			FunctionType f1 = new FunctionType(null, null, new Identifier("", PrimitiveType.Int16, null));
-			FunctionType f2 = new FunctionType(null, null, new Identifier("", PrimitiveType.Int32, null));
+			FunctionType f1 = FunctionType.Action(new Identifier("", PrimitiveType.Int16, null));
+			FunctionType f2 = FunctionType.Action(new Identifier("", PrimitiveType.Int32, null));
 			Assert.IsTrue(un.AreCompatible(f1, f2));
 		}
 
@@ -558,6 +558,72 @@ namespace Reko.UnitTests.Typing
             var t2 = new Pointer(new FunctionType(Id("r0", 0), new[] { Id("r1", 1), Id("r2", 2) }), 32);
             Assert.IsTrue(un.AreCompatible(t1, t2));
             Assert.AreEqual("(ptr32 (fn word32 (word32, word32)))", un.Unify(t1, t2).ToString());
+        }
+
+        [Test(Description = "This happens when dealing with fs:[xxxxxxxx] on Win32")]
+        public void Unify_MemberPointer_Word32()
+        {
+            var t1 = PrimitiveType.Word32;
+            var t2 = new MemberPointer(
+                new Pointer(new StructureType { IsSegment = true }, 16),
+                PrimitiveType.Int32,
+                4);
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("(memptr (ptr16 (segment)) int32)", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Ptr32_up32()
+        {
+            var t1 = PrimitiveType.Create(Domain.Pointer | Domain.UnsignedInt, 32);
+            var t2 = new Pointer(PrimitiveType.Int32, 32);
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("(ptr32 int32)", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Unknowns_ZeroSized()
+        {
+            var t1 = new UnknownType();
+            var t2 = new UnknownType();
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("<unknown>", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Unknowns_One_Sized1()
+        {
+            var t1 = new UnknownType();
+            var t2 = new UnknownType(4);
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("<unknown32>", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Unknowns_One_Sized2()
+        {
+            var t1 = new UnknownType(4);
+            var t2 = new UnknownType();
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("<unknown32>", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Unknowns_SameSized()
+        {
+            var t1 = new UnknownType(4);
+            var t2 = new UnknownType(4);
+            Assert.IsTrue(un.AreCompatible(t1, t2));
+            Assert.AreEqual("<unknown32>", un.Unify(t1, t2).ToString());
+        }
+
+        [Test]
+        public void Unify_Unknowns_DifferentSized()
+        {
+            var t1 = new UnknownType(4);
+            var t2 = new UnknownType(8);
+            Assert.IsFalse(un.AreCompatible(t1, t2));
+            Assert.AreEqual("(union (<unknown32> u0) (<unknown64> u1))", un.Unify(t1, t2).ToString());
         }
     }
 }

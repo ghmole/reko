@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ namespace Reko.UnitTests.Scanning
             var sc = new ServiceContainer();
             var eventListener = new FakeDecompilerEventListener();
             sc.AddService<DecompilerEventListener>(eventListener);
-            sc.AddService<DecompilerHost>(new FakeDecompilerHost());
+            sc.AddService<IDecompiledFileService>(new FakeDecompiledFileService());
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
             var entryPoints = new List<ImageSymbol>();
             var asm = new X86Assembler(sc, platform, addrBase, entryPoints);
@@ -73,7 +73,7 @@ namespace Reko.UnitTests.Scanning
                 program,
                 new ImportResolver(project, program, eventListener),
                 sc);
-            scanner.EnqueueImageSymbol(new ImageSymbol(addrBase), true);
+            scanner.EnqueueImageSymbol(ImageSymbol.Procedure(arch, addrBase), true);
             scanner.ScanImage();
         }
 
@@ -122,11 +122,12 @@ namespace Reko.UnitTests.Scanning
             program.Procedures.Values[0].Write(false, sw);
             var sExp = @"// fn0C00_0000
 // Return size: 2
-void fn0C00_0000()
+define fn0C00_0000
 fn0C00_0000_entry:
+	sp = fp
+	Top = 0
 	// succ:  l0C00_0000
 l0C00_0000:
-	sp = fp
 	branch cx == 0x0000 l0C00_0002
 	// succ:  l0C00_0000_1 l0C00_0002
 l0C00_0000_1:

@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -139,8 +139,6 @@ namespace Reko.UnitTests.Scanning
             var call = new CallInstruction(new ProcedureConstant(arch.PointerType, procCalling), new CallSite(0, 0));
             var block = new Block(procCalling, "test");
             var stmOld = new Statement(42, call, block);
-            callgraph.AddStatement(stmOld);
-            callgraph.AddProcedure(procCalling);
             callgraph.AddEdge(stmOld, procCalling);
 
             var cloner = new BlockCloner(null, procCalling, callgraph);

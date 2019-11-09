@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,6 @@ namespace Reko.Environments.AtariTOS
     // the first one since it is the system call selector.
     public class TOSCallingConvention : CallingConvention
     {
-        private ArgumentDeserializer argDeser;
         private IProcessorArchitecture arch;
 
         public TOSCallingConvention(IProcessorArchitecture arch)
@@ -61,6 +60,16 @@ namespace Reko.Environments.AtariTOS
             // AFAIK the calling convention on Atari TOS is caller-cleanup, 
             // so the only thing we clean up is the return value on the stack.
             ccr.CallerCleanup(4);
+        }
+
+        public bool IsArgument(Storage stg)
+        {
+            return stg is StackStorage;
+        }
+
+        public bool IsOutArgument(Storage stg)
+        {
+            return Registers.d0 == stg;
         }
     }
 }

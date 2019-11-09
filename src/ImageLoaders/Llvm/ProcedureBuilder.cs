@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,11 +61,6 @@ namespace Reko.ImageLoaders.LLVM
             EnsureBlock(null);
             block.Statements.Add(linearAddress++, instr);
             return block.Statements.Last;
-        }
-
-        public override Identifier Register(int i)
-        {
-            throw new NotImplementedException();
         }
 
         public override void Return()

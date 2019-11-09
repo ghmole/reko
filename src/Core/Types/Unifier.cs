@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,31 +23,57 @@ using Reko.Core.Expressions;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 namespace Reko.Core.Types
 {
 	/// <summary>
-	/// Performs type unification, returning a general unifier for the two parameters.
+	/// Performs type unification, returning a general unifier for the two
+    /// data type parameters.
 	/// </summary>
 	public class Unifier
 	{
-		private TypeFactory factory;
+		private readonly TypeFactory factory;
+        private readonly TraceSwitch trace;
+		private readonly IDictionary<Tuple<DataType, DataType>, bool> cache = new Dictionary<Tuple<DataType, DataType>, bool>();
 
         public Unifier()
-            : this(new TypeFactory())
+            : this(new TypeFactory(), null)
         {
         }
 
-		public Unifier(TypeFactory factory)
+		public Unifier(TypeFactory factory, TraceSwitch trace)
 		{
 			this.factory = factory;
+            this.trace = trace;
         }
 
 		public bool AreCompatible(DataType a, DataType b)
 		{
+			return AreCompatible(a, b, 0);
+		}
+		
+		private bool AreCompatible(DataType a, DataType b, int depth)
+		{
+			var typePair = new Tuple<DataType, DataType>(a, b);
+
+			if (cache.TryGetValue(typePair, out bool d))
+				return d;
+
+			d = DoAreCompatible(a, b, depth);
+			cache[typePair] = d;
+
+			return d;
+		}
+
+		private bool DoAreCompatible(DataType a, DataType b, int depth)
+		{
 			if (a == null || b == null)
 				return false;
 
+			if (depth > 20)
+				throw new StackOverflowException("Way too deep");     //$BUG: discover why datatypes recurse so deep.
+			
 			PrimitiveType pa = a as PrimitiveType;
 			PrimitiveType pb = b as PrimitiveType;
 			if (pa != null && pb != null)
@@ -62,9 +88,9 @@ namespace Reko.Core.Types
             if (tra != null && trb != null)
                 return tra == trb;
             if (tra != null)
-                return AreCompatible(tra.Referent, b);
+                return AreCompatible(tra.Referent, b, ++depth);
             if (trb != null)
-                return AreCompatible(a, trb.Referent);
+                return AreCompatible(a, trb.Referent, ++depth);
 
 			TypeVariable tva = a as TypeVariable;
 			TypeVariable tvb = b as TypeVariable;
@@ -83,16 +109,16 @@ namespace Reko.Core.Types
 			Pointer ptrA = a as Pointer;
 			Pointer ptrB = b as Pointer;
 			if (ptrA != null)
-				return IsCompatibleWithPointer(ptrA, b);
+				return IsCompatibleWithPointer(ptrA, b, ++depth);
 			if (ptrB != null)
-				return IsCompatibleWithPointer(ptrB, a);
+				return IsCompatibleWithPointer(ptrB, a, ++depth);
 
 			MemberPointer mpA = a as MemberPointer;
 			MemberPointer mpB = b as MemberPointer;
 			if (mpA != null)
-				return IsCompatibleWithMemberPointer(mpA, b);
+				return IsCompatibleWithMemberPointer(mpA, b, ++depth);
 			if (mpB != null)
-				return IsCompatibleWithMemberPointer(mpB, a);
+				return IsCompatibleWithMemberPointer(mpB, a, ++depth);
 
 			StructureType sa = a as StructureType;
 			StructureType sb = b as StructureType;
@@ -105,7 +131,7 @@ namespace Reko.Core.Types
 			ArrayType ab = b as ArrayType;
 			if (aa != null && ab != null)
 			{
-				return AreCompatible(aa.ElementType, ab.ElementType);
+				return AreCompatible(aa.ElementType, ab.ElementType, ++depth);
 			}
 
 			UnionType ua = a as UnionType;
@@ -126,10 +152,20 @@ namespace Reko.Core.Types
             {
                 return true;
             }
-			return a is UnknownType || b is UnknownType;
+            if (a is UnknownType unkA)
+            {
+                if (unkA.Size == 0 || a.Size == b.Size)
+                    return true;
+            }
+            if (b is UnknownType unkB)
+            {
+                if (unkB.Size == 0 || a.Size == b.Size)
+                    return true;
+            }
+            return false;
 		}
 
-		public bool AreCompatible(StructureType a, StructureType b)
+		private bool AreCompatible(StructureType a, StructureType b)
 		{
 			if (a.Size > 0 && b.Size > 0)
 			{
@@ -138,19 +174,19 @@ namespace Reko.Core.Types
 			return true;
 		}
 
-		public bool IsCompatibleWithPointer(Pointer ptrA, DataType b)
+		private bool IsCompatibleWithPointer(Pointer ptrA, DataType b, int depth)
 		{
 			Pointer ptrB = b as Pointer;
             if (ptrB != null)
             {
-                if (AreCompatible(ptrA.Pointee, ptrB.Pointee))
+                if (AreCompatible(ptrA.Pointee, ptrB.Pointee, ++depth))
                     return true;
                 var arrayA = ptrA.Pointee as ArrayType;
                 var arrayB = ptrB.Pointee as ArrayType;
                 if (arrayA != null)
-                    return AreCompatible(arrayA.ElementType, ptrB.Pointee);
+                    return AreCompatible(arrayA.ElementType, ptrB.Pointee, ++depth);
                 else if (arrayB != null)
-                    return AreCompatible(ptrA.Pointee, arrayB.ElementType);
+                    return AreCompatible(ptrA.Pointee, arrayB.ElementType, ++depth);
                 else
                     return false;
             }
@@ -163,18 +199,20 @@ namespace Reko.Core.Types
 			return false;
 		}
 
-		public bool IsCompatibleWithMemberPointer(MemberPointer mpA, DataType b)
+		private bool IsCompatibleWithMemberPointer(MemberPointer mpA, DataType b, int depth)
 		{
 			MemberPointer mpB = b as MemberPointer;
             if (mpB != null)
                 return
-                    AreCompatible(mpA.BasePointer, mpB.BasePointer) && 
-				    AreCompatible(mpA.Pointee, mpB.Pointee);
+                    AreCompatible(mpA.BasePointer, mpB.BasePointer, ++depth) && 
+				    AreCompatible(mpA.Pointee, mpB.Pointee, ++depth);
 			PrimitiveType pb = b as PrimitiveType;
-			if (pb != null)
+			if (pb != null && pb.BitSize == mpA.BitSize)
 			{
-				if (pb == PrimitiveType.Word16 || pb.Domain == Domain.Pointer ||
-                    pb.Domain == Domain.Selector || pb.Domain == Domain.Offset)
+				if (pb == PrimitiveType.Word16 || pb == PrimitiveType.Word32  ||
+                    pb.Domain == Domain.Pointer ||
+                    pb.Domain == Domain.Selector ||
+                    pb.Domain == Domain.Offset)
 					return true;
 			}
 			return false;
@@ -186,9 +224,14 @@ namespace Reko.Core.Types
 		{
             if (++recDepth > 100)
             {
-               //$BUG: should emit warning in the error log.
                 --recDepth;
-                Debug.Print("Exceeded stack depth, giving up");
+                DebugEx.Error(trace, "Unifier: exceeded stack depth, giving up");
+                if (a == null && b == null)
+                    return null;
+                if (a == null)
+                    return b;
+                if (b == null)
+                    return a;
                 return factory.CreateUnionType(null, null, new[] { a, b });
             }
             var u = UnifyInternal(a, b);
@@ -206,10 +249,16 @@ namespace Reko.Core.Types
 			if (a == b)
 				return a;
 
-			if (a is UnknownType)
-				return b;
-			if (b is UnknownType)
-				return a;
+            if (a is UnknownType)
+            {
+                if (a.Size == 0 || a.Size == b.Size)
+                    return b;
+            }
+            if (b is UnknownType)
+            {
+                if (b.Size == 0 || a.Size == b.Size)
+                    return a;
+            }
 
             if (a is VoidType)
                 return b;
@@ -543,8 +592,7 @@ namespace Reko.Core.Types
 				else
 				{
                     var fieldType = Unify(fa.DataType, fb.DataType);
-                    string fieldName;
-                    if (!TryMakeFieldName(fa, fb, out fieldName))
+                    if (!TryMakeFieldName(fa, fb, out string fieldName))
                         throw new NotSupportedException(
                             string.Format(
                                 "Failed to unify field '{0}' in structure '{1}' with field '{2}' in structure '{3}'.",
@@ -707,11 +755,11 @@ namespace Reko.Core.Types
         public UnionType UnifyUnions(UnionType u1, UnionType u2)
 		{
 			UnionType u = new UnionType(null, null);
-			foreach (UnionAlternative a in u1.Alternatives.Values)
+			foreach (UnionAlternative a in u1.Alternatives.Values.ToList())
 			{
 				UnifyIntoUnion(u, a.DataType);
 			}
-			foreach (UnionAlternative a in u2.Alternatives.Values)
+			foreach (UnionAlternative a in u2.Alternatives.Values.ToList())
 			{
 				UnifyIntoUnion(u, a.DataType);
 			}
@@ -725,7 +773,7 @@ namespace Reko.Core.Types
 
 		private DataType Nyi(DataType a, DataType b)
 		{
-			throw new NotImplementedException(string.Format("Don't know how to unify {0} with {1}.", a, b));
+            throw new NotImplementedException($"Don't know how to unify {a} with {b}.");
 		}
 	}
 }

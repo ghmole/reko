@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,16 +30,22 @@ namespace Reko.Arch.RiscV
 {
     public partial class RiscVRewriter
     {
-        private void RewriteAdd()
+        private void RewriteAdd(PrimitiveType dtDst = null)
         {
-            var dst = RewriteOp(instr.op1);
-            var src1 = RewriteOp(instr.op2);
-            var src2 = RewriteOp(instr.op3);
+            var src1 = RewriteOp(instr.Operands[1]);
+            var src2 = RewriteOp(instr.Operands[2]);
+            var dst = RewriteOp(instr.Operands[0]);
+            RewriteAdd(dst, src1, src2, dtDst);
+        }
+
+        private void RewriteAdd(Expression dst, Expression src1, Expression src2, PrimitiveType dtDst = null)
+        { 
             Expression src;
             if (src1.IsZero)
             {
                src = src2;
-            } else if (src2.IsZero)
+            }
+            else if (src2.IsZero)
             {
                 src = src1;
             }
@@ -47,21 +53,36 @@ namespace Reko.Arch.RiscV
             {
                 src = m.IAdd(src1, src2);
             }
-            m.Assign(dst, src);
+            MaybeSignExtend(dst, src, dtDst);
+        }
+
+        private void RewriteAddi16sp()
+        {
+            var dst = binder.EnsureRegister(arch.StackRegister);
+            var imm = ((ImmediateOperand) instr.Operands[0]).Value.ToInt32();
+            m.Assign(dst, m.IAddS(dst, imm));
+        }
+
+        private void RewriteAddi4spn()
+        {
+            var src = binder.EnsureRegister(arch.StackRegister);
+            var imm = ((ImmediateOperand) instr.Operands[1]).Value.ToInt32();
+            var dst = RewriteOp(instr.Operands[0]);
+            m.Assign(dst, m.IAddS(src, imm));
         }
 
         private void RewriteAddw()
         {
-            var dst = RewriteOp(instr.op1);
-            var src1 = RewriteOp(instr.op2);
+            var dst = RewriteOp(instr.Operands[0]);
+            var src1 = RewriteOp(instr.Operands[1]);
             Expression src2;
-            if (instr.op3 is ImmediateOperand imm2)
+            if (instr.Operands[2] is ImmediateOperand imm2)
             {
                 src2 = Constant.Int32(imm2.Value.ToInt32());
             }
             else
             {
-                src2 = RewriteOp(instr.op3);
+                src2 = RewriteOp(instr.Operands[2]);
             }
 
             Expression src;
@@ -80,44 +101,101 @@ namespace Reko.Arch.RiscV
             m.Assign(dst, m.Cast(PrimitiveType.Int64, src));
         }
 
-        private void RewriteAnd()
+        private void RewriteBinOp(Func<Expression,Expression, Expression> op, PrimitiveType dtDst = null)
         {
-            var dst = RewriteOp(instr.op1);
-            var src1 = RewriteOp(instr.op2);
-            var src2 = RewriteOp(instr.op3);
-            m.Assign(dst, m.And(src1, src2));
+            var src1 = RewriteOp(instr.Operands[1]);
+            var src2 = RewriteOp(instr.Operands[2]);
+            var dst = RewriteOp(instr.Operands[0]);
+            MaybeSignExtend(dst, op(src1, src2), dtDst);
+        }
+
+        private void RewriteCompressedAdd(PrimitiveType dtDst = null)
+        {
+            var src1 = RewriteOp(instr.Operands[1]);
+            var dst = RewriteOp(instr.Operands[0]);
+            RewriteAdd(dst, dst, src1, dtDst);
+        }
+
+        private void RewriteCompressedBinOp(Func<Expression, Expression, Expression> op, PrimitiveType dtDst = null)
+        {
+            var src1 = RewriteOp(instr.Operands[1]);
+            var dst = RewriteOp(instr.Operands[0]);
+            var val = op(dst, src1);
+            MaybeSignExtend(dst, val, dtDst);
+        }
+
+        private void RewriteLi()
+        {
+            var src = RewriteOp(instr.Operands[1]);
+            var dst = RewriteOp(instr.Operands[0]);
+            m.Assign(dst, src);
         }
 
         private void RewriteLoad(DataType dt)
         {
-            var dst = RewriteOp(instr.op1);
-            var baseReg = RewriteOp(instr.op2);
-            var offset = ((ImmediateOperand)instr.op3).Value;
-            Expression ea = baseReg;
-            if (!offset.IsZero)
+            var dst = RewriteOp(instr.Operands[0]);
+            Expression ea;
+            if (instr.Operands[1] is MemoryOperand mem)
             {
-                ea = m.IAdd(ea, offset);
+                var baseReg = binder.EnsureRegister(mem.Base);
+                ea = baseReg;
+                if (mem.Offset != 0)
+                {
+                    ea = m.IAddS(ea, mem.Offset);
+                }
+            }
+            else
+            {
+                var baseReg = RewriteOp(instr.Operands[1]);
+                var offset = ((ImmediateOperand) instr.Operands[2]).Value;
+                ea = baseReg;
+                if (!offset.IsZero)
+                {
+                    ea = m.IAdd(ea, offset);
+                }
             }
             Expression src = m.Mem(dt, ea);
             if (dst.DataType.Size != src.DataType.Size)
             {
-                src = m.Cast(arch.WordWidth, src);
+                src = m.Cast(arch.NaturalSignedInteger, src);
+            }
+            m.Assign(dst, src);
+        }
+
+        private void RewriteLxsp(DataType dt)
+        {
+            var dst = RewriteOp(instr.Operands[0]);
+            var imm = ((ImmediateOperand) instr.Operands[1]).Value.ToInt32();
+            Expression ea = binder.EnsureRegister(arch.StackRegister);
+            if (imm != 0)
+                ea = m.IAddS(ea, imm);
+            Expression src = m.Mem(dt, ea);
+            if (dt.BitSize < dst.DataType.BitSize)
+            {
+                src = m.Cast(arch.NaturalSignedInteger, src);
             }
             m.Assign(dst, src);
         }
 
         private void RewriteLui()
         {
-            var dst = RewriteOp(instr.op1);
-            var ui = ((ImmediateOperand)instr.op2).Value;
+            var dst = RewriteOp(instr.Operands[0]);
+            var ui = ((ImmediateOperand)instr.Operands[1]).Value;
             m.Assign(dst, Constant.Word(dst.DataType.BitSize, ui.ToUInt32() << 12));
+        }
+
+        private void RewriteCompressedMv()
+        {
+            var src = RewriteOp(instr.Operands[1]);
+            var dst = RewriteOp(instr.Operands[0]);
+            m.Assign(dst, src);
         }
 
         private void RewriteOr()
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             var src = left;
             if (!right.IsZero)
             {
@@ -128,26 +206,26 @@ namespace Reko.Arch.RiscV
 
         private void RewriteShift(Func<Expression, Expression, Expression> fn)
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             m.Assign(dst, fn(left, right));
         }
 
         private void RewriteShiftw(Func<Expression, Expression, Expression> fn)
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
-            var src = m.Cast(PrimitiveType.Int32, fn(left, right));
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
+            var src = m.Cast(PrimitiveType.Word32, fn(left, right));
             m.Assign(dst, m.Cast(PrimitiveType.Int64, src));
         }
 
         private void RewriteSlt(bool unsigned)
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
+            var dst = RewriteOp(instr.Operands[0]);
             Expression src;
             if (unsigned)
             {
@@ -167,46 +245,86 @@ namespace Reko.Arch.RiscV
             m.Assign(dst, m.Cast(arch.WordWidth, src));
         }
 
+        private void RewriteSlti(bool unsigned)
+        {
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
+            var dst = RewriteOp(instr.Operands[0]);
+            Expression src;
+            if (unsigned)
+            {
+                src = m.Ult(left, right);
+            }
+            else
+            {
+                src = m.Lt(left, right);
+            }
+            m.Assign(dst, m.Cast(arch.WordWidth, src));
+        }
+
         private void RewriteStore(DataType dt)
         {
-            var src = RewriteOp(instr.op1);
-            var baseReg = RewriteOp(instr.op2);
-            var offset = ((ImmediateOperand)instr.op3).Value;
-            Expression ea = baseReg;
-            if (!offset.IsZero)
+            var src = RewriteOp(instr.Operands[0]);
+            if (instr.Operands[1] is MemoryOperand mem)
             {
-                ea = m.IAdd(ea, offset);
+                RewriteStore(dt, binder.EnsureRegister(mem.Base), mem.Offset, src);
+            }
+            else
+            {
+                var baseReg = RewriteOp(instr.Operands[1]);
+                var offset = ((ImmediateOperand) instr.Operands[2]).Value.ToInt32();
+                RewriteStore(dt, baseReg, offset, src);
+            }
+        }
+
+        private void RewriteStore(DataType dt, Expression baseReg, int offset, Expression src)
+        {
+            Expression ea = baseReg;
+            if (offset != 0)
+            {
+                ea = m.IAddS(ea, offset);
+            }
+            if (src.DataType.BitSize > dt.BitSize)
+            {
+                src = m.Cast(dt, src);
             }
             m.Assign(m.Mem(dt, ea), src);
         }
 
+        private void RewriteSxsp(DataType dt)
+        {
+            var src = RewriteOp(instr.Operands[0]);
+            var baseReg = binder.EnsureRegister(arch.StackRegister);
+            var offset = ((ImmediateOperand) instr.Operands[1]).Value.ToInt32();
+            RewriteStore(dt, baseReg, offset, src);
+        }
+
         private void RewriteSub()
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             m.Assign(dst, m.ISub(left, right));
         }
 
         private void RewriteSubw()
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             var src = left;
             if (!right.IsZero)
             {
                 src = m.ISub(src, right);
-                src.DataType = PrimitiveType.Int32;
             }
-            m.Assign(dst, m.Cast(PrimitiveType.Int64, src));
+            m.Assign(dst, m.Cast(PrimitiveType.Int64, m.Cast(PrimitiveType.Word32, src)));
         }
 
         private void RewriteXor()
         {
-            var dst = RewriteOp(instr.op1);
-            var left = RewriteOp(instr.op2);
-            var right = RewriteOp(instr.op3);
+            var dst = RewriteOp(instr.Operands[0]);
+            var left = RewriteOp(instr.Operands[1]);
+            var right = RewriteOp(instr.Operands[2]);
             var src = left;
             if (!right.IsZero)
             {

@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,9 +33,9 @@ namespace Reko.Core.Code
     /// </summary>
     public class IdentifierCollector : InstructionVisitorBase
     {
-        private SortedList<string, Identifier> identifiers;
+        private readonly IDictionary<string, Identifier> identifiers;
 
-        public IdentifierCollector(SortedList<string, Identifier> ids)
+        public IdentifierCollector(IDictionary<string, Identifier> ids)
         {
             this.identifiers = ids;
         }

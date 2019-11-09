@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,6 +134,31 @@ namespace Reko.Core.CLanguage
             };
         }
 
+        public Func<NamedDataType, NamedDataType> VisitReference(ReferenceDeclarator reference)
+        {
+            Func<NamedDataType, NamedDataType> fn;
+            if (reference.Referent!= null)
+            {
+                fn = reference.Referent.Accept(this);
+            }
+            else
+            {
+                fn = f => f;
+            }
+            return (nt) =>
+            {
+                var size = PointerSize();
+                nt.DataType = new ReferenceType_v1
+                {
+                    Referent = nt.DataType,
+                    Size = size,
+                    //$TODO: Qualifier
+                };
+                nt.Size = PointerSize();
+                return fn(nt);
+            };
+        }
+
         private int PointerSize()
         {
             if (specs.OfType<TypeQualifier>()
@@ -195,7 +220,8 @@ namespace Reko.Core.CLanguage
             else
             {
                 var ntde = new NamedDataTypeExtractor(platform, decl.DeclSpecs, symbolTable);
-                var nt = ConvertArrayToPointer(ntde.GetNameAndType(decl.Declarator));
+                var ntTmp = ntde.GetNameAndType(decl.Declarator);
+                var nt = ConvertArrayToPointer(ntTmp);
                 var kind = GetArgumentKindFromAttributes("arg", decl.Attributes);
                 return new Argument_v1
                 {
@@ -267,13 +293,6 @@ namespace Reko.Core.CLanguage
             }
         }
 
-        private int ToStackSize(int p)
-        {
-            const int align = 4;
-            //$REVIEW: depends on type and call convention + alignment
-            return ((p + (align-1)) / align) * align;
-        }
-        
         public Func<NamedDataType,NamedDataType> VisitCallConvention(CallConventionDeclarator conv)
         {
             ApplyCallConvention(conv.Convention);
@@ -390,6 +409,11 @@ namespace Reko.Core.CLanguage
 
         public SerializedType VisitTypedef(TypeDefName typeDefName)
         {
+            if (symbolTable.PrimitiveTypes.TryGetValue(typeDefName.Name, out var prim))
+            {
+                byteSize = prim.ByteSize;
+                return prim;
+            }
             if (!symbolTable.NamedTypes.TryGetValue(typeDefName.Name, out var type))
             {
                 throw new ApplicationException(string.Format(
@@ -503,7 +527,7 @@ namespace Reko.Core.CLanguage
             }
         }
 
-        private IEnumerable<SerializedUnionAlternative> ExpandUnionFields(IEnumerable<StructDecl> decls)
+        private IEnumerable<UnionAlternative_v1> ExpandUnionFields(IEnumerable<StructDecl> decls)
         {
             foreach (var decl in decls)
             {
@@ -511,7 +535,7 @@ namespace Reko.Core.CLanguage
                 foreach (var declarator in decl.FieldDeclarators)
                 {
                     var nt = ndte.GetNameAndType(declarator);
-                    yield return new SerializedUnionAlternative
+                    yield return new UnionAlternative_v1
                     {
                         Name = nt.Name,
                         Type = nt.DataType

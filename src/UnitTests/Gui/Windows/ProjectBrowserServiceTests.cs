@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,13 +18,13 @@
  */
 #endregion
 
+using Moq;
 using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Types;
 using Reko.Gui;
 using Reko.Gui.Controls;
 using Reko.UserInterfaces.WindowsForms;
-using Rhino.Mocks;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -35,7 +35,6 @@ using System.Linq;
 using System.Windows.Forms;
 using System.Xml;
 using System.Xml.Linq;
-using ContextMenu = System.Windows.Forms.ContextMenu;
 using DataObject = System.Windows.Forms.DataObject;
 using DragDropEffects = System.Windows.Forms.DragDropEffects;
 using DragEventArgs = System.Windows.Forms.DragEventArgs;
@@ -52,29 +51,29 @@ namespace Reko.UnitTests.Gui.Windows
                 : "&#xA;";
         private readonly char sep = Path.DirectorySeparatorChar;
 
-        private MockRepository mr;
         private ServiceContainer sc;
         private FakeTreeView fakeTree;
-        private ITreeView mockTree;
-        private ITreeNodeCollection mockNodes;
+        private Mock<ITreeView> mockTree;
+        private Mock<ITreeNodeCollection> mockNodes;
         private Program program;
         private Project project;
-        private IDecompilerShellUiService uiSvc;
-        private IUiPreferencesService uiPrefSvc;
+        private Mock<IDecompilerShellUiService> uiSvc;
+        private Mock<IUiPreferencesService> uiPrefSvc;
+        private Mock<ITabPage> tabPage;
 
         [SetUp]
         public void Setup()
         {
-            mr = new MockRepository();
             sc = new ServiceContainer();
-            mockTree = mr.StrictMock<ITreeView>();
-            mockNodes = mr.StrictMock<ITreeNodeCollection>();
-            uiSvc = mr.StrictMock<IDecompilerShellUiService>();
-            uiPrefSvc = mr.Stub<IUiPreferencesService>();
-            mockTree.Stub(t => t.Nodes).Return(mockNodes);
-            uiSvc.Stub(u => u.SetContextMenu(null, 0)).IgnoreArguments();
-            sc.AddService<IDecompilerShellUiService>(uiSvc);
-            sc.AddService<IUiPreferencesService>(uiPrefSvc);
+            mockTree = new Mock<ITreeView>();
+            mockNodes = new Mock<ITreeNodeCollection>();
+            uiSvc = new Mock<IDecompilerShellUiService>();
+            uiPrefSvc = new Mock<IUiPreferencesService>();
+            tabPage = new Mock<ITabPage>();
+            mockTree.Setup(t => t.Nodes).Returns(mockNodes.Object);
+            uiSvc.Setup(u => u.SetContextMenu(It.IsAny<object>(), It.IsAny<int>()));
+            sc.AddService<IDecompilerShellUiService>(uiSvc.Object);
+            sc.AddService<IUiPreferencesService>(uiPrefSvc.Object);
             fakeTree = new FakeTreeView();
         }
 
@@ -117,6 +116,8 @@ namespace Reko.UnitTests.Gui.Windows
         private class FakeTreeView : ITreeView
         {
             public event EventHandler AfterSelect;
+            public event EventHandler<Reko.Gui.Controls.TreeViewEventArgs> AfterExpand;
+            public event EventHandler<Reko.Gui.Controls.TreeViewEventArgs> BeforeExpand;
             public event DragEventHandler DragEnter;
             public event DragEventHandler DragOver;
             public event DragEventHandler DragDrop;
@@ -182,6 +183,11 @@ namespace Reko.UnitTests.Gui.Windows
                 return new FakeTreeNode { Text = text };
             }
 
+            public void PerformBeforeExpand(Reko.Gui.Controls.TreeViewEventArgs e)
+            {
+                BeforeExpand(this, e);
+            }
+
             public void PerformDragEnter(DragEventArgs e)
             {
                 DragEnter(this, e);
@@ -207,7 +213,22 @@ namespace Reko.UnitTests.Gui.Windows
                 MouseWheel(this, e);
             }
 
+            public void PerformGotFocus(EventArgs e)
+            {
+                GotFocus(this, e);
+            }
+
+            public void PerformLostFocus(EventArgs e)
+            {
+                LostFocus(this, e);
+            }
+
             public void Invoke(Action action)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void Focus()
             {
                 throw new NotImplementedException();
             }
@@ -315,11 +336,19 @@ namespace Reko.UnitTests.Gui.Windows
             public string Text { get; set; }
             public string ToolTipText { get; set; }
 
+            public void Collapse()
+            {
+            }
+
             public void Expand()
             {
             }
 
             public void Invoke(Action a) { a();  }
+
+            public void Remove()
+            {
+            }
         }
 
         [Designer(typeof(TestDesigner))]
@@ -361,8 +390,11 @@ namespace Reko.UnitTests.Gui.Windows
             public string Text { get; set; }
             public string ToolTipText { get; set; }
 
+            public void Collapse() { }
             public void Expand() { }
             public void Invoke(Action a) { a(); }
+
+            public void Remove() { }
         }
 
         #endregion
@@ -370,7 +402,7 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_NoProject()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             pbs.Load(null);
 
             Expect("<?xml version=\"1.0\" encoding=\"utf-16\"?><root><node text=\"(No project loaded)\" /></root>");
@@ -383,10 +415,10 @@ namespace Reko.UnitTests.Gui.Windows
             var mem = new MemoryArea(Address.Ptr32(0x12340000), new byte[0x1000]);
             var segmentMap = new SegmentMap(Address.Ptr32(0x12300000));
             segmentMap.AddSegment(mem, ".text", AccessMode.ReadExecute);
-            var arch = mr.StrictMock<ProcessorArchitecture>("mmix");
-            arch.Description = "Foo Processor";
-            var platform = new DefaultPlatform(sc, arch);
-            this.program = new Program(segmentMap, arch, platform);
+            var arch = new Mock<ProcessorArchitecture>("mmix");
+            arch.Object.Description = "Foo Processor";
+            var platform = new DefaultPlatform(sc, arch.Object);
+            this.program = new Program(segmentMap, arch.Object, platform);
             this.program.Name = "foo.exe";
             this.program.Filename = @"c:\test\foo.exe";
             project.Programs.Add(program);
@@ -395,7 +427,7 @@ namespace Reko.UnitTests.Gui.Windows
         private void Given_ImportedFunction(Address addr, string module, string functionName)
         {
             Assert.IsNotNull(program);
-            this.program.ImportReferences.Add(addr, new NamedImportReference(addr, module, functionName));
+            this.program.ImportReferences.Add(addr, new NamedImportReference(addr, module, functionName, SymbolType.ExternalProcedure));
         }
 
         private void Given_ImageMapItem(uint address)
@@ -413,7 +445,7 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_SingleBinary()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             Given_Project();
             Given_ProgramWithOneSegment();
             Given_ImageMapItem(0x12340000);
@@ -429,7 +461,9 @@ namespace Reko.UnitTests.Gui.Windows
                     "text=\"foo.exe\" " +
                     "tip=\"c:\\test\\foo.exe" + cr + "12300000\" " +
                     "tag=\"ProgramDesigner\">" +
-                    "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "<node text=\"Architectures\" tag=\"TreeNodeCollectionDesigner\">" +
+                        "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "</node>" +
                     "<node text=\"(Unknown operating environment)\" tag=\"PlatformDesigner\" />" +
                     "<node " + 
                         "text=\".text\" " +
@@ -447,7 +481,7 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_SingleBinary_NoGlobals()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             Given_Project();
             Given_ProgramWithOneSegment();
 
@@ -462,7 +496,9 @@ namespace Reko.UnitTests.Gui.Windows
                     "text=\"foo.exe\" " +
                     "tip=\"c:\\test\\foo.exe" + cr + "12300000\" " +
                     "tag=\"ProgramDesigner\">" +
-                    "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "<node text=\"Architectures\" tag=\"TreeNodeCollectionDesigner\">"  +
+                        "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />"  +
+                    "</node>" +
                     "<node text=\"(Unknown operating environment)\" tag=\"PlatformDesigner\" />" +
                     "<node " +
                         "text=\".text\" " +
@@ -476,11 +512,10 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_AddBinary()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             Given_Project();
             Given_ProgramWithOneSegment();
             Given_ImageMapItem(0x12340000);
-            mr.ReplayAll();
 
             pbs.Load(project);
 
@@ -496,7 +531,9 @@ namespace Reko.UnitTests.Gui.Windows
 
             Expect("<?xml version=\"1.0\" encoding=\"utf-16\"?>" +
                 "<root><node text=\"foo.exe\" tip=\"c:\\test\\foo.exe" + cr + "12300000\" tag=\"ProgramDesigner\">" +
-                    "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "<node text=\"Architectures\" tag=\"TreeNodeCollectionDesigner\">" +
+                        "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "</node>" +
                     "<node text=\"(Unknown operating environment)\" tag=\"PlatformDesigner\" />" +
                     "<node text=\".text\" tip=\".text" + cr + "Address: 12340000" + cr + "Size: 1000" + cr + "r-x\" tag=\"ImageMapSegmentNodeDesigner\">" +
                         "<node text=\"Global variables\" tag=\"GlobalVariablesNodeDesigner\" />" +
@@ -504,7 +541,6 @@ namespace Reko.UnitTests.Gui.Windows
                     "<node tag=\"ProgramResourceGroupDesigner\" />" +
                  "</node>" +
                  "</root>");
-            mr.VerifyAll();
         }
 
         private void Given_Project()
@@ -527,12 +563,11 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_UserProcedures()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             Given_Project();
             Given_ProgramWithOneSegment();
             Given_ImageMapItem(0x12340000);
             Given_UserProcedure(0x12340500, "MyFoo");
-            mr.ReplayAll();
 
             pbs.Load(project);
 
@@ -543,7 +578,9 @@ namespace Reko.UnitTests.Gui.Windows
                     "text=\"foo.exe\" " +
                     "tip=\"c:\\test\\foo.exe" + cr + "12300000\" " +
                     "tag=\"ProgramDesigner\">" +
-                    "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "<node text=\"Architectures\" tag=\"TreeNodeCollectionDesigner\">" +
+                        "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "</node>" +
                     "<node text=\"(Unknown operating environment)\" tag=\"PlatformDesigner\" />" +
                     "<node " +
                         "text=\".text\" " +
@@ -566,20 +603,20 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_AfterSelect_Calls_DoDefaultAction()
         {
-            var des = mr.StrictMock<TreeNodeDesigner>();
-            des.Expect(d => d.DoDefaultAction());
-            des.Stub(d => d.Initialize(null)).IgnoreArguments();
-            mockTree = new FakeTreeView();
-            mr.ReplayAll();
+            var des = new Mock<TreeNodeDesigner> { CallBase = true };
+            des.Setup(d => d.DoDefaultAction()).Verifiable();
+            des.Setup(d => d.Initialize(It.IsAny<object>()));
+            des.Object.Component = "foo";
+            var mockTree = new FakeTreeView();
             
-            var pbs = new ProjectBrowserService(sc, mockTree);
-            pbs.AddComponents(new object[] { des });
-            var desdes = pbs.GetDesigner(des);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, mockTree);
+            pbs.AddComponents(new object[] { des.Object });
+            var desdes = pbs.GetDesigner(des.Object);
             Assert.IsNotNull(desdes);
 
-            mockTree.SelectedNode = des.TreeNode;
+            mockTree.SelectedNode = des.Object.TreeNode;
 
-            mr.VerifyAll();
+            des.Verify();
         }
 
         public class TestDesigner : TreeNodeDesigner
@@ -589,8 +626,8 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_FindGrandParent()
         {
-            mockTree = new FakeTreeView();
-            var pbs = new ProjectBrowserService(sc, mockTree);
+            var mockTree = new FakeTreeView();
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, mockTree);
             var gp = new GrandParentComponent();
             var p = new ParentComponent();
             var c = new TestComponent();
@@ -606,8 +643,8 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_NoGrandParent()
         {
-            mockTree = new FakeTreeView();
-            var pbs = new ProjectBrowserService(sc, mockTree);
+            var mockTree = new FakeTreeView();
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, mockTree);
             var p = new ParentComponent();
             var c = new TestComponent();
 
@@ -621,8 +658,8 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_AddTypeLib()
         {
-            mockTree = new FakeTreeView();
-            var pbs = new ProjectBrowserService(sc, mockTree);
+            var mockTree = new FakeTreeView();
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, mockTree);
             var project = new Project();
             pbs.Load(project);
 
@@ -639,9 +676,8 @@ namespace Reko.UnitTests.Gui.Windows
         public void PBS_AcceptFiles()
         {
             var mockTree = new FakeTreeView();
-            var pbs = new WindowsProjectBrowserService(sc, mockTree);
+            var pbs = new WindowsProjectBrowserService(sc, tabPage.Object, mockTree);
             var e = Given_DraggedFile();
-            mr.ReplayAll();
 
             var project = new Project();
             pbs.Load(project);
@@ -653,9 +689,8 @@ namespace Reko.UnitTests.Gui.Windows
         public void PBS_RejectTextDrop()
         {
             var mockTree = new FakeTreeView();
-            var pbs = new WindowsProjectBrowserService(sc, mockTree);
+            var pbs = new WindowsProjectBrowserService(sc, tabPage.Object, mockTree);
             var e = Given_DraggedText();
-            mr.ReplayAll();
 
             var project = new Project();
             pbs.Load(project);
@@ -668,10 +703,9 @@ namespace Reko.UnitTests.Gui.Windows
         {
             string filename = null;
             var mockTree = new FakeTreeView();
-            var pbs = new WindowsProjectBrowserService(sc, mockTree);
+            var pbs = new WindowsProjectBrowserService(sc, tabPage.Object, mockTree);
             pbs.FileDropped += (sender, ee) => { filename = ee.Filename; };
             var e = Given_DraggedFile();
-            mr.ReplayAll();
 
             var project = new Project();
             pbs.Load(project);
@@ -706,7 +740,7 @@ namespace Reko.UnitTests.Gui.Windows
         [Test]
         public void PBS_SingleBinary_Imports()
         {
-            var pbs = new ProjectBrowserService(sc, fakeTree);
+            var pbs = new ProjectBrowserService(sc, tabPage.Object, fakeTree);
             Given_Project();
             Given_ProgramWithOneSegment();
             Given_ImportedFunction(Address.Ptr32(0x123400), "KERNEL32", "LoadLibraryA");
@@ -722,7 +756,9 @@ namespace Reko.UnitTests.Gui.Windows
                     "text=\"foo.exe\" " +
                     "tip=\"c:\\test\\foo.exe" + cr + "12300000\" " +
                     "tag=\"ProgramDesigner\">" +
-                    "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "<node text=\"Architectures\" tag=\"TreeNodeCollectionDesigner\">" +
+                        "<node text=\"Foo Processor\" tag=\"ArchitectureDesigner\" />" +
+                    "</node>" +
                     "<node text=\"(Unknown operating environment)\" tag=\"PlatformDesigner\" />" +
                     "<node " +
                         "text=\".text\" " +

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,6 +53,10 @@ namespace Reko.Analysis
             incrUses = new List<IncrementedUse>();
         }
 
+        /// <summary>
+        /// Find all places where phi identifiers are used except the statements
+        /// that test the phi variable and increment the variable
+        /// </summary>
         public void ClassifyUses()
         {
             foreach (Statement stm in ssa.Identifiers[ctx.PhiIdentifier].Uses)
@@ -77,6 +81,8 @@ namespace Reko.Analysis
             if (incrUses.Count != 1)
                 return;
             IncrementedUse use = incrUses[0];
+            if (use.Increment == null)
+                return;
             if (ModifyInitialAssigment(use))
             {
                 use.Expression.Right = Constant.Create(use.Increment.DataType, 0);
@@ -101,8 +107,7 @@ namespace Reko.Analysis
         {
             if (ctx.InitialStatement == null)
                 return false;
-            Assignment ass = ctx.InitialStatement.Instruction as Assignment;
-            if (ass == null)
+            if (!(ctx.InitialStatement.Instruction is Assignment ass))
                 return false;
             if (ass.Src is Constant c)
             {
@@ -123,37 +128,21 @@ namespace Reko.Analysis
 
         public class IncrementedUse
         {
-            private Statement stm;
-            private BinaryExpression exp;
-            private Constant inc;
-
             public IncrementedUse(Statement stm, BinaryExpression exp, Constant inc)
             {
-                this.stm = stm;
-                this.exp = exp;
-                this.inc = inc;
+                this.Statement = stm;
+                this.Expression = exp;
+                this.Increment = inc;
             }
 
-            public Statement Statement
-            {
-                get { return stm; }
-            }
-
-            public BinaryExpression Expression
-            {
-                get { return exp; }
-            }
-
-            public Constant Increment
-            {
-                get { return inc; }
-            }
-
+            public Statement Statement { get; }
+            public BinaryExpression Expression { get; }
+            public Constant Increment { get; }
         }
 
         public class IncrementedUseFinder : InstructionVisitorBase
         {
-            private List<IncrementedUse> uses;
+            private readonly List<IncrementedUse> uses;
             private Identifier id;
             private Statement stmCur;
 
@@ -171,14 +160,25 @@ namespace Reko.Analysis
 
             public override void VisitBinaryExpression(BinaryExpression binExp)
             {
-                base.VisitBinaryExpression(binExp);
-                if (binExp.Operator != Operator.IAdd)
-                    return;
-                if (binExp.Left != id)
-                    return;
-                if (binExp.Right is Constant c)
+                if (binExp.Operator == Operator.IAdd
+                    &&
+                    binExp.Left == id
+                    &&
+                    binExp.Right is Constant c)
                 {
                     uses.Add(new IncrementedUse(stmCur, binExp, c));
+                }
+                else
+                {
+                    base.VisitBinaryExpression(binExp);
+                }
+            }
+
+            public override void VisitIdentifier(Identifier id)
+            {
+                if (this.id == id)
+                {
+                    uses.Add(new IncrementedUse(stmCur, null, null));
                 }
             }
         }

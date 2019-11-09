@@ -1,8 +1,8 @@
 ﻿#region License
 /* 
- * Copyright (C) 2017-2018 Christian Hostelet.
+ * Copyright (C) 2017-2019 Christian Hostelet.
  * inspired by work from:
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ namespace Reko.Arch.MicrochipPIC.Common
     /// Values that represent symbolic opcodes of the 8-bit MCU PIC16/18 family.
     /// Note: Opcodes are defined in uppercase to conform to Microchip MPASM user's guide syntax.
     /// </summary>
-    public enum Opcode : byte
+    public enum Mnemonic : byte
     {
 
         /// <summary>Invalid instruction. (PIC16, PIC18) </summary>

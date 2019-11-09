@@ -1,6 +1,6 @@
 ﻿#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ namespace Reko.UnitTests.Scanning
     [TestFixture]
     public class InterProceduralJumpTests
     {
-        private ProgramBuilder prog;
+        private ProgramBuilder pb;
         private RegisterStorage freg;
         private Identifier reg;
         private Identifier SCZO;
@@ -44,8 +44,8 @@ namespace Reko.UnitTests.Scanning
         private void CreateIntraProceduralJumps()
         {
             var regS = new RegisterStorage("reg", 1, 0, PrimitiveType.Word32);
-            prog = new ProgramBuilder();
-            prog.Add("main", (m) =>
+            pb = new ProgramBuilder();
+            pb.Add("main", (m) =>
             {
                 var reg = m.Frame.EnsureRegister(regS);
                 m.Assign(reg, 0);
@@ -56,7 +56,7 @@ namespace Reko.UnitTests.Scanning
 
         private void Test()
         {
-            freg = new RegisterStorage("freg", 9, 0, PrimitiveType.Word32);
+            freg = new RegisterStorage("freg", 9, 70, PrimitiveType.Word32);
             reg = new Identifier("reg", PrimitiveType.Word32, new RegisterStorage("reg", 1, 0, PrimitiveType.Word32));
             SCZO = new Identifier("SCZO", PrimitiveType.Byte, new FlagGroupStorage(freg, 0xF, "SCZO", PrimitiveType.Byte));
             new RtlTraceBuilder

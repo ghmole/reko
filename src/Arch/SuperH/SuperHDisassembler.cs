@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,570 +27,990 @@ using System.Text;
 using System.Threading.Tasks;
 using Reko.Core.Types;
 using System.Diagnostics;
+using Reko.Core.Lib;
 
 namespace Reko.Arch.SuperH
 {
+    using Decoder = Decoder<SuperHDisassembler, Mnemonic, SuperHInstruction>;
+
     // http://www.shared-ptr.com/sh_insns.html
-    
+
     public class SuperHDisassembler : DisassemblerBase<SuperHInstruction>
     {
-        private EndianImageReader rdr;
+        private readonly EndianImageReader rdr;
+        private readonly DasmState state;
+        private Address addr;
 
         public SuperHDisassembler(EndianImageReader rdr)
         {
             this.rdr = rdr;
+            this.state = new DasmState();
         }
 
         public override SuperHInstruction DisassembleInstruction()
         {
-            var addr = rdr.Address;
+            this.addr = rdr.Address;
             if (!rdr.TryReadUInt16(out ushort uInstr))
                 return null;
-            var instr = oprecs[uInstr >> 12].Decode(this, uInstr);
+            var instr = decoders[uInstr >> 12].Decode(uInstr, this);
+            state.Clear();
             instr.Address = addr;
             instr.Length = 2;
             return instr;
         }
 
-        private SuperHInstruction Decode(ushort uInstr, Opcode opcode, string format)
+        protected override SuperHInstruction CreateInvalidInstruction()
         {
-            var ops = new MachineOperand[2];
-            int iop = 0;
-            RegisterStorage reg;
-            PrimitiveType width;
-            for (int i = 0; i < format.Length; ++i)
-            {
-                switch (format[i])
-                {
-                case ',':
-                    continue;
-                case '-': // predecrement
-                    reg = Register(format[++i], uInstr);
-                    ops[iop] = MemoryOperand.IndirectPreDecr(GetWidth(format[++i]), reg);
-                    break;
-                case '+': // postdecrement
-                    reg = Register(format[++i], uInstr);
-                    ops[iop] = MemoryOperand.IndirectPostIncr(GetWidth(format[++i]), reg);
-                    break;
-                case 'd':
-                    ops[iop] = DfpRegister(format[++i], uInstr);
-                    break;
-                case 'f':
-                    ops[iop] = FpRegister(format[++i], uInstr);
-                    break;
-                case 'r':
-                    ops[iop] = new RegisterOperand(Register(format[++i], uInstr));
-                    break;
-                case 'v':
-                    ops[iop] = VfpRegister(format[++i], uInstr);
-                    break;
-                case 'I':
-                    ops[iop] = ImmediateOperand.Byte((byte)uInstr);
-                    break;
-                case 'F':
-                    if (format[++i] == 'U')
-                    {
-                        ops[iop] = new RegisterOperand(Registers.fpul);
-                        break;
-                    }
-                    goto default;
-                case 'G':
-                    ops[iop] = MemoryOperand.GbrIndexedIndirect(GetWidth(format[++i]));
-                    break;
-                case '@':
-                    reg = Register(format[++i], uInstr);
-                    ops[iop] = MemoryOperand.Indirect(GetWidth(format[++i]), reg);
-                    break;
-                case 'D':   // indirect with displacement
-                    reg = Register(format[++i], uInstr);
-                    width = GetWidth(format[++i]);
-                    ops[iop] = MemoryOperand.IndirectDisplacement(width, reg, (uInstr & 0xF) * width.Size);
-                    break;
-                case 'X':   // indirect indexed
-                    reg = Register(format[++i], uInstr);
-                    ops[iop] = MemoryOperand.IndexedIndirect(GetWidth(format[++i]), reg);
-                    break;
-                case 'P':   // PC-relative with displacement
-                    width = GetWidth(format[++i]);
-                    ops[iop] = MemoryOperand.PcRelativeDisplacement(width, width.Size * (byte)uInstr);
-                    break;
-                case 'R':
-                    ++i;
-                    if (format[i] == 'P')
-                        ops[iop] = new RegisterOperand(Registers.pr);
-                    else
-                        ops[iop] = new RegisterOperand(Registers.gpregs[HexDigit(format[i]).Value]);
-                    break;
-                case 'j':
-                    ops[iop] = AddressOperand.Create(rdr.Address + (2 + 2 * (sbyte)uInstr));
-                    break;
-                case 'J':
-                    int offset = ((int)uInstr << 20) >> 19;
-                    ops[iop] = AddressOperand.Create(rdr.Address + (2 + offset));
-                    break;
-                case 'm':   // Macl.
-                    if (i < format.Length-1)
-                    {
-                        ++i;
-                        if (format[i] == 'l')
-                        {
-                            ops[iop] = new RegisterOperand(Registers.macl);
-                        }
-                        else if (format[i] == 'h')
-                        {
-                            ops[iop] = new RegisterOperand(Registers.mach);
-                        }
-                        else
-                        {
-                            throw new NotImplementedException(string.Format("m{0}", format[i]));
-                        }
-                    }
-                    else
-                    {
-                        throw new NotImplementedException(string.Format("m{0}", format[i]));
-                    }
-                    break;
-                default: throw new NotImplementedException(string.Format("SuperHDisassembler.Decode({0})", format[i]));
-                }
-                ++iop;
-            }
             return new SuperHInstruction
             {
-                Opcode = opcode,
-                op1 = ops[0],
-                op2 = ops[1],
+                InstructionClass = InstrClass.Invalid,
+                Opcode = Mnemonic.invalid
             };
         }
 
-        private static HashSet<ushort> seen = new HashSet<ushort>();
-
-        private SuperHInstruction Invalid(ushort wInstr)
+        public class DasmState
         {
-            if (!seen.Contains(wInstr))
+            public List<MachineOperand> ops = new List<MachineOperand>();
+            public Mnemonic opcode;
+            public InstrClass iclass;
+            public RegisterStorage reg;
+
+            public void Clear()
             {
-                seen.Add(wInstr);
-                Debug.WriteLine($"// A SuperH decoder for the instruction {wInstr:X4} has not been implemented yet.");
-                Debug.WriteLine("[Test]");
-                Debug.WriteLine($"public void ShDis_{wInstr:X4}()");
-                Debug.WriteLine("{");
-                Debug.WriteLine($"    AssertCode(\"@@@\", \"{wInstr&0xFF:X2}{wInstr>>8:X2}\");");
-                Debug.WriteLine("}");
-                Debug.WriteLine("");
+                ops.Clear();
             }
-#if !DEBUG
-                throw new NotImplementedException($"A SuperH decoder for the instruction {wInstr:X4} has not been implemented yet.");
-#else
-            return Decode(wInstr, Opcode.invalid, "");
-#endif
-        }
 
-        private PrimitiveType GetWidth(char w)
-        {
-            if (w == 'b')
-                return PrimitiveType.Byte;
-            else if (w == 'w')
-                return PrimitiveType.Word16;
-            else if (w == 'l')
-                return PrimitiveType.Word32;
-            else 
-                throw new NotImplementedException(string.Format("{0}", w));
-        }
-
-        public static uint? HexDigit(char digit)
-        {
-            switch (digit)
+            internal SuperHInstruction MakeInstruction()
             {
-            case '0': case '1': case '2': case '3': case '4': 
-            case '5': case '6': case '7': case '8': case '9':
-                return (uint) (digit - '0');
-            case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-                return (uint) ((digit - 'A') + 10);
-            case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
-                return (uint) ((digit - 'a') + 10);
-            default:
-                return null;
+                var instr = new SuperHInstruction
+                {
+                    Opcode = this.opcode,
+                    InstructionClass = iclass,
+                    Operands = ops.ToArray()
+                };
+                return instr;
             }
         }
 
-        private RegisterStorage Register(char r, ushort uInstr)
+        private SuperHInstruction NotYetImplemented(ushort wInstr)
         {
-            var reg = (uInstr >> 4 * ('3' - r)) & 0xF;
-            return Registers.gpregs[reg];
-        }
-
-        private RegisterOperand FpRegister(char r, ushort uInstr)
-        {
-            var reg = (uInstr >> 4 * ('3' - r)) & 0xF;
-            return new RegisterOperand(Registers.fpregs[reg]);
-        }
-
-        private MachineOperand DfpRegister(char r, ushort uInstr)
-        {
-            var reg = (uInstr >> (1 + 4 * ('3' - r))) & 0x7;
-            return new RegisterOperand(Registers.dfpregs[reg]);
-        }
-
-        private MachineOperand VfpRegister(char r, ushort uInstr)
-        {
-            var reg = (uInstr >> (8 + 2 * ('2' - r))) & 0x3;
-            return new RegisterOperand(Registers.vfpregs[reg]);
-        }
-
-        private abstract class OprecBase
-        {
-            public abstract SuperHInstruction Decode(SuperHDisassembler dasm, ushort uInstr);
-        }
-
-        private class Oprec : OprecBase
-        {
-            private Opcode opcode;
-            private string format;
-
-            public Oprec(Opcode op, string format)
+            var instrHex = $"{wInstr & 0xFF:X2}{wInstr >> 8:X2}";
+            base.EmitUnitTest("SuperH", instrHex, "", "ShDis", this.addr, w =>
             {
-                this.opcode = op;
-                this.format = format;
+                w.WriteLine($"    AssertCode(\"@@@\", \"{instrHex}\");");
+            });
+            return CreateInvalidInstruction();
+        }
+
+        // Mutators
+
+        private static bool r1(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(new RegisterOperand(Registers.gpregs[reg]));
+            return true;
+        }
+
+        private static bool r2(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 4) & 0xF;
+            dasm.state.ops.Add(new RegisterOperand(Registers.gpregs[reg]));
+            return true;
+        }
+
+        private static bool r3(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = uInstr & 0xF;
+            dasm.state.ops.Add(new RegisterOperand(Registers.gpregs[reg]));
+            return true;
+        }
+
+        private static bool R0(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.r0));
+            return true;
+        }
+        private static bool RBank2_3bit(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 4) & 0b0111;
+            dasm.state.ops.Add(new RegisterOperand(Registers.rbank[reg]));
+            return true;
+        }
+
+
+        private static bool f1(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(new RegisterOperand(Registers.fpregs[reg]));
+            return true;
+        }
+        private static bool f2(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 4) & 0xF;
+            dasm.state.ops.Add(new RegisterOperand(Registers.fpregs[reg]));
+            return true;
+        }
+        private static bool F0(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.fr0));
+            return true;
+        }
+
+        private static bool d1(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> (1 + 8)) & 0x7;
+            dasm.state.ops.Add(new RegisterOperand(Registers.dfpregs[reg]));
+            return true;
+        }
+        private static bool d2(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> (1 + 4)) & 0x7;
+            dasm.state.ops.Add(new RegisterOperand(Registers.dfpregs[reg]));
+            return true;
+        }
+
+        private static bool v1(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 10) & 0x3;
+            dasm.state.ops.Add(new RegisterOperand(Registers.vfpregs[reg]));
+            return true;
+        }
+        private static bool v2(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = (uInstr >> 8) & 0x3;
+            dasm.state.ops.Add(new RegisterOperand(Registers.vfpregs[reg]));
+            return true;
+        }
+
+        private static bool pr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.pr));
+            return true;
+        }
+
+        private static bool sr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.sr));
+            return true;
+        }
+
+        private static bool gbr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.gbr));
+            return true;
+        }
+
+        private static bool RK(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.spc));
+            return true;
+        }
+
+        private static bool tbr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.tbr));
+            return true;
+        }
+
+        private static bool RV(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.vbr));
+            return true;
+        }
+
+        private static bool mod(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.mod));
+            return true;
+        }
+
+        private static bool ssr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.ssr));
+            return true;
+        }
+
+        private static bool rs(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.rs));
+            return true;
+        }
+
+        private static bool spc(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.spc));
+            return true;
+        }
+
+        private static bool mh(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.mach));
+            return true;
+        }
+        private static bool ml(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.macl));
+            return true;
+        }
+        private static bool fpul(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.fpul));
+            return true;
+        }
+
+        private static bool xmtrx(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.xmtrx));
+            return true;
+        }
+        private static bool dsr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.dsr));
+            return true;
+        }
+        private static bool dbr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.dbr));
+            return true;
+        }
+        private static bool sgr(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(new RegisterOperand(Registers.sgr));
+            return true;
+        }
+
+
+        private static bool I(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(ImmediateOperand.Byte((byte)uInstr));
+            return true;
+        }
+
+        private static bool j(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(AddressOperand.Create(dasm.rdr.Address + (2 + 2 * (sbyte)uInstr)));
+            return true;
+        }
+        private static bool J(uint uInstr, SuperHDisassembler dasm)
+        {
+            int offset = ((int)uInstr << 20) >> 19;
+            dasm.state.ops.Add(AddressOperand.Create(dasm.rdr.Address + (2 + offset)));
+            return true;
+        }
+
+
+        private static bool Ind1b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Byte, reg));
+            return true;
+        }
+        private static bool Ind1w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Word16, reg));
+            return true;
+        }
+        private static bool Ind1l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Word32, reg));
+            return true;
+        }
+        private static bool Ind1d(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Word64, reg));
+            return true;
+        }
+
+        private static bool Ind2b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Byte, reg));
+            return true;
+        }
+        private static bool Ind2w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Word16, reg));
+            return true;
+        }
+        private static bool Ind2l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.Indirect(PrimitiveType.Word32, reg));
+            return true;
+        }
+        private static bool Pre1b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPreDecr(PrimitiveType.Byte, reg));
+            return true;
+        }
+
+        private static bool Pre1w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPreDecr(PrimitiveType.Word16, reg));
+            return true;
+        }
+
+        private static bool Pre1l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPreDecr(PrimitiveType.Word32, reg));
+            return true;
+        }
+
+        private static bool Pre15l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.r15;
+            dasm.state.ops.Add(MemoryOperand.IndirectPreDecr(PrimitiveType.Word32, reg));
+            return true;
+        }
+
+        private static bool Post1w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Word16, reg));
+            return true;
+        }
+        private static bool Post1l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Word32, reg));
+            return true;
+        }
+        private static bool Post2b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Byte, reg));
+            return true;
+        }
+        private static bool Post2w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Word16, reg));
+            return true;
+        }
+        private static bool Post2l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0x0F];
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Word32, reg));
+            return true;
+        }
+        private static bool Post15l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.r15;
+            dasm.state.ops.Add(MemoryOperand.IndirectPostIncr(PrimitiveType.Word32, reg));
+            return true;
+        }
+        // Indirect indexed
+        private static bool X1b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Byte, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X1w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Word16, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X1l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Word32, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X1d(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 8) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Word64, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X2b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 4) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Byte, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X2w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 4) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Word16, Registers.gpregs[iReg]));
+            return true;
+        }
+        private static bool X2l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var iReg = (uInstr >> 4) & 0xF;
+            dasm.state.ops.Add(MemoryOperand.IndexedIndirect(PrimitiveType.Word32, Registers.gpregs[iReg]));
+            return true;
+        }
+
+
+        // indirect with displacement
+        private static bool D1l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 8) & 0xF];
+            var width = PrimitiveType.Word32;
+            dasm.state.ops.Add(MemoryOperand.IndirectDisplacement(width, reg, (int)(uInstr & 0xF) * width.Size));
+            return true;
+        }
+        private static bool D2b(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0xF];
+            var width = PrimitiveType.Byte;
+            dasm.state.ops.Add(MemoryOperand.IndirectDisplacement(width, reg, (int)(uInstr & 0xF) * width.Size));
+            return true;
+        }
+        private static bool D2w(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0xF];
+            var width = PrimitiveType.Word16;
+            dasm.state.ops.Add(MemoryOperand.IndirectDisplacement(width, reg, (int)(uInstr & 0xF) * width.Size));
+            return true;
+        }
+        private static bool D2l(uint uInstr, SuperHDisassembler dasm)
+        {
+            var reg = Registers.gpregs[(uInstr >> 4) & 0xF];
+            var width = PrimitiveType.Word32;
+            dasm.state.ops.Add(MemoryOperand.IndirectDisplacement(width, reg, (int)(uInstr & 0xF) * width.Size));
+            return true;
+        }
+
+
+
+        // PC-relative with displacement
+        private static bool Pw(uint uInstr, SuperHDisassembler dasm)
+        {
+            var width = PrimitiveType.Word16;
+            dasm.state.ops.Add(MemoryOperand.PcRelativeDisplacement(width, width.Size * (byte)uInstr));
+            return true;
+        }
+        private static bool Pl(uint uInstr, SuperHDisassembler dasm)
+        {
+            var width = PrimitiveType.Word32;
+            dasm.state.ops.Add(MemoryOperand.PcRelativeDisplacement(width, width.Size * (byte)uInstr));
+            return true;
+        }
+
+
+        private static bool Gb(uint uInstr, SuperHDisassembler dasm)
+        {
+            dasm.state.ops.Add(MemoryOperand.GbrIndexedIndirect(PrimitiveType.Byte));
+            return true;
+        }
+
+        // Factory methods
+
+        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<SuperHDisassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, InstrClass.Linear, mutators);
+        }
+
+        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<SuperHDisassembler>[] mutators)
+        {
+            return new InstrDecoder(opcode, iclass, mutators);
+        }
+
+        // Predicates
+
+        private static bool Ne0(uint n)
+        {
+            return n != 0;
+        }
+
+        // Decoders
+
+        private class InstrDecoder : Decoder
+        {
+            private readonly Mnemonic opcode;
+            private readonly InstrClass iclass;
+            private readonly Mutator<SuperHDisassembler>[] mutators;
+
+            public InstrDecoder(Mnemonic opcode, InstrClass iclass, Mutator<SuperHDisassembler>[] mutators)
+            {
+                this.opcode = opcode;
+                this.iclass = iclass;
+                this.mutators = mutators;
             }
 
-            public override SuperHInstruction Decode(SuperHDisassembler dasm, ushort uInstr)
+            public override SuperHInstruction Decode(uint uInstr, SuperHDisassembler dasm)
             {
-                return dasm.Decode(uInstr, opcode, format);
-            }
-
-            public override string ToString()
-            {
-                return string.Format("[ {0} {1} ]", opcode, format);
-            }
-        }
-
-        private class Oprec4Bits : OprecBase
-        {
-            private int shift;
-            private OprecBase[] oprecs;
-
-            public Oprec4Bits(int shift, OprecBase[] oprecs)
-            {
-                this.shift = shift;
-                this.oprecs = oprecs;
-            }
-
-            public override SuperHInstruction Decode(SuperHDisassembler dasm, ushort uInstr)
-            {
-                return oprecs[(uInstr >> shift) & 0xF].Decode(dasm, uInstr);
+                dasm.state.opcode = this.opcode;
+                dasm.state.iclass = this.iclass;
+                foreach (var mutator in this.mutators)
+                {
+                    if (!mutator(uInstr, dasm))
+                        return dasm.CreateInvalidInstruction();
+                }
+                return dasm.state.MakeInstruction();
             }
         }
 
-        private class OprecField : OprecBase
-        {
-            private int shift;
-            private int bitcount;
-            private Dictionary<int, OprecBase> oprecs;
+        private static readonly Decoder invalid = Instr(Mnemonic.invalid);
 
-            public OprecField(int shift, int bitcount, Dictionary<int, OprecBase> oprecs)
-            {
-                this.shift = shift;
-                this.bitcount = bitcount;
-                this.oprecs = oprecs;
-            }
+        private static readonly Decoder decode_FxFD = Mask(8, 4,
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.ftrv, xmtrx, v2),
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.fschg),
 
-            public override SuperHInstruction Decode(SuperHDisassembler dasm, ushort uInstr)
-            {
-                var mask = (1 << bitcount) - 1;
-                if (!oprecs.TryGetValue((uInstr >> shift) & mask, out OprecBase or))
-                    return dasm.Invalid(uInstr);
-                return or.Decode(dasm, uInstr);
-            }
-        }
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.ftrv, xmtrx, v2),
+            Instr(Mnemonic.fsca, fpul, f1),
+            invalid,
 
-        private static OprecBase[] oprecs = new OprecBase[]
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.ftrv, xmtrx, v2),
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.frchg),
+
+            Instr(Mnemonic.fsca, fpul, f1),
+            Instr(Mnemonic.ftrv, xmtrx, v2),
+            Instr(Mnemonic.fsca, fpul, f1),
+            invalid);
+
+        private static readonly Decoder decode_FxxD = Sparse(4, 5, "  FxxD", invalid,
+            (0x01, Instr(Mnemonic.flds, d1, fpul)),
+            (0x02, Instr(Mnemonic.@float, fpul, d1)),
+            (0x03, Instr(Mnemonic.ftrc, d1, fpul)),
+            (0x04, Instr(Mnemonic.fneg, d1)),
+            (0x05, Instr(Mnemonic.fabs, d1)),
+            (0x06, Instr(Mnemonic.fsqrt, f1)),
+            (0x08, Instr(Mnemonic.fldi0, f1)),
+            (0x09, Instr(Mnemonic.fldi1, f1)),
+            (0x0A, Instr(Mnemonic.fcnvsd, fpul, d1)),
+            (0x0B, Instr(Mnemonic.fcnvds, d1, fpul)),
+            (0x0E, Instr(Mnemonic.fipr, v2, v1)),
+            (0x0F, decode_FxFD),
+
+            (0x11, Instr(Mnemonic.flds, f1, fpul)),
+            (0x15, Instr(Mnemonic.fabs, f1)),
+            (0x18, Instr(Mnemonic.fldi0, f1)),
+            (0x19, Instr(Mnemonic.fldi1, f1)),
+            (0x1E, Instr(Mnemonic.fipr, v2, v1)),
+            (0x1F, decode_FxFD));
+
+        private static readonly Decoder[] decoders = new Decoder[]
         {
             // 0...
-            new OprecField(0, 4, new Dictionary<int, OprecBase>
-            {
-                { 0x03, new OprecField(4, 4, new Dictionary<int, OprecBase>
-                    {
-                        { 0x0, new Oprec(Opcode.bsrf, "r1") },
-                        { 0x2, new Oprec(Opcode.braf, "r1") },
-                    })
-                },
-                { 0x4, new Oprec(Opcode.mov_b, "r2,X1b") },
-                { 0x5, new Oprec(Opcode.mov_w, "r2,X1w") },
-                { 0x6, new Oprec(Opcode.mov_l, "r2,X1l") },
-                { 0x7, new Oprec(Opcode.mul_l, "r2,r1") },
-                { 0x8, new OprecField(4, 4, new Dictionary<int, OprecBase>
-                    {
-                        { 0x0, new Oprec(Opcode.clrt, "") },
-                        { 0x1, new Oprec(Opcode.sett, "") },
-                        { 0x2, new Oprec(Opcode.clrmac, "") },
-                        { 0x4, new Oprec(Opcode.clrs, "") },
-                    })
-                },
-                { 0x9, new OprecField(4, 4, new Dictionary<int, OprecBase>
-                    {
-                        { 0x0, new Oprec(Opcode.nop, "") },
-                        { 0x1, new Oprec(Opcode.div0u, "") },
-                        { 0x2, new Oprec(Opcode.movt, "r1") },
-                    })
-                },
-                { 0xA, new OprecField(4, 4, new Dictionary<int, OprecBase>
-                    {
-                        { 0x0, new Oprec(Opcode.sts, "mh,r1") },
-                        { 0x1, new Oprec(Opcode.sts, "ml,r1") },
-                    })
-                },
-                { 0xB, new OprecField(4, 4, new Dictionary<int, OprecBase>
-                    {
-                        { 0x0, new Oprec(Opcode.rts, "") },
-                        { 0x3, new Oprec(Opcode.brk, "") },
-                    })
-                },
-                { 0xC, new Oprec(Opcode.mov_b, "X2b,r1") },
-                { 0xD, new Oprec(Opcode.mov_w, "X2w,r1") },
-                { 0xE, new Oprec(Opcode.mov_l, "X2l,r1") }
-            }),
-            new Oprec(Opcode.mov_l, "r2,D1l"),
+            Sparse(0, 4, "  0...", invalid,
+                (0x0, Instr(Mnemonic.invalid, InstrClass.Invalid|InstrClass.Zero) ),
+                (0x1, invalid ),
+                (0x02, Mask(7, 1,
+                    Mask(4, 3,
+                        Instr(Mnemonic.stc, sr,r1),
+                        Instr(Mnemonic.stc, gbr,r1),
+                        Instr(Mnemonic.stc, gbr,r1),
+                        Instr(Mnemonic.stc, ssr,r1),
+                        Instr(Mnemonic.stc, RK,r1),
+                        Instr(Mnemonic.stc, mod,r1),
+                        Instr(Mnemonic.stc, rs,r1),
+                        invalid),
+                    Instr(Mnemonic.stc, RBank2_3bit,r1))
+                ),
+                (0x03, Sparse(4, 4,  "  0..3", invalid,
+                        ( 0x0, Instr(Mnemonic.bsrf, r1)),
+                        ( 0x1, invalid),
+                        ( 0x2, Instr(Mnemonic.braf, r1)),
+                        ( 0x3, invalid),
+                        ( 0x7, Instr(Mnemonic.movco_l, R0,Ind1l)),
+                        ( 0x8, Instr(Mnemonic.pref, Ind1l)),
+                        ( 0x9, Instr(Mnemonic.ocbi, Ind1b)),
+                        ( 0xA, Instr(Mnemonic.ocbp, Ind1b)),
+                        ( 0xC, Instr(Mnemonic.movca_l, R0,Ind1l))
+                        )
+                ),
+                (0x4, Instr(Mnemonic.mov_b, r2,X1b) ),
+                (0x5, Instr(Mnemonic.mov_w, r2,X1w) ),
+                (0x6, Instr(Mnemonic.mov_l, r2,X1l) ),
+                (0x7, Instr(Mnemonic.mul_l, r2,r1) ),
+                (0x8, Select((8, 4), Ne0,
+                    invalid,
+                    Mask(4, 4,
+                        Instr(Mnemonic.clrt),
+                        Instr(Mnemonic.sett),
+                        Instr(Mnemonic.clrmac),
+                        Instr(Mnemonic.ldtlb),
+
+                        Instr(Mnemonic.clrs),
+                        invalid,
+                        invalid,
+                        invalid,
+
+                        invalid,
+                        invalid,
+                        invalid,
+                        invalid,
+
+                        invalid,
+                        invalid,
+                        invalid,
+                        invalid))
+                ),
+                (0x9, Sparse(4, 4, "  9", invalid,
+                        ( 0x0, Select((8,4),Ne0,invalid, Instr(Mnemonic.nop))),
+                        ( 0x1, Select((8,4),Ne0,invalid, Instr(Mnemonic.div0u))),
+                        ( 0x2, Instr(Mnemonic.movt, r1)),
+                        ( 0x5, invalid),
+                        ( 0xD, invalid),
+                        ( 0xF, invalid))
+                ),
+                (0xA, Sparse(4, 4, "  A", invalid,
+                        ( 0x0, Instr(Mnemonic.sts, mh,r1) ),
+                        ( 0x1, Instr(Mnemonic.sts, ml,r1) ),
+                        ( 0x2, Instr(Mnemonic.sts, pr,r1) ),
+                        ( 0x4, Instr(Mnemonic.sts, tbr,r1) ),
+                        ( 0x5, Instr(Mnemonic.sts, fpul,r1) ),
+                        ( 0x6, Instr(Mnemonic.sts, dsr,r1) ),
+                        ( 0x8, invalid ),   // DSP:sts X0,r1
+                        ( 0x9, invalid ),   // DSP:sts X1,r1
+                        ( 0xA, invalid ),   // DSP:lds	Rm,Y1
+                        ( 0xF, Instr(Mnemonic.stc, dbr,r1))
+                    )
+                ),
+                (0xB, Select((8, 4), Ne0,
+                    invalid,
+                    Sparse(4, 4, "  B", invalid,
+                        (0x0, Instr(Mnemonic.rts)),
+                        (0x1, Instr(Mnemonic.sleep)),
+                        (0x2, Instr(Mnemonic.rte)),
+                        (0x3, Instr(Mnemonic.brk))))
+                ),
+                (0xC, Instr(Mnemonic.mov_b, X2b,r1) ),
+                (0xD, Instr(Mnemonic.mov_w, X2w,r1) ),
+                (0xE, Instr(Mnemonic.mov_l, X2l,r1) ),
+                (0xF, Instr(Mnemonic.mac_l, Post2l,Post1l))
+            ),
+            Instr(Mnemonic.mov_l, r2,D1l),
             // 2...
-            new Oprec4Bits(0, new OprecBase[]
+            Mask(0, 4, new Decoder[]
             {
-                new Oprec(Opcode.mov_b, "r2,@1b"),
-                new Oprec(Opcode.mov_w, "r2,@1w"),
-                new Oprec(Opcode.mov_l, "r2,@1l"),
-                new Oprec(Opcode.invalid, ""),
+                Instr(Mnemonic.mov_b, r2,Ind1b),
+                Instr(Mnemonic.mov_w, r2,Ind1w),
+                Instr(Mnemonic.mov_l, r2,Ind1l),
+                invalid,
 
-                new Oprec(Opcode.mov_b, "r2,-1b"),
-                new Oprec(Opcode.mov_w, "r2,-1w"),
-                new Oprec(Opcode.mov_l, "r2,-1l"),
-                new Oprec(Opcode.div0s, "r2,r1"),
+                Instr(Mnemonic.mov_b, r2,Pre1b),
+                Instr(Mnemonic.mov_w, r2,Pre1w),
+                Instr(Mnemonic.mov_l, r2,Pre1l),
+                Instr(Mnemonic.div0s, r2,r1),
 
-                new Oprec(Opcode.tst, "r2,r1"),
-                new Oprec(Opcode.and, "r2,r1"),
-                new Oprec(Opcode.xor, "r2,r1"),
-                new Oprec(Opcode.or, "r2,r1"),
+                Instr(Mnemonic.tst, r2,r1),
+                Instr(Mnemonic.and, r2,r1),
+                Instr(Mnemonic.xor, r2,r1),
+                Instr(Mnemonic.or, r2,r1),
 
-                new Oprec(Opcode.cmp_str, "r2,r1"),
-                new Oprec(Opcode.xtrct, "r2,r1"),
-                new Oprec(Opcode.mulu_w, "r2,r1"),
-                new Oprec(Opcode.muls_w, "r2,r1"),
+                Instr(Mnemonic.cmp_str, r2,r1),
+                Instr(Mnemonic.xtrct, r2,r1),
+                Instr(Mnemonic.mulu_w, r2,r1),
+                Instr(Mnemonic.muls_w, r2,r1),
             }),
             // 3...
-            new Oprec4Bits(0, new OprecBase[]
+            Mask(0, 4, new Decoder[]
             {
-                new Oprec(Opcode.cmp_eq, "r2,r1"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.cmp_hs, "r2,r1"),
-                new Oprec(Opcode.cmp_ge, "r2,r1"),
+                Instr(Mnemonic.cmp_eq, r2,r1),
+                invalid,
+                Instr(Mnemonic.cmp_hs, r2,r1),
+                Instr(Mnemonic.cmp_ge, r2,r1),
 
-                new Oprec(Opcode.div1, "r2,r1"),
-                new Oprec(Opcode.dmulu_l, "r2,r1"),
-                new Oprec(Opcode.cmp_hi, "r2,r1"),
-                new Oprec(Opcode.cmp_gt, "r2,r1"),
+                Instr(Mnemonic.div1, r2,r1),
+                Instr(Mnemonic.dmulu_l, r2,r1),
+                Instr(Mnemonic.cmp_hi, r2,r1),
+                Instr(Mnemonic.cmp_gt, r2,r1),
 
-                new Oprec(Opcode.sub, "r2,r1"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.subc, "r2,r1"),
-                new Oprec(Opcode.subv, "r2,r1"),
+                Instr(Mnemonic.sub, r2,r1),
+                invalid,
+                Instr(Mnemonic.subc, r2,r1),
+                Instr(Mnemonic.subv, r2,r1),
 
-                new Oprec(Opcode.add, "r2,r1"),
-                new Oprec(Opcode.dmuls_l, "r2,r1"),
-                new Oprec(Opcode.addc, "r2,r1"),
-                new Oprec(Opcode.addv, "r2,r1"),
+                Instr(Mnemonic.add, r2,r1),
+                Instr(Mnemonic.dmuls_l, r2,r1),
+                Instr(Mnemonic.addc, r2,r1),
+                Instr(Mnemonic.addv, r2,r1),
             }),
 
             // 4...
-            new OprecField(0, 8, new Dictionary<int, OprecBase>
-            {
-                { 0x00, new Oprec(Opcode.shll, "r1") },
-                { 0x01, new Oprec(Opcode.shlr, "r1") },
-                { 0x04, new Oprec(Opcode.rotl, "r1") },
-                { 0x05, new Oprec(Opcode.rotr, "r1") },
-                { 0x08, new Oprec(Opcode.shll2, "r1") },
-                { 0x09, new Oprec(Opcode.shlr, "r1") },
-                { 0x0B, new Oprec(Opcode.jsr, "@1l") },
+            Sparse(0, 8, "  4", invalid,
+                ( 0x00, Instr(Mnemonic.shll, r1)),
+                ( 0x01, Instr(Mnemonic.shlr, r1)),
+                ( 0x04, Instr(Mnemonic.rotl, r1)),
+                ( 0x05, Instr(Mnemonic.rotr, r1)),
+                ( 0x06, Instr(Mnemonic.lds_l, Post1l,mh)),
+                ( 0x08, Instr(Mnemonic.shll2, r1)),
+                ( 0x09, Instr(Mnemonic.shlr, r1)),
+                ( 0x0B, Instr(Mnemonic.jsr, Ind1l)),
+                ( 0x0C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x0E, Instr(Mnemonic.ldc, r1,sr)),
+                ( 0x13, Instr(Mnemonic.stc_l, gbr,Pre1l)),
+                ( 0x14, invalid),  // DSP setrc r1
+                ( 0x1B, Instr(Mnemonic.tas_b, Ind1b)),
+                ( 0x1C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x20, Instr(Mnemonic.shal, r1)),
+                ( 0x2A, Instr(Mnemonic.lds, r1,pr)),
+                ( 0x2C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x2E, Instr(Mnemonic.ldc, r1,RV)),
+                ( 0x30, invalid),
+                ( 0x34, invalid),
+                ( 0x38, invalid),
+                ( 0x36, Instr(Mnemonic.ldc_l, Post1l,sgr)),
+                ( 0x3C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x40, invalid),
+                ( 0x41, invalid),
+                ( 0x44, invalid),
+                ( 0x48, invalid),
+                ( 0x4A, Instr(Mnemonic.ldc, r1,tbr)),
+                ( 0x4C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x52, invalid),
+                ( 0x59, invalid),
+                ( 0x5A, Instr(Mnemonic.lds, r1,fpul)),
+                ( 0x5C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x64, invalid),
+                ( 0x66, Instr(Mnemonic.lds_l, Post1l,dsr)),
+                ( 0x68, invalid),
+                ( 0x6A, Instr(Mnemonic.lds, r1,dsr)),
+                ( 0x6C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x70, invalid),
+                ( 0x74, invalid),
+                ( 0x7C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x80, Instr(Mnemonic.mulr, R0,r1)),
+                ( 0x88, invalid),
+                ( 0x8C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0x90, invalid),
+                ( 0x94, Instr(Mnemonic.divs, R0,r1)),
+                ( 0x98, invalid),
+                ( 0x9C, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xA0, invalid),
+                ( 0xA4, invalid),
+                ( 0xA8, invalid),
+                ( 0xAC, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xB4, invalid),
+                ( 0xB8, invalid),
+                ( 0xBC, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xC4, invalid),
+                ( 0xC8, invalid),
+                ( 0xCC, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xD0, invalid),
+                ( 0xD2, invalid),
+                ( 0xD3, Instr(Mnemonic.stc_l, RBank2_3bit, r1)),
+                ( 0xD8, invalid),
+                ( 0xDC, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xE0, invalid),
+                ( 0xE4, invalid),
+                ( 0xE8, invalid),
+                ( 0xEC, Instr(Mnemonic.shad, r2,r1)),
+                ( 0xF0, Instr(Mnemonic.movmu_l, r1,Pre15l)),
+                ( 0xF4, Instr(Mnemonic.movmu_l, Post15l,r1)),
+                ( 0xF8, invalid),
+                ( 0xFC, Instr(Mnemonic.shad, r2,r1)),
 
-                { 0x0C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x1C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x2C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x3C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x4C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x5C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x6C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x7C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x8C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0x9C, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xAC, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xBC, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xCC, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xDC, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xEC, new Oprec(Opcode.shad, "r2,r1") },
-                { 0xFC, new Oprec(Opcode.shad, "r2,r1") },
 
-                { 0x2A, new Oprec(Opcode.lds, "r1,RP") },
+                ( 0x87, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0x97, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xA7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xB7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xC7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xD7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xE7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
+                ( 0xF7, Instr(Mnemonic.ldc_l, Post1l,RBank2_3bit)),
 
-                { 0x0D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x1D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x2D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x3D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x4D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x5D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x6D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x7D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x8D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0x9D, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xAD, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xBD, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xCD, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xDD, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xED, new Oprec(Opcode.shld, "r2,r1") },
-                { 0xFD, new Oprec(Opcode.shld, "r2,r1") },
+                ( 0x0D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x1D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x2D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x3D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x4D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x5D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x6D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x7D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x8D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0x9D, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xAD, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xBD, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xCD, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xDD, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xED, Instr(Mnemonic.shld, r2,r1)),
+                ( 0xFD, Instr(Mnemonic.shld, r2,r1)),
 
-                { 0x10, new Oprec(Opcode.dt, "r1") },
-                { 0x11, new Oprec(Opcode.cmp_pz, "r1") },
-                { 0x15, new Oprec(Opcode.cmp_pl, "r1") },
-                { 0x18, new Oprec(Opcode.shll8, "r1") },
-                { 0x19, new Oprec(Opcode.shlr8, "r1") },
-                { 0x21, new Oprec(Opcode.shar, "r1") },
-                { 0x22, new Oprec(Opcode.sts_l, "RP,-1l") },
-                { 0x24, new Oprec(Opcode.rotcl, "r1") },
-                { 0x25, new Oprec(Opcode.rotcr, "r1") },
-                { 0x26, new Oprec(Opcode.lds_l, "+1l,RP") },
-                { 0x28, new Oprec(Opcode.shll16, "r1") },
-                { 0x29, new Oprec(Opcode.shlr16, "r1") },
-                { 0x2B, new Oprec(Opcode.jmp, "@1l") },
-            }),
-            new Oprec(Opcode.mov_l, "D2l,r1"),
+                ( 0x0F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x1F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x2F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x3F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x4F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x5F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x6F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x7F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x8F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0x9F, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xAF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xBF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xCF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xDF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xEF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+                ( 0xFF, Instr(Mnemonic.mac_w, Post2w,Post1w)),
+
+
+                ( 0x10, Instr(Mnemonic.dt, r1)),
+                ( 0x11, Instr(Mnemonic.cmp_pz, r1)),
+                ( 0x15, Instr(Mnemonic.cmp_pl, r1)),
+                ( 0x18, Instr(Mnemonic.shll8, r1)),
+                ( 0x19, Instr(Mnemonic.shlr8, r1)),
+                ( 0x21, Instr(Mnemonic.shar, r1)),
+                ( 0x22, Instr(Mnemonic.sts_l, pr,Pre1l)),
+                ( 0x24, Instr(Mnemonic.rotcl, r1)),
+                ( 0x25, Instr(Mnemonic.rotcr, r1)),
+                ( 0x26, Instr(Mnemonic.lds_l, Post1l,pr)),
+                ( 0x28, Instr(Mnemonic.shll16, r1)),
+                ( 0x29, Instr(Mnemonic.shlr16, r1)),
+                ( 0x2B, Instr(Mnemonic.jmp, Ind1l)),
+                ( 0x43, Instr(Mnemonic.stc_l, spc,r1))
+            ),
+            Instr(Mnemonic.mov_l, D2l,r1),
             // 6...
-            new Oprec4Bits(0, new[]
+            Mask(0, 4, new Decoder[]
             {
-                new Oprec(Opcode.mov_b, "@2b,r1"),
-                new Oprec(Opcode.mov_w, "@2w,r1"),
-                new Oprec(Opcode.mov_l, "@2l,r1"),
-                new Oprec(Opcode.mov, "r2,r1"),
+                Instr(Mnemonic.mov_b, Ind2b,r1),
+                Instr(Mnemonic.mov_w, Ind2w,r1),
+                Instr(Mnemonic.mov_l, Ind2l,r1),
+                Instr(Mnemonic.mov, r2,r1),
 
-                new Oprec(Opcode.mov_b, "+2b,r1"),
-                new Oprec(Opcode.mov_w, "+2w,r1"),
-                new Oprec(Opcode.mov_l, "+2l,r1"),
-                new Oprec(Opcode.not, "r2,r1"),
+                Instr(Mnemonic.mov_b, Post2b,r1),
+                Instr(Mnemonic.mov_w, Post2w,r1),
+                Instr(Mnemonic.mov_l, Post2l,r1),
+                Instr(Mnemonic.not, r2,r1),
 
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.swap_w, "r2,r1"),
-                new Oprec(Opcode.negc, "r2,r1"),
-                new Oprec(Opcode.neg, "r2,r1"),
+                invalid,
+                Instr(Mnemonic.swap_w, r2,r1),
+                Instr(Mnemonic.negc, r2,r1),
+                Instr(Mnemonic.neg, r2,r1),
 
-                new Oprec(Opcode.extu_b, "r2,r1"),
-                new Oprec(Opcode.extu_w, "r2,r1"),
-                new Oprec(Opcode.exts_b, "r2,r1"),
-                new Oprec(Opcode.exts_w, "r2,r1"),
+                Instr(Mnemonic.extu_b, r2,r1),
+                Instr(Mnemonic.extu_w, r2,r1),
+                Instr(Mnemonic.exts_b, r2,r1),
+                Instr(Mnemonic.exts_w, r2,r1),
             }),
-            new Oprec(Opcode.add, "I,r1"),
+            Instr(Mnemonic.add, I,r1),
 
             // 8...
-            new Oprec4Bits(8, new OprecBase[] {
-                new Oprec(Opcode.mov_b, "R0,D2b"),
-                new Oprec(Opcode.mov_w, "R0,D2w"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
+            Mask(8, 4, new Decoder[] {
+                Instr(Mnemonic.mov_b, R0,D2b),
+                Instr(Mnemonic.mov_w, R0,D2w),
+                invalid,
+                invalid,
 
-                new Oprec(Opcode.mov_b, "D2b,R0"),
-                new Oprec(Opcode.mov_w, "D2w,R0"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
+                Instr(Mnemonic.mov_b, D2b,R0),
+                Instr(Mnemonic.mov_w, D2w,R0),
+                invalid,
+                invalid,
 
-                new Oprec(Opcode.cmp_eq, "I,R0"),
-                new Oprec(Opcode.bt, "j"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.bf, "j"),
+                Instr(Mnemonic.cmp_eq, I,R0),
+                Instr(Mnemonic.bt, j),
+                invalid,
+                Instr(Mnemonic.bf, j),
 
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.bt_s, "j"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.bf_s, "j"),
+                invalid,
+                Instr(Mnemonic.bt_s, j),
+                invalid,
+                Instr(Mnemonic.bf_s, j),
             }),
-            new Oprec(Opcode.mov_w, "Pw,r1"),
-            new Oprec(Opcode.bra, "J"),
-            new Oprec(Opcode.bsr, "J"),
+            Instr(Mnemonic.mov_w, Pw,r1),
+            Instr(Mnemonic.bra, J),
+            Instr(Mnemonic.bsr, J),
 
             // C...
-            new Oprec4Bits(8, new OprecBase[]
+            Mask(8, 4, new Decoder[]
             {
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
+                invalid,
+                invalid,
+                invalid,
+                invalid,
 
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.mova, "Pl,R0"),
+                invalid,
+                invalid,
+                invalid,
+                Instr(Mnemonic.mova, Pl,R0),
 
-                new Oprec(Opcode.tst, "I,R0"),
-                new Oprec(Opcode.and, "I,R0"),
-                new Oprec(Opcode.xor, "I,R0"),
-                new Oprec(Opcode.or, "I,R0"),
+                Instr(Mnemonic.tst, I,R0),
+                Instr(Mnemonic.and, I,R0),
+                Instr(Mnemonic.xor, I,R0),
+                Instr(Mnemonic.or, I,R0),
 
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.and_b, "I,Gb"),
-                new Oprec(Opcode.invalid, ""),
-                new Oprec(Opcode.invalid, ""),
+                invalid,
+                Instr(Mnemonic.and_b, I,Gb),
+                invalid,
+                invalid,
             }),
-            new Oprec(Opcode.mov_l, "Pl,r1"),
-            new Oprec(Opcode.mov, "I,r1"),
+            Instr(Mnemonic.mov_l, Pl,r1),
+            Instr(Mnemonic.mov, I,r1),
             // F...
-            new OprecField(0, 5, new Dictionary<int, OprecBase>
-            {
-                { 0x0, new OprecField(8, 1, new Dictionary<int, OprecBase>
-                    {
-                        { 0, new Oprec(Opcode.fadd, "d2,d1") },
-                        { 1, new Oprec(Opcode.fadd, "f2,f1") }
-                    })
-                },
-                { 0x3, new OprecField(8, 1, new Dictionary<int, OprecBase>
-                    {
-                        { 0, new Oprec(Opcode.fdiv, "d2,d1") },
-                        { 1, new Oprec(Opcode.fdiv, "f2,f1") }
-                    })
-                },
-                { 0x4, new OprecField(8, 1, new Dictionary<int, OprecBase>
-                    {
-                        { 0, new Oprec(Opcode.fcmp_eq, "d2,d1") },
-                        { 1, new Oprec(Opcode.fcmp_eq, "f2,f1") }
-                    })
-                },
-                { 0x5, new OprecField(8, 1, new Dictionary<int, OprecBase>
-                    {
-                        { 0, new Oprec(Opcode.fcmp_gt, "d2,d1") },
-                        { 1, new Oprec(Opcode.fcmp_gt, "f2,f1") }
-                    })
-                },
-                { 0x9, new OprecField(8, 1, new Dictionary<int, OprecBase>
-                    {
-                        { 0, new Oprec(Opcode.fcmp_gt, "d2,d1") },
-                        { 1, new Oprec(Opcode.fcmp_gt, "f2,f1") }
-                    })
-                },
+            Sparse(0, 5, "  F...", invalid, 
+                ( 0x0, Mask(8, 1,
+                        Instr(Mnemonic.fadd, d2,d1),
+                        Instr(Mnemonic.fadd, f2,f1))
+                ),
+                ( 0x10, Mask(8, 1,
+                        Instr(Mnemonic.fadd, d2,d1),
+                        Instr(Mnemonic.fadd, f2,f1))
+                ),
+                ( 0x01, Mask(8, 1,
+                        Instr(Mnemonic.fsub, d2,d1),
+                        Instr(Mnemonic.fsub, f2,f1))
+                ),
+                ( 0x11, Instr(Mnemonic.fsub, f2,f1) ),
 
-                { 0xD, new OprecField(4, 5, new Dictionary<int, OprecBase>
-                    {
-                        { 0x08, new Oprec(Opcode.fldi0, "f1") },
-                        { 0x0A, new Oprec(Opcode.fcnvsd, "FU,d1") },
-                        { 0x0E, new Oprec(Opcode.fipr, "v2,v1") },
-                        { 0x18, new Oprec(Opcode.fldi0, "f1") },
-                        { 0x1E, new Oprec(Opcode.fipr, "v2,v1") },
-                    })
-                },
-                { 0x14, new Oprec(Opcode.fcmp_eq, "f2,f1") },
-                { 0x1D, new OprecField(4, 5, new Dictionary<int, OprecBase>
-                    {
-                        { 0x01, new Oprec(Opcode.flds, "f1,FU") },
-                        { 0x05, new Oprec(Opcode.fabs, "d1") },
-                        { 0x09, new Oprec(Opcode.fldi1, "f1") },
-                        { 0x0A, new Oprec(Opcode.fcnvsd, "FU,d1") },
-                        { 0x0B, new Oprec(Opcode.fcnvds, "d1,FU") },
-                        { 0x11, new Oprec(Opcode.flds, "f1,FU") },
-                        { 0x15, new Oprec(Opcode.fabs, "f1") },
-                        { 0x19, new Oprec(Opcode.fldi1, "f1") },
-                    })
-                },
-            })
+                ( 0x02, Mask(8, 1,
+                        Instr(Mnemonic.fmul, d2,d1),
+                        Instr(Mnemonic.fmul, f2,f1))
+                ),
+                ( 0x12, Instr(Mnemonic.fmul, f2,f1) ),
+
+                ( 0x3, Mask(8, 1,
+                        Instr(Mnemonic.fdiv, d2,d1),
+                        Instr(Mnemonic.fdiv, f2,f1))
+                ),
+                ( 0x4, Mask(8, 1,
+                        Instr(Mnemonic.fcmp_eq, d2,d1),
+                        Instr(Mnemonic.fcmp_eq, f2,f1))
+                ),
+                ( 0x5, Mask(8, 1,
+                        Instr(Mnemonic.fcmp_gt, d2,d1),
+                        Instr(Mnemonic.fcmp_gt, f2,f1))
+                ),
+
+                ( 0x06, Instr(Mnemonic.fmov_d, X1d,d2) ),
+                ( 0x16, Instr(Mnemonic.fmov_s, X1l,f2) ),
+
+                ( 0x08, Instr(Mnemonic.fmov_d, Ind1d,d2) ),
+                ( 0x18, Instr(Mnemonic.fmov_s, Ind1l,f2) ),
+
+                ( 0x9, Mask(8, 1,
+                    Instr(Mnemonic.fcmp_gt, d2,d1),
+                    Instr(Mnemonic.fcmp_gt, f2,f1))
+                ),
+
+                ( 0x0A, Instr(Mnemonic.fmov_d, Ind1d,d2) ),
+                ( 0x1A, Instr(Mnemonic.fmov_s, Ind1l,f2) ),
+
+                ( 0xC, Mask(8, 1,
+                    Instr(Mnemonic.fmov, d2,d1),
+                    Instr(Mnemonic.fmov, f2,f1))
+                ),
+                ( 0x1C, Mask(8, 1,
+                    Instr(Mnemonic.fmov, d2,d1),
+                    Instr(Mnemonic.fmov, f2,f1))
+                ),
+                ( 0xD, decode_FxxD ),
+                
+                ( 0x0E, Instr(Mnemonic.fmac, F0,f2,f1) ),
+                ( 0x0F, invalid ),
+                ( 0x14, Instr(Mnemonic.fcmp_eq, f2,f1) ),
+                ( 0x1D, decode_FxxD ),
+                ( 0x1E, Instr(Mnemonic.fmac, F0,f2,f1) ),
+                ( 0x1F, invalid )
+            )
         };
     }
 }

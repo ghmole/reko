@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Reko.Core.Expressions;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Reko.Core.Code
 {
@@ -29,7 +30,7 @@ namespace Reko.Core.Code
     /// Models a low-level call instruction.
     /// </summary>
     /// <remarks>CallInstructions only exist right after scanning. Subsequent
-    /// decompiler phases will replace them with <code>Application</code> 
+    /// decompiler phases will replace them with <cref>Application</cref> instances.
     /// expressions.
     /// </remarks>
     public class CallInstruction : Instruction
@@ -40,19 +41,24 @@ namespace Reko.Core.Code
                 throw new ArgumentNullException("callee");
             this.Callee = callee;
             this.CallSite = site;
-            this.Definitions = new HashSet<DefInstruction>();
-            this.Uses = new HashSet<UseInstruction>();
+            this.Definitions = new HashSet<CallBinding>();
+            this.Uses = new HashSet<CallBinding>();
         }
 
         public Expression Callee { get; set; }
         public CallSite CallSite { get; private set; }
 
-        // Set of variables that reach the call site. These need to be reconciled 
-        // with the variables used by the callee, if these are known.
-        public HashSet<UseInstruction> Uses { get; private set; }
+        /// <summary>
+        /// Set of expressions that reach the call site. These need to be 
+        /// reconciled  with the storages actually used by the callee, if these are 
+        /// known.
+        /// </summary>
+        public HashSet<CallBinding> Uses { get; private set; }
 
-        // Set of variables that the called function defines.
-        public HashSet<DefInstruction> Definitions { get; private set; }
+        /// <summary>
+        /// Set of expressions that the called function defines.
+        /// </summary> 
+        public HashSet<CallBinding> Definitions { get; private set; }
 
         public override bool IsControlFlow { get { return false; } }
 
@@ -69,6 +75,31 @@ namespace Reko.Core.Code
         public override void Accept(InstructionVisitor v)
         {
             v.VisitCallInstruction(this);
+        }
+    }
+
+    public class CallBinding
+    {
+        public Storage Storage;
+        public Expression Expression;
+        public BitRange BitRange;
+
+        public CallBinding(Storage stg, Expression exp)
+        {
+            this.Storage = stg;
+            this.Expression = exp;
+            this.BitRange = new BitRange(0, exp.DataType.BitSize);
+        }
+
+        public override string ToString()
+        {
+            var sb = new StringBuilder();
+            sb.AppendFormat("{0}:{1}", Storage, Expression);
+            if (BitRange.Lsb != 0 || (uint)BitRange.Msb != Storage.BitSize)
+            {
+                sb.Append(BitRange.ToString());
+            }
+            return sb.ToString();
         }
     }
 }

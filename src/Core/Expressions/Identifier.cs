@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,16 @@ namespace Reko.Core.Expressions
 			this.Storage = stg;
 		}
 
+        public static Identifier Create(RegisterStorage reg)
+        {
+            return new Identifier(reg.Name, reg.DataType, reg);
+        }
+
+        public static Identifier Create(SequenceStorage seq)
+        {
+            return new Identifier(seq.Name, seq.DataType, seq);
+        }
+
         public static Identifier CreateTemporary(string name, DataType dt)
         {
             var tmp = new TemporaryStorage(name, 0, dt);
@@ -74,7 +84,7 @@ namespace Reko.Core.Expressions
         /// byte value on a PowerPC would be stored in a 32-bit register 
         /// 'r6'.
         /// </remarks>
-        public Storage Storage { get; private set; }
+        public Storage Storage { get; }
 
         public override T Accept<T, C>(ExpressionVisitor<T, C> v, C context)
         {
@@ -151,14 +161,14 @@ namespace Reko.Core.Expressions
     /// </remarks>
     public class MemoryIdentifier : Identifier
 	{
-		public MemoryIdentifier(int i, DataType dt) : base("Mem" + i, dt, new MemoryStorage())
+		public MemoryIdentifier(int i, DataType dt) : base("Mem" + i, dt, MemoryStorage.Instance)
 		{
 		}
 
-        public MemoryIdentifier(string name, DataType dt) : base(name, dt, new MemoryStorage())
+        public MemoryIdentifier(string name, DataType dt, Storage stg) : base(name, dt, stg)
         {
-
         }
+
 		static MemoryIdentifier()
 		{
 			GlobalMemory = new MemoryIdentifier(0, new UnknownType());

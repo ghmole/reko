@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -97,7 +97,7 @@ namespace Reko.Arch.Pdp11
 
         public override CallSite OnBeforeCall(Identifier stackReg, int returnSize)
         {
-            return new CallSite(returnSize, 2);
+            return new CallSite(returnSize, 0);
         }
 
         public override void OnAfterCall(FunctionType sigCallee)

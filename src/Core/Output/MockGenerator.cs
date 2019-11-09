@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,49 +41,86 @@ namespace Reko.Core.Output
     /// </remarks>
     public class MockGenerator : InstructionVisitor, IExpressionVisitor, IDataTypeVisitor<int>
     {
-        private IndentingTextWriter writer;
-        private Dictionary<Operator, string> mpopstr;
+        private readonly IndentingTextWriter writer;
+        private readonly Dictionary<Operator, string> mpopstr;
+        private readonly string prefix;
 
-        public MockGenerator(TextWriter writer)
+        public MockGenerator(TextWriter writer, string prefix)
         {
             this.writer = new IndentingTextWriter(writer, false, 4);
-            this.mpopstr = new Dictionary<Operator, string>();
-            mpopstr.Add(Operator.IAdd, "IAdd");
-            mpopstr.Add(Operator.And, "And");
-            mpopstr.Add(Operator.Cand, "Cand");
-            mpopstr.Add(Operator.Cor, "Cor");
+            this.mpopstr = new Dictionary<Operator, string> {
+                { Operator.IAdd, "IAdd" },
+                { Operator.And, "And" },
+                { Operator.Cand, "Cand" },
+                { Operator.Cor, "Cor" },
 
-            mpopstr.Add(Operator.Eq, "Eq");
-            mpopstr.Add(Operator.Ne, "Ne");
-            mpopstr.Add(Operator.Ge, "Ge");
-            mpopstr.Add(Operator.Gt, "Gt");
-            mpopstr.Add(Operator.Le, "Le");
-            mpopstr.Add(Operator.Lt, "Lt");
-            mpopstr.Add(Operator.IMul, "IMul");
-            mpopstr.Add(Operator.SMul, "SMul");
-            mpopstr.Add(Operator.UMul, "UMul");
-            mpopstr.Add(Operator.Or, "Or");
-            mpopstr.Add(Operator.ISub, "ISub");
-            mpopstr.Add(Operator.USub, "USub");
-            mpopstr.Add(Operator.Uge, "Uge");
-            mpopstr.Add(Operator.Ugt, "Ugt");
-            mpopstr.Add(Operator.Ule, "Ule");
-            mpopstr.Add(Operator.Ult, "Ult");
-            mpopstr.Add(Operator.Xor, "Xor");
+                { Operator.Eq, "Eq" },
+                { Operator.Ne, "Ne" },
+                { Operator.Ge, "Ge" },
+                { Operator.Gt, "Gt" },
+                { Operator.Le, "Le" },
+                { Operator.Lt, "Lt" },
+                { Operator.IMul, "IMul" },
+                { Operator.SMul, "SMul" },
+                { Operator.UMul, "UMul" },
+                { Operator.IMod, "Mod" },
+                { Operator.Or, "Or" },
+                { Operator.ISub, "ISub" },
+                { Operator.USub, "USub" },
+                { Operator.SDiv, "SDiv" },
+                { Operator.UDiv, "UDiv" },
+
+                { Operator.Shl, "Shl" },
+                { Operator.Shr, "Shr" },
+                { Operator.Sar, "Sar" },
+                { Operator.Uge, "Uge" },
+                { Operator.Ugt, "Ugt" },
+                { Operator.Ule, "Ule" },
+                { Operator.Ult, "Ult" },
+                { Operator.Xor, "Xor" },
+
+                { Operator.FAdd, "FAdd" },
+                { Operator.FSub, "FSub" },
+                { Operator.FMul, "FMul" },
+                { Operator.FDiv, "FDiv" },
+                { Operator.Feq, "FEq" },
+                { Operator.Fne, "FNe" },
+                { Operator.Flt, "FLt" },
+                { Operator.Fle, "FLe" },
+                { Operator.Fge, "FGe" },
+                { Operator.Fgt, "FGt" },
+
+
+                { Operator.AddrOf, "AddrOf" },
+                { Operator.Comp, "Comp" },
+                { Operator.Neg, "Neg" },
+                { Operator.Not, "Not" }
+
+            };
+            this.prefix = prefix;
         }
 
-        public static void Dump(Procedure proc)
+        public static void DumpMethod(Procedure proc)
         {
             var sw = new StringWriter();
-            var mg = new MockGenerator(sw);
-            mg.Write(proc);
+            sw.WriteLine("// {0} //////////", proc.Name);
+            var mg = new MockGenerator(sw, "m.");
+            mg.WriteMethod(proc);
+            Debug.Print(sw.ToString());
+        }
+
+        public static void DumpClass(Procedure proc)
+        {
+            var sw = new StringWriter();
+            var mg = new MockGenerator(sw, "");
+            mg.WriteClass(proc);
             Debug.Print(sw.ToString());
         }
 
         private IEnumerable<Identifier> CollectLocalIdentifiers(Procedure proc)
         {
-            SortedList<string, Identifier> identifiers = new SortedList<string, Identifier>();
-            IdentifierCollector coll = new IdentifierCollector(identifiers);
+            var identifiers = new Dictionary<string, Identifier>();
+            var coll = new IdentifierCollector(identifiers);
             foreach (Block block in new DfsIterator<Block>(proc.ControlGraph).PreOrder(proc.EntryBlock))
             {
                 foreach (Statement stm in block.Statements)
@@ -95,12 +132,31 @@ namespace Reko.Core.Output
         }
 
 
-        public void Write(Procedure proc)
+        public void WriteClass(Procedure proc)
         {
-            WritePrologue(proc);
+            WriteClassPrologue(proc);
             WriteIdentifierDeclarations(CollectLocalIdentifiers(proc));
             WriteCode(proc);
-            WriteEpilogue();
+            WriteClassEpilogue();
+        }
+
+        public void WriteMethod(Procedure proc)
+        {
+            WriteMethodPrologue(proc);
+            WriteIdentifierDeclarations(CollectLocalIdentifiers(proc));
+            WriteCode(proc);
+            WriteMethodEpilogue();
+        }
+
+        private void WriteExpressions(IEnumerable<Expression> exprs)
+        {
+            var sep = "";
+            foreach (var e in exprs)
+            {
+                writer.Write(sep);
+                sep = ", ";
+                e.Accept(this);
+            }
         }
 
         private void WriteIdentifierDeclarations(IEnumerable<Identifier> identifiers)
@@ -109,7 +165,8 @@ namespace Reko.Core.Output
             {
                 if (id is MemoryIdentifier)
                     continue;
-                writer.Write("Identifier {0} = Local(", id.Name);
+                writer.Write("Identifier {0} = ", id.Name);
+                Method("Local");
                 id.DataType.Accept(this);
                 writer.WriteLine(", \"{0}\");", id.Name);
             }
@@ -138,14 +195,21 @@ namespace Reko.Core.Output
             return (block == proc.EntryBlock || block == proc.ExitBlock) && block.Statements.Count == 0;
         }
 
-        private void WriteEpilogue()
+        private void WriteClassEpilogue()
         {
             writer.Outdent();
             writer.WriteLine("}");
             writer.WriteLine();
         }
 
-        private void WritePrologue(Procedure proc)
+        private void WriteMethodEpilogue()
+        {
+            writer.Outdent();
+            writer.WriteLine("});");
+            writer.WriteLine();
+        }
+
+        private void WriteClassPrologue(Procedure proc)
         {
             string procName = (proc.Name != "ProcedureMock")
                 ? proc.Name
@@ -155,23 +219,32 @@ namespace Reko.Core.Output
             writer.Indent();
         }
 
+        private void WriteMethodPrologue(Procedure proc)
+        {
+            writer.WriteLine("RunTest(m =>");
+            writer.WriteLine("{");
+            writer.Indent();
+        }
+
         private void EmitLabel(Block block)
         {
-            writer.WriteLine("Label(\"{0}\");", block.Name);
+            Method("Label");
+            writer.WriteLine("\"{0}\");", block.Name);
         }
 
         #region InstructionVisitor Members
 
         void InstructionVisitor.VisitAssignment(Assignment a)
         {
-            writer.Write("Assign({0}, ", a.Dst.Name);
+            Method("Assign");
+            writer.Write("{0}, ", a.Dst.Name);
             a.Src.Accept(this);
             writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitBranch(Branch b)
         {
-            writer.Write("BranchIf(");
+            Method("BranchIf");
             b.Condition.Accept(this);
             writer.Write(", \"");
             writer.Write(b.Target.Name);
@@ -180,28 +253,52 @@ namespace Reko.Core.Output
 
         void InstructionVisitor.VisitCallInstruction(CallInstruction ci)
         {
-            throw new NotImplementedException();
+            Method("Call");
+            ci.Callee.Accept(this);
+            writer.Write(", {0}", ci.CallSite.SizeOfReturnAddressOnStack);
+            if (ci.Uses.Count > 0)
+            {
+                writer.WriteLine(",");
+                writer.Indent();
+                writer.Write("new [] {");
+                WriteExpressions(ci.Uses.Select(u => u.Expression));
+                writer.Write("}");
+                writer.Outdent();
+            }
+            if (ci.Definitions.Count > 0)
+            {
+                writer.WriteLine(",");
+                writer.Indent();
+                writer.Write("new [] {");
+                WriteExpressions(ci.Definitions.Select(d => d.Expression));
+                writer.Write("}");
+                writer.Outdent();
+            }
+            writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitComment(CodeComment comment)
         {
-            writer.Write("Comment(");
+            Method("Comment");
             QuoteString(comment.Text);
+            writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitDeclaration(Declaration decl)
         {
-            writer.Write("Declare(");
+            Method("Declare");
             writer.Write(decl.Identifier.Name);
-            writer.Write(", ");
-            decl.Expression.Accept(this);
+            if (decl.Expression != null)
+            {
+                writer.Write(", ");
+                decl.Expression.Accept(this);
+            }
             writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitDefInstruction(DefInstruction def)
         {
-            Build("Def");
-            writer.Write("(");
+            Method("Def");
             def.Identifier.Accept(this);
             writer.WriteLine(");");
         }
@@ -214,20 +311,23 @@ namespace Reko.Core.Output
 
         void InstructionVisitor.VisitPhiAssignment(PhiAssignment phi)
         {
-            Build("Phi");
-            writer.Write("(");
+            Method("Phi");
             phi.Dst.Accept(this);
             foreach (var arg in phi.Src.Arguments)
             {
                 writer.Write(", ");
-                arg.Accept(this);
+                writer.Write("(");
+                arg.Value.Accept(this);
+                writer.Write(",");
+                writer.Write("\"{0}\"", arg.Block.Name);
+                writer.Write(")");
             }
             writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitReturnInstruction(ReturnInstruction ret)
         {
-            writer.Write("Return(");
+            Method("Return");
             if (ret.Expression != null)
             {
                 ret.Expression.Accept(this);
@@ -237,7 +337,7 @@ namespace Reko.Core.Output
 
         void InstructionVisitor.VisitSideEffect(SideEffect side)
         {
-            writer.Write("SideEffect(");
+            Method("SideEffect");
             side.Expression.Accept(this);
             writer.WriteLine(");");
         }
@@ -246,7 +346,7 @@ namespace Reko.Core.Output
         {
             if (store.Dst is MemoryAccess access)
             {
-                writer.Write("MStore(");
+                Method("MStore");
                 access.EffectiveAddress.Accept(this);
             }
             else
@@ -258,12 +358,21 @@ namespace Reko.Core.Output
 
         void InstructionVisitor.VisitSwitchInstruction(SwitchInstruction si)
         {
-            throw new NotImplementedException();
+            Method("Switch");
+            si.Expression.Accept(this);
+            if (si.Targets.Length > 0)
+            {
+                writer.Write(", ");
+                writer.Write(string.Join(",", si.Targets.Select(t => $"\"{t}\"")));
+            }
+            writer.WriteLine(");");
         }
 
         void InstructionVisitor.VisitUseInstruction(UseInstruction u)
         {
-            throw new NotImplementedException();
+            Method("Use");
+            u.Expression.Accept(this);
+            writer.WriteLine(");");
         }
 
         #endregion
@@ -273,22 +382,34 @@ namespace Reko.Core.Output
         void IExpressionVisitor.VisitAddress(Address addr)
         {
             var addr16 = addr as Address16;
-            if (addr16!= null)
+            if (addr16 != null)
+            {
                 writer.Write("Address.Ptr16(0x{0:X}", addr16.ToUInt16());
+                return;
+            }
             if (addr.Selector.HasValue)
+            {
                 writer.Write("Address.SegPtr(0x{0:X}, 0x{1:X}", addr.Selector, addr.Offset);
+                return;
+            }
             var addr32 = addr as Address32;
             if (addr32 != null)
+            {
                 writer.Write("Address.Ptr32(0x{0:X}", addr32.ToUInt32());
+                return;
+            }
             var addr64 = addr as Address64;
             if (addr64 != null)
+            {
                 writer.Write("Address.Ptr64(0x{0:X}", addr64.ToLinear());
+                return;
+            }
             throw new NotSupportedException();
         }
 
         void IExpressionVisitor.VisitApplication(Application appl)
         {
-            writer.Write("Fn(");
+            Method("Fn");
             appl.Procedure.Accept(this);
             foreach (Expression arg in appl.Arguments)
             {
@@ -307,8 +428,7 @@ namespace Reko.Core.Output
         {
             if (!mpopstr.TryGetValue(binExp.Operator, out string str))
                 throw new NotImplementedException(binExp.Operator.ToString());
-            writer.Write(str);
-            writer.Write("(");
+            Method(str);
             binExp.Left.Accept(this);
             writer.Write(", ");
             binExp.Right.Accept(this);
@@ -317,8 +437,7 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitCast(Cast cast)
         {
-            Build("Cast");
-            writer.Write("(");
+            Method("Cast");
             cast.DataType.Accept(this);
             writer.Write(", ");
             cast.Expression.Accept(this);
@@ -332,8 +451,7 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitConditionOf(ConditionOf cof)
         {
-            Build("Cond");
-            writer.Write("(");
+            Method("Cond");
             cof.Expression.Accept(this);
             writer.Write(")");
         }
@@ -342,15 +460,19 @@ namespace Reko.Core.Output
         {
             if (c.DataType == PrimitiveType.Word32)
             {
-                writer.Write("Word32(");
-
+                Method("Word32");
             }
             else if (c.DataType==PrimitiveType.Int32)
             {
                 writer.Write("Constant.Create(Primitive.Int32, ");
-            } else if (c.DataType == PrimitiveType.Word16)
+            }
+            else if (c.DataType == PrimitiveType.Word16)
             {
-                writer.Write("Word16(");
+                Method("Word16");
+            }
+            else if (c.DataType == PrimitiveType.Byte)
+            {
+                Method("Byte");
             }
             else
             {
@@ -363,7 +485,7 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitDepositBits(DepositBits d)
         {
-            writer.Write("Dpb(");
+            Method("Dpb");
             d.Source.Accept(this);
             writer.Write(", ");
             d.InsertedBits.Accept(this);
@@ -392,7 +514,7 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitMemoryAccess(MemoryAccess access)
         {
-            writer.Write("Mem(");
+            Method("Mem");
             access.DataType.Accept(this);
             writer.Write(", ");
             access.EffectiveAddress.Accept(this);
@@ -401,12 +523,14 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitMkSequence(MkSequence seq)
         {
-            throw new NotImplementedException();
+            Method("Seq");
+            WriteExpressions(seq.Expressions);
+            writer.Write(")");
         }
 
         void IExpressionVisitor.VisitOutArgument(OutArgument outArg)
         {
-            writer.Write("Out(");
+            Method("Out");
             outArg.DataType.Accept(this);
             writer.Write(", ");
             outArg.Expression.Accept(this);
@@ -437,12 +561,18 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitSegmentedAccess(SegmentedAccess access)
         {
-            throw new NotImplementedException();
+            Method("SegMem");
+            access.DataType.Accept(this);
+            writer.Write(", ");
+            access.BasePointer.Accept(this);
+            writer.Write(", ");
+            access.EffectiveAddress.Accept(this);
+            writer.Write(")");
         }
 
         void IExpressionVisitor.VisitSlice(Slice slice)
         {
-            writer.Write("Slice(");
+            Method("Slice");
             slice.DataType.Accept(this);
             writer.Write(", ");
             slice.Expression.Accept(this);
@@ -451,8 +581,7 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitTestCondition(TestCondition tc)
         {
-            Build("Test");
-            writer.Write("(");
+            Method("Test");
             writer.Write($"ConditionCode.{tc}");
             writer.Write(", ");
             tc.Expression.Accept(this);
@@ -461,10 +590,9 @@ namespace Reko.Core.Output
 
         void IExpressionVisitor.VisitUnaryExpression(UnaryExpression unary)
         {
-            if (unary.Operator == Operator.AddrOf)
-                writer.Write("AddrOf(");
-            else
+            if (!mpopstr.TryGetValue(unary.Operator, out var methodName))
                 throw new NotImplementedException(unary.ToString());
+            Method(methodName);
             unary.Expression.Accept(this);
             writer.Write(")");
         }
@@ -475,7 +603,10 @@ namespace Reko.Core.Output
 
         public int VisitArray(ArrayType at)
         {
-            throw new NotImplementedException();
+            writer.Write("new ArrayType(");
+            at.ElementType.Accept(this);
+            writer.Write(", {0})", at.Length);
+            return 0;
         }
 
         public int VisitClass(ClassType ct)
@@ -501,7 +632,26 @@ namespace Reko.Core.Output
 
         public int VisitFunctionType(FunctionType ft)
         {
-            throw new NotImplementedException();
+            void writeArg(Identifier arg)
+            {
+                writer.Write("new Identifier(\"{0}\", ", arg.Name);
+                arg.DataType.Accept(this);
+                //$TODO: storage
+                writer.Write(")");
+            }
+
+            writer.Write("new FunctionType(");
+            if (ft.ReturnValue == null)
+            {
+                writer.Write("null");
+            }
+            else
+            {
+                writeArg(ft.ReturnValue);
+            }
+            WriteList(ft.Parameters, ", ", writeArg);
+            writer.Write(")");
+            return 0;
         }
 
         public int VisitPrimitive(PrimitiveType pt)
@@ -535,7 +685,14 @@ namespace Reko.Core.Output
                     sb.Append($"Int{pt.BitSize}");
                 }
                 else
-                    throw new NotImplementedException();
+                {
+                    sb.Append("Create(");
+                    sb.Append(string.Join("|",
+                        pt.Domain.ToString()
+                            .Split(',').Select(s => $"Domain.{s.Trim()}")));
+                    sb.Append($", {pt.BitSize}");
+                    sb.Append(")");
+                }
             }
             return sb.ToString();
         }
@@ -547,12 +704,10 @@ namespace Reko.Core.Output
 
         public int VisitPointer(Pointer ptr)
         {
-            throw new NotImplementedException();
-        }
-
-        public int VisitQualifiedType(QualifiedType ptr)
-        {
-            throw new NotImplementedException();
+            writer.Write("new Pointer(");
+            ptr.Pointee.Accept(this);
+            writer.Write(", {0})", ptr.Size);
+            return 0;
         }
 
         public int VisitReference(ReferenceTo ptr)
@@ -567,12 +722,16 @@ namespace Reko.Core.Output
 
         public int VisitStructure(StructureType str)
         {
-            throw new NotImplementedException();
+            writer.Write("new StructureType({0})", str.Name ?? "<not-set>");
+            return 0;
         }
 
         public int VisitTypeReference(TypeReference typeref)
         {
-            throw new NotImplementedException();
+            writer.Write("new TypeReference(");
+            typeref.Referent.Accept(this);
+            writer.Write(")");
+            return 0;
         }
 
         public int VisitTypeVariable(TypeVariable tv)
@@ -597,11 +756,6 @@ namespace Reko.Core.Output
         }
         #endregion
 
-        private void Build(string methodName)
-        {
-            writer.Write(methodName);
-        }
-
         private void QuoteString(string str)
         {
             var sb = new StringBuilder();
@@ -621,6 +775,22 @@ namespace Reko.Core.Output
             }
             sb.Append("\"");
             writer.Write(sb.ToString());
+        }
+
+        private void Method(string methodName)
+        {
+            writer.Write("{0}{1}(", prefix, methodName);
+        }
+
+        private void WriteList<T>(IEnumerable<T> items, string separator, Action<T> w)
+        {
+            var s = "";
+            foreach (var item in items)
+            {
+                writer.Write(s);
+                s = separator;
+                w(item);
+            }
         }
     }
 }

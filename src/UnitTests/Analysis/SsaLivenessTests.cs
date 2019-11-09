@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John KÃ¤llÃ©n.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,11 +20,10 @@
 
 using Reko.Core;
 using Reko.Core.Expressions;
-using Reko.Core.Lib;
-using Reko.Core.Types;
 using Reko.Analysis;
 using Reko.UnitTests.Mocks;
 using Reko.UnitTests.TestCode;
+using Moq;
 using NUnit.Framework;
 using System;
 using System.Linq;
@@ -59,7 +58,7 @@ namespace Reko.UnitTests.Analysis
 			Assert.AreEqual("branch Mem0[i_3:byte] != 0 loop", block1.Statements[2].Instruction.ToString());
 			Assert.IsTrue(sla.IsLiveOut(i_1.Identifier, block1.Statements[2]), "i_1 should be live at the end of block 1");
 			Assert.IsTrue(sla.IsLiveOut(i_3.Identifier, block1.Statements[2]),"i_3 should be live at the end of block 1");
-			Assert.AreEqual("i_1 = PHI(i, i_3)", block1.Statements[0].Instruction.ToString());
+			Assert.AreEqual("i_1 = PHI((i, LiveLoopMock_entry), (i_3, loop))", block1.Statements[0].Instruction.ToString());
 			Assert.IsFalse(sla.IsLiveOut(i_3.Identifier, block1.Statements[0]), "i_3 is dead after the phi function");
 		}
 
@@ -77,23 +76,23 @@ namespace Reko.UnitTests.Analysis
 			}
 
 			Block block = proc.EntryBlock.Succ[0];
-			Assert.AreEqual("Mem3[0x10000000:word32] = a + b", block.Statements[0].Instruction.ToString());
-			Assert.AreEqual("Mem4[0x10000004:word32] = a", block.Statements[1].Instruction.ToString());
+			Assert.AreEqual("Mem4[0x10000000:word32] = a + b", block.Statements[0].Instruction.ToString());
+			Assert.AreEqual("Mem5[0x10000004:word32] = a", block.Statements[1].Instruction.ToString());
 
 			SsaIdentifier a = ssa.Identifiers.Where(s=>s.Identifier.Name=="a").Single();
             SsaIdentifier b = ssa.Identifiers.Where(s => s.Identifier.Name == "b").Single();
-            SsaIdentifier c_2 = ssa.Identifiers.Where(s => s.Identifier.Name == "c_2").Single();
+            SsaIdentifier c_3 = ssa.Identifiers.Where(s => s.Identifier.Name == "c_3").Single();
 			Assert.IsFalse(sla.IsLiveOut(a.Identifier, block.Statements[1]), "a should be dead after its last use");
 			Assert.IsTrue(sla.IsLiveOut(a.Identifier, block.Statements[0]), "a should be live after the first use");
-			Assert.IsFalse(sla.IsDefinedAtStatement(c_2, block.Statements[0]));
+			Assert.IsFalse(sla.IsDefinedAtStatement(c_3, block.Statements[0]));
 			Assert.IsFalse(sla.IsDefinedAtStatement(b, block.Statements[0]));
 		}
 
 		[Test]
 		public void SltWhileGoto()
 		{
-			Program prog = RewriteFile("Fragments/while_goto.asm");
-			Build(prog.Procedures.Values[0], prog.Architecture);
+			Program program = RewriteFile("Fragments/while_goto.asm");
+			Build(program.Procedures.Values[0], program.Architecture);
 
 			using (FileUnitTester fut = new FileUnitTester("Analysis/SltWhileGoto.txt"))
 			{
@@ -121,28 +120,33 @@ namespace Reko.UnitTests.Analysis
 		private void Build(Procedure proc, IProcessorArchitecture arch)
 		{
             var platform = new DefaultPlatform(null, arch);
-			this.proc = proc;
-			Aliases alias = new Aliases(proc);
-			alias.Transform();
-			SsaTransform sst = new SsaTransform(
-                new ProgramDataFlow(),
+            var program = new Program()
+            {
+                Architecture = arch,
+                Platform = platform,
+            };
+            this.proc = proc;
+            var importResolver = new Mock<IImportResolver>().Object;
+            var sst = new SsaTransform(
+                program,
                 proc,
-                null,
-                proc.CreateBlockDominatorGraph(),
-                new HashSet<RegisterStorage>());
+                new HashSet<Procedure>(),
+                importResolver,
+                new ProgramDataFlow());
+            sst.Transform();
 			ssa = sst.SsaState;
 			ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, platform);
 			cce.Transform();
             var segmentMap = new SegmentMap(Address.Ptr32(0x00123400));
-			ValuePropagator vp = new ValuePropagator(segmentMap, ssa, new FakeDecompilerEventListener());
+			ValuePropagator vp = new ValuePropagator(segmentMap, ssa, program.CallGraph, importResolver, new FakeDecompilerEventListener());
 			vp.Transform();
-			DeadCode.Eliminate(proc, ssa);
-			Coalescer coa = new Coalescer(proc, ssa);
+			DeadCode.Eliminate(ssa);
+			Coalescer coa = new Coalescer(ssa);
 			coa.Transform();
-			DeadCode.Eliminate(proc, ssa);
+			DeadCode.Eliminate(ssa);
 
-			sla = new SsaLivenessAnalysis(proc, ssa.Identifiers);
-			sla2 = new SsaLivenessAnalysis2(proc, ssa.Identifiers);
+			sla = new SsaLivenessAnalysis(ssa);
+			sla2 = new SsaLivenessAnalysis2(ssa);
 			sla2.Analyze();
 		}
 
@@ -159,6 +163,5 @@ namespace Reko.UnitTests.Analysis
 				MStore(Word32(0x10000004), a);
 			}
 		}
-
 	}
 }

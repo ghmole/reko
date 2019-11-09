@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2017 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,14 +31,13 @@ namespace Reko.UserInterfaces.WindowsForms
 {
     public class WindowsProjectBrowserService : ProjectBrowserService
     {
-        public WindowsProjectBrowserService(IServiceProvider services, ITreeView treeView) : base(services, treeView)
+        public WindowsProjectBrowserService(IServiceProvider services, ITabPage tabPage, ITreeView treeView) : base(services, tabPage, treeView)
         {
             this.tree.DragEnter += tree_DragEnter;
             this.tree.DragOver += tree_DragOver;
             this.tree.DragDrop += tree_DragDrop;
             this.tree.DragLeave += tree_DragLeave;
             this.tree.MouseWheel += tree_MouseWheel;
-
         }
 
         void tree_DragEnter(object sender, DragEventArgs e)

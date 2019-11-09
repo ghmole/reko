@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ namespace Reko.Arch.X86
     /// </summary>
     public partial class X86Rewriter
     {
-        private Expression CreateTestCondition(ConditionCode cc, Opcode opcode)
+        private Expression CreateTestCondition(ConditionCode cc, Mnemonic opcode)
         {
             var grf = orw.FlagGroup(X86Instruction.UseCc(opcode));
             var tc = new TestCondition(cc, grf);
@@ -97,15 +97,23 @@ namespace Reko.Arch.X86
                     // Calling the following address. Is the call followed by a 
                     // pop?
                     var next = dasm.Peek(1);
-                    RegisterOperand reg = next.op1 as RegisterOperand;
-                    if (next.code == Opcode.pop && reg != null)
+                    RegisterOperand reg = next.Operands[0] as RegisterOperand;
+                    if (next.code == Mnemonic.pop && reg != null)
                     {
                         // call $+5,pop<reg> idiom
                         dasm.MoveNext();
-                        m.Assign(
-                            orw.AluRegister(reg),
-                            addr);
+                        var r = orw.AluRegister(reg);
+                        if (addr.Selector.HasValue)
+                        {
+                            var offset = Constant.Create(PrimitiveType.Offset16, addr.Offset);
+                            m.Assign(r, offset);
+                        }
+                        else
+                        {
+                            m.Assign(r, addr);
+                        }
                         this.len += 1;
+                        rtlc = InstrClass.Linear;
                         return;
                     }
                 }
@@ -118,7 +126,8 @@ namespace Reko.Arch.X86
                 {
                     if (arch.WordWidth.Size > 2)
                     {
-                        rtlc = RtlClass.Invalid;
+                        // call bx doesn't work on 32- or 64-bit architectures.
+                        rtlc = InstrClass.Invalid;
                         m.Invalid();
                         return;
                     }
@@ -127,19 +136,19 @@ namespace Reko.Arch.X86
                 }
                 m.Call(target, (byte) opsize.Size);
             }
-            rtlc = RtlClass.Transfer | RtlClass.Call;
+            rtlc = InstrClass.Transfer | InstrClass.Call;
         }
 
         private void RewriteConditionalGoto(ConditionCode cc, MachineOperand op1)
         {
-            rtlc = RtlClass.ConditionalTransfer;
-            m.Branch(CreateTestCondition(cc, instrCur.code), OperandAsCodeAddress(op1), RtlClass.ConditionalTransfer);
+            rtlc = InstrClass.ConditionalTransfer;
+            m.Branch(CreateTestCondition(cc, instrCur.code), OperandAsCodeAddress(op1), InstrClass.ConditionalTransfer);
         }
 
         private void RewriteInt()
         {
-            m.SideEffect(host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, SrcOp(instrCur.op1)));
-            rtlc = RtlClass.Call | RtlClass.Transfer;
+            m.SideEffect(host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, SrcOp(instrCur.Operands[0])));
+            rtlc |= InstrClass.Call | InstrClass.Transfer;
         }
 
         private void RewriteInto()
@@ -147,7 +156,7 @@ namespace Reko.Arch.X86
             m.BranchInMiddleOfInstruction(
                 m.Test(ConditionCode.NO, orw.FlagGroup(FlagM.OF)),
                 instrCur.Address + instrCur.Length,
-                RtlClass.ConditionalTransfer);
+                InstrClass.ConditionalTransfer);
             m.SideEffect(
                     host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, Constant.Byte(4)));
         }
@@ -156,9 +165,8 @@ namespace Reko.Arch.X86
         {
             m.Branch(
                 m.Eq0(orw.AluRegister(Registers.rcx, instrCur.dataWidth)),
-                OperandAsCodeAddress(instrCur.op1),
-                RtlClass.ConditionalTransfer);
-            rtlc = RtlClass.ConditionalTransfer;
+                OperandAsCodeAddress(instrCur.Operands[0]),
+                InstrClass.ConditionalTransfer);
         }
 
         private void RewriteJmp()
@@ -180,17 +188,17 @@ namespace Reko.Arch.X86
 				return;
 			}
 
-            rtlc = RtlClass.Transfer;
-			if (instrCur.op1 is ImmediateOperand)
+            rtlc = InstrClass.Transfer;
+			if (instrCur.Operands[0] is ImmediateOperand)
 			{
-				Address addr = OperandAsCodeAddress(instrCur.op1);
+				Address addr = OperandAsCodeAddress(instrCur.Operands[0]);
                 m.Goto(addr);
 				return;
 			}
-            var target = SrcOp(instrCur.op1);
+            var target = SrcOp(instrCur.Operands[0]);
             if (target.DataType.Size == 2 && arch.WordWidth.Size > 2)
             {
-                rtlc = RtlClass.Invalid;
+                rtlc = InstrClass.Invalid;
                 m.Invalid();
                 return;
             }
@@ -207,33 +215,30 @@ namespace Reko.Arch.X86
                     m.Cand(
                         m.Test(cc, orw.FlagGroup(useFlags)),
                         m.Ne0(cx)),
-                    OperandAsCodeAddress(instrCur.op1),
-                    RtlClass.ConditionalTransfer);
-                rtlc = RtlClass.ConditionalTransfer;
+                    OperandAsCodeAddress(instrCur.Operands[0]),
+                    InstrClass.ConditionalTransfer);
             }
             else
             {
-                m.Branch(m.Ne0(cx), OperandAsCodeAddress(instrCur.op1), RtlClass.ConditionalTransfer);
-                rtlc = RtlClass.ConditionalTransfer;
+                m.Branch(m.Ne0(cx), OperandAsCodeAddress(instrCur.Operands[0]), InstrClass.ConditionalTransfer);
             }
         }
 
         public void RewriteRet()
         {
-            int extraBytesPopped = instrCur.Operands == 1 
-                ? ((ImmediateOperand)instrCur.op1).Value.ToInt32() 
+            int extraBytesPopped = instrCur.Operands.Length == 1 
+                ? ((ImmediateOperand)instrCur.Operands[0]).Value.ToInt32() 
                 : 0;
             if ((extraBytesPopped & 1) == 1)
             {
                 // Unlikely that an odd number of bytes are pushed on the stack.
-                rtlc = RtlClass.Invalid;
+                rtlc = InstrClass.Invalid;
                 m.Invalid();
                 return;
             }
             m.Return(
-                this.arch.WordWidth.Size + (instrCur.code == Opcode.retf ? Registers.cs.DataType.Size : 0),
+                this.arch.WordWidth.Size + (instrCur.code == Mnemonic.retf ? Registers.cs.DataType.Size : 0),
                 extraBytesPopped);
-            rtlc = RtlClass.Transfer;
         }
 
         public void RewriteIret()
@@ -244,7 +249,6 @@ namespace Reko.Arch.X86
                 Registers.cs.DataType.Size +
                 arch.WordWidth.Size, 
                 0);
-            rtlc = RtlClass.Transfer;
         }
 
         private void RewriteSyscall()
@@ -259,14 +263,12 @@ namespace Reko.Arch.X86
 
         private void RewriteSysexit()
         {
-            rtlc = RtlClass.Transfer;
             m.SideEffect(host.PseudoProcedure("__sysexit", VoidType.Instance));
             m.Return(0,0);
         }
 
         private void RewriteSysret()
         {
-            rtlc = RtlClass.Transfer;
             m.SideEffect(host.PseudoProcedure("__sysret", VoidType.Instance));
             m.Return(0,0);
         }
@@ -279,7 +281,7 @@ namespace Reko.Arch.X86
         /// <returns></returns>
         private bool IsRealModeReboot(X86Instruction instrCur)
         {
-            var addrOp = instrCur.op1 as X86AddressOperand;
+            var addrOp = instrCur.Operands[0] as X86AddressOperand;
             bool isRealModeReboot = addrOp != null && addrOp.Address.ToLinear() == 0xFFFF0;
             return isRealModeReboot;
         }

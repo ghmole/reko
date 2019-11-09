@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2018 John Källén.
+ * Copyright (C) 1999-2019 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,7 +24,6 @@ using Reko.Core.Types;
 using NUnit.Framework;
 using System;
 
-//$REFACTOR: rename this file to StorageVisitorTests
 namespace Reko.UnitTests.Core
 {
 	[TestFixture]
@@ -42,7 +41,7 @@ namespace Reko.UnitTests.Core
 		[Test]
 		public void VisitFlagGroup()
 		{
-            var flags = new RegisterStorage("flags", 16, 0, PrimitiveType.Word32);
+            var flags = new RegisterStorage("flags", 70, 0, PrimitiveType.Word32);
 			var f = new Identifier("grf", PrimitiveType.Word16, new FlagGroupStorage(flags, 0x11, "ZO", PrimitiveType.Byte));
 			var type = f.Storage.Accept(this);
 			Assert.AreEqual("grf", type);
@@ -55,7 +54,7 @@ namespace Reko.UnitTests.Core
 			var r_dx = new RegisterStorage("dx", 2, 0, PrimitiveType.Word16);
 			var ax = new Identifier(r_ax.Name, r_ax.DataType, r_ax);
 			var dx = new Identifier(r_dx.Name, r_dx.DataType, r_dx);
-			var seq = new Identifier("dx_ax", PrimitiveType.Word32, new SequenceStorage(dx.Storage, ax.Storage, PrimitiveType.Word32));
+			var seq = new Identifier("dx_ax", PrimitiveType.Word32, new SequenceStorage(PrimitiveType.Word32, dx.Storage, ax.Storage));
 			var type = seq.Storage.Accept(this);
 			Assert.AreEqual("seq", type);
 		}
