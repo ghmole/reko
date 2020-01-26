@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,24 +26,14 @@ namespace Reko.Arch.Avr
 {
     public class AvrInstruction : MachineInstruction
     {
-        public Mnemonic opcode;
-        public MachineOperand[] operands;
+        public Mnemonic Mnemonic { get; set; }
 
-        public override int OpcodeAsInteger => (int)opcode;
+        public override int OpcodeAsInteger => (int)Mnemonic;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteOpcode(opcode.ToString());
-            if (operands.Length > 0)
-            {
-                writer.Tab();
-                writer.WriteString(operands[0].ToString());
-                if (operands.Length > 1)
-                {
-                    writer.WriteString(",");
-                    writer.WriteString(operands[1].ToString());
-                }
-            }
+            writer.WriteOpcode(Mnemonic.ToString());
+            RenderOperands(writer, options);
         }
     }
 }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ namespace Reko.Core.Rtl
     /// <summary>
     /// Models the `call`, `jsr` or similar machine code instructions.
     /// </summary>
-    public class RtlCall : RtlTransfer
+    public sealed class RtlCall : RtlTransfer
     {
         /// <summary>
         /// Creates an <see cref="RtlCall"/> instruction.

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,8 +67,7 @@ namespace Reko.ImageLoaders.MzExe.Borland
             }
             dataSize += exeLoader.e_cbLastPage;
             var rdr = new LeImageReader(rawImage, dataSize);
-            var srdr = new StructureReader<debug_header>(rdr);
-            this.header = srdr.Read();
+            this.header = rdr.ReadStruct<debug_header>();
             if (this.header.magic_number != MagicNumber)
             {
                 return false;
@@ -76,8 +75,7 @@ namespace Reko.ImageLoaders.MzExe.Borland
             this.name_pool_offset = rawImage.Length - this.header.names;
             if (this.header.extension_size == 0x20)
             {
-                var ext = new StructureReader<header_extension_20>(rdr);
-                var extHdr = ext.Read();
+                var extHdr = rdr.ReadStruct<header_extension_20>();
                 name_pool_offset = rdr.Offset + (int)extHdr.name_pool_offset;
             }
             else if (this.header.extension_size != 0)
@@ -420,7 +418,7 @@ private const byte TID_FUNCPROTOTYPE = 0x2C; // Function with full parameter inf
     //           class type is type index of class. virtual offset
     //           is offset into the virtual table.symbol index is
     //           the symbol index of this method.info bits are
-    //          described in the following table.
+    //           described in the following table.
 
     //            Value Description
     //             0x01  member function
@@ -448,8 +446,7 @@ private const byte TID_SPECIALFUNC = 0x2D;
 private const byte TID_CLASS = 0x2E;       //  Class 
 
 
-//               Member pointers(24
-//                            bytes)
+//               Member pointers(24 bytes)
 //                 Field Size      Offset
 //                 type index             4          8
 //                 class index            2         11
@@ -630,7 +627,7 @@ private const byte TID_LOCALHANDLE = 0x3F;    //  Windows local handle
                         
                         DebugEx.Verbose(trace, $"    function/procedure: {b2:X2} returns {retType:X4}({GetKnownTypeName(retType)}) ({lang}" +
                                                             $"{(isVararg ? " varargs" : "")}" +
-                                                            $"{(isNested ? " nested" : "")}" +
+                                                             $"{(isNested ? " nested" : "")}" +
                                                             $"{(additionalBits != 0 ? $" additional bits: {additionalBits:X2}" : "")})");
                         
                         bt = new Callable

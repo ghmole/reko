@@ -1,7 +1,7 @@
 
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -100,9 +100,9 @@ namespace Reko.UnitTests.Analysis
 
         protected override void RunTest(Program program, TextWriter writer)
         {
-            var importResolver = new Mock<IImportResolver>();
+            var dynamicLinker = new Mock<IDynamicLinker>();
 
-            dfa = new DataFlowAnalysis(program, importResolver.Object, eventListener);
+            dfa = new DataFlowAnalysis(program, dynamicLinker.Object, eventListener);
             var ssts = dfa.RewriteProceduresToSsa();
 
             // Discover ssaId's that are live out at each call site.
@@ -111,7 +111,7 @@ namespace Reko.UnitTests.Analysis
                 program,
                 ssts.Select(sst => sst.SsaState),
                 dfa.ProgramDataFlow,
-                importResolver.Object,
+                dynamicLinker.Object,
                 eventListener);
             uvr.Transform();
 
@@ -850,6 +850,40 @@ main_exit:
 	def arg
 body:
 	fn(arg)
+	return
+main_exit:
+";
+            #endregion
+            AssertProcedureCode(sExp, ssa);
+        }
+
+        [Test(Description = "Ignore FPU return if it was not found in call definitions")]
+        [Category(Categories.UnitTests)]
+        public void CrwFPUReturnNotFound()
+        {
+            var ret = new FpuStackStorage(0, PrimitiveType.Real64);
+            var ssa = Given_Procedure("main", m =>
+            {
+                m.Label("body");
+                m.Call("fn", 4, new Identifier[] { }, new Identifier[] { });
+                m.Return();
+            });
+            Given_Procedure("fn", m => { });
+            Given_Signature(
+                "fn",
+                FunctionType.Func(
+                    new Identifier(
+                        "ret",
+                        ret.DataType,
+                        ret)));
+
+            When_RewriteCalls(ssa);
+
+            var sExp =
+            #region Expected
+@"main_entry:
+body:
+	fn()
 	return
 main_exit:
 ";

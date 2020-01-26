@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 2018-2019 Stefano Moioli <smxdev4@gmail.com>.
+ * Copyright (C) 2018-2020 Stefano Moioli <smxdev4@gmail.com>.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,6 +56,11 @@ namespace Reko.ImageLoaders.Xex
         }
     }
 
+    public class LoaderInfo
+	{
+		public byte[] aes_key;
+	}
+
     public class ImageData
     {
         internal XexHeader header;
@@ -74,7 +79,7 @@ namespace Reko.ImageLoaders.Xex
 
         internal List<string> libNames = new List<string>();
         internal List<UInt32> import_records = new List<uint>();
-        internal XexLoaderInfo loader_info;
+        internal LoaderInfo loader_info = new LoaderInfo();
         internal List<XexSection> sections;
         internal byte[] session_key;
 

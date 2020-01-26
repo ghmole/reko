@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ namespace Reko.Arch.X86
 	/// <summary>
 	/// Intel x86 opcode disassembler 
 	/// </summary>
-	public partial class X86Disassembler : DisassemblerBase<X86Instruction>
+	public partial class X86Disassembler : DisassemblerBase<X86Instruction, Mnemonic>
 	{
         private class X86LegacyCodeRegisterExtension
         {
@@ -136,7 +136,7 @@ namespace Reko.Arch.X86
             X86LegacyCodeRegisterExtension registerExtension;
 
             // These fields are for synthesis.
-            public Mnemonic opcode;
+            public Mnemonic mnemonic;
             public InstrClass iclass;
             public PrimitiveType dataWidth;
             public PrimitiveType addressWidth;
@@ -175,7 +175,7 @@ namespace Reko.Arch.X86
 
             public X86Instruction MakeInstruction()
             {
-                return new X86Instruction(this.opcode, this.iclass, this.iWidth, this.addressWidth, this.ops.ToArray())
+                return new X86Instruction(this.mnemonic, this.iclass, this.iWidth, this.addressWidth, this.ops.ToArray())
                 {
                     repPrefix = this.F2Prefix ? 2 :
                                 this.F3Prefix ? 3 : 0
@@ -328,7 +328,7 @@ namespace Reko.Arch.X86
             return instr;
         }
 
-        protected override X86Instruction CreateInvalidInstruction()
+        public override X86Instruction CreateInvalidInstruction()
         {
             return new X86Instruction(Mnemonic.illegal, InstrClass.Invalid, decodingContext.dataWidth, decodingContext.addressWidth);
         }

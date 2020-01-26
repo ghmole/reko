@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -154,6 +154,8 @@ namespace Reko.Analysis
                 pred = block.Pred[1];
                 predCond = block.Pred[0];
             }
+            if (pred == block)
+                return null;
             if (pred.Succ.Count != 2)
                 return null;
             if (predCond.Pred.Count != 1)

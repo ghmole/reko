@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -114,6 +114,11 @@ namespace Reko.Core
         public long Offset { get { return off; } set { off = value; } }
         public bool IsValid { get { return IsValidOffset(Offset); } }
         public bool IsValidOffset(long offset) { return 0 <= offset && offset < offEnd; }
+
+        public virtual T ReadStruct<T>() where T : struct
+        {
+            return new StructureReader<T>(this).Read();
+        }
 
         public virtual T ReadAt<T>(long offset, Func<ImageReader, T> action)
         {

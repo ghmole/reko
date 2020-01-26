@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,8 +33,8 @@ namespace Reko.UnitTests.Arch.M6800
     [TestFixture]
     public class M6812DisassemblerTests : DisassemblerTestBase<M6812Instruction>
     {
-        private M6812Architecture arch;
-        private Address addrLoad;
+        private readonly M6812Architecture arch;
+        private readonly Address addrLoad;
         private M6812Instruction instr;
 
         public M6812DisassemblerTests()

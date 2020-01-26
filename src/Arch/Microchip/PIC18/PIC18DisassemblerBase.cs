@@ -1,8 +1,8 @@
 #region License
 /* 
- * Copyright (C) 2017-2019 Christian Hostelet.
+ * Copyright (C) 2017-2020 Christian Hostelet.
  * inspired by work from:
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,7 +86,7 @@ namespace Reko.Arch.MicrochipPIC.PIC18
         }
 
 
-        protected override PICInstruction CreateInvalidInstruction()
+        public override PICInstruction CreateInvalidInstruction()
         {
             return new PICInstructionNoOpnd(Mnemonic.invalid)
             {
@@ -310,11 +310,11 @@ namespace Reko.Arch.MicrochipPIC.PIC18
         /// </summary>
         protected class MemoryBitWithAccessDecoder : Decoder
         {
-            private Mnemonic opcode;
+            private Mnemonic mnemonic;
 
-            public MemoryBitWithAccessDecoder(Mnemonic opc)
+            public MemoryBitWithAccessDecoder(Mnemonic mnemonic)
             {
-                opcode = opc;
+                this.mnemonic = mnemonic;
             }
 
             public override PICInstruction Decode(ushort uInstr, PICDisassemblerBase dasm)
@@ -322,7 +322,7 @@ namespace Reko.Arch.MicrochipPIC.PIC18
                 var adr = uInstr.Extract(0, 8);
                 var acc = uInstr.Extract(8, 1);
                 var bitno = uInstr.Extract(9, 3);
-                return new PICInstructionMemFBA(opcode, adr, bitno, acc);
+                return new PICInstructionMemFBA(mnemonic, adr, bitno, acc);
             }
         }
 

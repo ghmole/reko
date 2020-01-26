@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,10 @@ namespace Reko.Core
         /// <remarks>The IEnumerable lets us use Linq expressions
         /// like Take() on a stream of disassembled instructions.</remarks>
         /// <param name="imageReader"></param>
-        /// <returns></returns>
+        /// <returns>
+        /// An <see cref="IEnumerable{MachineInstruction}"/>, which can be 
+        /// viewed as a stream of disassembled instructions.
+        /// </returns>
         IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader imageReader);
 
         /// <summary>
@@ -49,7 +52,7 @@ namespace Reko.Core
         /// processor.
         /// </summary>
         /// <param name="map">Segment map with descriptions of segments</param>
-        /// <returns></returns>
+        /// <returns>An instance of <see cref="ProcessorState"/>.</returns>
 		ProcessorState CreateProcessorState();
 
         /// <summary>
@@ -155,6 +158,16 @@ namespace Reko.Core
             IStorageBinder binder,
             CallSite site,
             Expression callee);
+
+        /// <summary>
+        /// Creates a processor emulator for this architecture.
+        /// </summary>
+        /// <param name="segmentMap">The memory image containing the program 
+        /// image and initial data.
+        /// </param>
+        /// <param name="envEmulator">Simulated operating system.</param>
+        /// <returns>The emulator ready to run.</returns>
+        IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator);
 
         /// <summary>
         /// Given a register <paramref name="reg"/>, retrieves all architectural
@@ -307,7 +320,6 @@ namespace Reko.Core
         /// </summary>
         /// <param name="program">The program to postprocess.</param>
         void PostprocessProgram(Program program);
-        
 
         /// <summary>
         /// The dictionary contains options that were loaded from the 
@@ -405,6 +417,7 @@ namespace Reko.Core
         public abstract ProcessorState CreateProcessorState();
         public abstract IEnumerable<Address> CreatePointerScanner(SegmentMap map, EndianImageReader rdr, IEnumerable<Address> knownAddresses, PointerScannerFlags flags);
         public abstract IEnumerable<RtlInstructionCluster> CreateRewriter(EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host);
+        public abstract IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator);
 
         public virtual IEnumerable<RegisterStorage> GetAliases(RegisterStorage reg) { yield return reg; }
 

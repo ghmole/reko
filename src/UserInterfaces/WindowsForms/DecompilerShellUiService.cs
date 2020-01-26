@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -124,7 +124,7 @@ namespace Reko.UserInterfaces.WindowsForms
             var tabPage = new TabPage
             {
                 Text = documentTitle,
-                ImageIndex = 7,
+                ImageIndex = 8,
             };
             WindowFrame frame = new WindowFrame(this, documentType, docItem, tabPage, pane);
             framesByTab.Add(tabPage, frame);

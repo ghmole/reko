@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,8 @@ using System.Text;
 
 namespace Reko.Arch.M6800
 {
+    using FlagM = Reko.Arch.M6800.M6812.FlagM;
+
     public class M6812Architecture : ProcessorArchitecture
     {
         private readonly Dictionary<uint, FlagGroupStorage> flagGroups;
@@ -48,6 +50,11 @@ namespace Reko.Arch.M6800
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader imageReader)
         {
             return new M6812.M6812Disassembler(imageReader);
+        }
+
+        public override IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator)
+        {
+            throw new NotImplementedException();
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -143,14 +150,5 @@ namespace Reko.Arch.M6800
         {
             return Address.TryParse16(txtAddr, out addr);
         }
-    }
-
-    [Flags]
-    public enum FlagM : byte
-    {
-        CF = 1,             // carry
-        VF = 2,             // overflow
-        ZF = 4,             // zero
-        NF = 8,             // sign
     }
 }

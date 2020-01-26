@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,11 @@ namespace Reko.Environments.SysV
         public override string DefaultCallingConvention
         {
             get { return ""; }
+        }
+
+        public override IPlatformEmulator CreateEmulator(SegmentMap segmentMap, Dictionary<Address, ImportReference> importReferences)
+        {
+            throw new NotImplementedException();
         }
 
         public override CallingConvention GetCallingConvention(string ccName)
@@ -188,6 +193,12 @@ namespace Reko.Environments.SysV
             case "mips-le-64":
                 // MIPS ELF ABI: r25 is _always_ set to the address of a procedure on entry.
                 m.Assign(proc.Frame.EnsureRegister(Architecture.GetRegister("r25")), Constant.Word64((uint) addr.ToLinear()));
+                break;
+            case "x86-protected-32":
+            case "x86-protected-64":
+                m.Assign(
+                    proc.Frame.EnsureRegister(Architecture.FpuStackRegister),
+                    0);
                 break;
             case "zSeries":
                 // Stack parameters are passed in starting at offset +160 from the 

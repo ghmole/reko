@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ namespace Reko.Arch.i8051
     using Decoder = Decoder<i8051Disassembler, Mnemonic, i8051Instruction>;
 
     // http://www.keil.com/support/man/docs/is51/is51_instructions.htm
-    public class i8051Disassembler : DisassemblerBase<i8051Instruction>
+    public class i8051Disassembler : DisassemblerBase<i8051Instruction, Mnemonic>
     {
         private readonly i8051Architecture arch;
         private readonly EndianImageReader rdr;
@@ -53,113 +53,29 @@ namespace Reko.Arch.i8051
             if (!rdr.TryReadByte(out var b))
                 return null;
             ops.Clear();
-            return decoders[b].Decode(b, this);
+            var instr = decoders[b].Decode(b, this);
+            instr.Address = this.addr;
+            instr.Length = (int) (rdr.Address - this.addr);
+            return instr;
         }
 
-        protected override i8051Instruction CreateInvalidInstruction()
+        public override i8051Instruction MakeInstruction(InstrClass iclass, Mnemonic mnemonic)
         {
             return new i8051Instruction
             {
-                Mnemonic = Mnemonic.Invalid,
-                InstructionClass = InstrClass.Invalid,
-                Operands = new MachineOperand[0]
+                InstructionClass = iclass,
+                Mnemonic = mnemonic,
+                Operands = ops.ToArray()
             };
         }
 
-        private i8051Instruction Decode(Mnemonic opcode, byte uInstr, string fmt)
+        public override i8051Instruction CreateInvalidInstruction()
         {
-            byte b;
-            var ops = new List<MachineOperand>();
-            foreach (var ch in fmt)
-            {
-                switch (ch)
-                {
-                case ',':
-                    continue;
-                case 'j': // An 11-bit address destination. This argument is used by ACALL and AJMP instructions. The target of the CALL or JMP must lie within the same 2K page as the first byte of the following instruction.
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(AddressOperand.Ptr16(
-                        (ushort)(
-                            (rdr.Address.ToLinear() & ~0x7Ful) |
-                            (uInstr & 0xE0u) << 3 |
-                            b)));
-                    break;
-                case 'J': // A 16-bit address destination. This argument is used by LCALL and LJMP instructions.
-                    if (!rdr.TryReadBeUInt16(out var uAddr)) // Yes, big endian!
-                        return null;
-                    ops.Add(AddressOperand.Ptr16(uAddr));
-                    break;
-                case 'o': // A signed (two's complement) 8-bit offset (-128 to 127) relative to the first byte of the following instruction.
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(AddressOperand.Create(rdr.Address + (sbyte)b));
-                    break;
-                case 'A': // The accumulator.
-                    ops.Add(new RegisterOperand(Registers.A));
-                    break;
-                case 'd': // An internal data RAM location (0-127) or SFR (128-255).
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(MemoryOperand.Direct(Address.Ptr16(b)));
-                    break;
-                case 'r': // Register r0-r7
-                    ops.Add(Reg(uInstr&7));
-                    break;
-                case 'b': // A direct addressed bit in internal data RAM or SFR memory.
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(BitReg(b, false));
-                    break;
-                case 'B': // A direct addressed bit in internal data RAM or SFR memory.
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(BitReg(b, true));
-                    break;
-                case 'C':   // C flag of PSW
-                    ops.Add(new FlagGroupOperand(arch.GetFlagGroup(Registers.PSW, (uint)FlagM.C)));
-                    break;
-                case 'D':   // @DPTR 
-                    ops.Add(MemoryOperand.Indirect(Registers.DPTR));
-                    break;
-                case 'p':   // DPTR register pair
-                    ops.Add(new SequenceOperand(Registers.DPTR));
-                    break;
-                case 'i': // A constant included in the instruction encoding.
-                    if (!rdr.TryReadByte(out b))
-                        return null;
-                    ops.Add(ImmediateOperand.Byte(b));
-                    break;
-                case 'I': // A constant included in the instruction encoding.
-                    if (!rdr.TryReadUInt16(out var w))
-                        return null;
-                    ops.Add(ImmediateOperand.Word16(w));
-                    break;
-                case '@': // @Ri	An internal data RAM location (0-255) addressed indirectly through R0 or R1.
-                    ops.Add(MemoryOperand.Indirect(Registers.GetRegister(uInstr & 1)));
-                    break;
-                case '+': // @A + DPTR:
-                    ops.Add(MemoryOperand.Indexed(Registers.DPTR, Registers.A));
-                    break;
-                case 'P': // @A + PC:
-                    ops.Add(MemoryOperand.Indexed(Registers.PC, Registers.A));
-                    break;
-
-                case '*': // AB register pair
-                    ops.Add(new SequenceOperand(Registers.AB));
-                    break;
-                default:
-                    EmitUnitTest(opcode, uInstr);
-                    break;
-                }
-            }
-
             return new i8051Instruction
             {
-                Mnemonic = opcode,
-                Address = this.addr,
-                Length = (int)(rdr.Address - this.addr),
-                Operands = ops.ToArray()
+                InstructionClass = InstrClass.Invalid,
+                Mnemonic = Mnemonic.Invalid,
+                Operands = MachineInstruction.NoOperands
             };
         }
 
@@ -304,6 +220,7 @@ namespace Reko.Arch.i8051
         }
         
         #endregion
+
         private RegisterOperand Reg(int r)
         {
             return new RegisterOperand(Registers.GetRegister(r));
@@ -327,47 +244,14 @@ $@"    [Test]
 ");
         }
 
-        private class InstrDecoder : Decoder
+        private static Decoder Instr(Mnemonic mnemonic, params Mutator<i8051Disassembler>[] mutators)
         {
-            private readonly Mnemonic opcode;
-            private readonly InstrClass iclass;
-            private readonly Mutator<i8051Disassembler>[] mutators;
-
-            public InstrDecoder(Mnemonic opcode, InstrClass iclass, params Mutator<i8051Disassembler>[] mutators)
-            {
-                this.opcode = opcode;
-                this.iclass = iclass;
-                this.mutators = mutators;
-            }
-
-            public override i8051Instruction Decode(uint op, i8051Disassembler dasm)
-            {
-                foreach (var m in mutators)
-                {
-                    if (!m(op, dasm))
-                    {
-                        return dasm.CreateInvalidInstruction();
-                    }
-                }
-                return new i8051Instruction
-                {
-                    Mnemonic = opcode,
-                    Address = dasm.addr,
-                    Length = (int) (dasm.rdr.Address - dasm.addr),
-                    Operands = dasm.ops.ToArray()
-                };
-            }
-
+            return new InstrDecoder<i8051Disassembler, Mnemonic, i8051Instruction>(InstrClass.Linear, mnemonic, mutators);
         }
 
-        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<i8051Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, InstrClass iclass, params Mutator<i8051Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, mutators);
-        }
-
-        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<i8051Disassembler>[] mutators)
-        {
-            return new InstrDecoder(opcode, iclass, mutators);
+            return new InstrDecoder<i8051Disassembler, Mnemonic, i8051Instruction>(iclass, mnemonic, mutators);
         }
 
         private static readonly Decoder[] decoders = new Decoder[256] {

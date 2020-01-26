@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -137,6 +137,11 @@ namespace Reko.Arch.Arm
 #endif
         }
 
+        public override IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator)
+        {
+            throw new NotImplementedException();
+        }
+
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
         {
             return null;
@@ -155,10 +160,10 @@ namespace Reko.Arch.Arm
             while (rdr.IsValid)
             {
                 uint linAddrCall =  rdr.Address.ToUInt32();
-                var opcode = rdr.ReadLeUInt32();
-                if ((opcode & 0x0F000000) == 0x0B000000)         // BL
+                var wInstr = rdr.ReadLeUInt32();
+                if ((wInstr & 0x0F000000) == 0x0B000000)         // BL
                 {
-                    int offset = ((int)opcode << 8) >> 6;
+                    int offset = ((int)wInstr << 8) >> 6;
                     uint target = (uint)(linAddrCall + 8 + offset);
                     if (knownLinAddresses.Contains(target))
                         yield return Address.Ptr32(linAddrCall);

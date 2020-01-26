@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,14 @@ namespace Reko.Core
 
         public Type MemberType { get; private set; }
 
+    }
+
+    public static class BinaryReaderStructureReader
+    {
+        public static T ReadStruct<T>(this BinaryReader rdr) where T : struct
+        {
+            return new StructureReader<T>(rdr).Read();
+        }
     }
 
     /// <summary>

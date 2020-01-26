@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ namespace Reko.UnitTests.Loading
         public void Ldr_Match()
         {
             Loader ldr = new Loader(sc);
-            Assert.IsTrue(ldr.ImageHasMagicNumber(new byte[] { 0x47, 0x11 }, "4711", "0"));
+            Assert.IsTrue(ldr.ImageHasMagicNumber(new byte[] { 0x47, 0x11 }, "4711", 0));
         }
 
         [Test(Description="Unless otherwise specified, fail loading unknown file formats.")]
@@ -128,7 +128,7 @@ namespace Reko.UnitTests.Loading
             cfgSvc.Setup(d => d.GetImageLoaders()).Returns(new List<LoaderDefinition>
             {
                 new LoaderDefinition {
-                    Offset = "0002",
+                    Offset = 0x0002,
                     MagicNumber = "A0A0",
                     TypeName = typeof(TestImageLoader).AssemblyQualifiedName,
                 }

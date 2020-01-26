@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ namespace Reko.Arch.Z80
     /// <summary>
     /// Disassembles both 8080 and Z80 instructions, with respective syntax.
     /// </summary>
-    public class Z80Disassembler : DisassemblerBase<Z80Instruction>
+    public class Z80Disassembler : DisassemblerBase<Z80Instruction, Mnemonic>
     {
         private readonly EndianImageReader rdr;
         private readonly List<MachineOperand> ops;
@@ -67,13 +67,14 @@ namespace Reko.Arch.Z80
             return instr;
         }
 
-        protected override Z80Instruction CreateInvalidInstruction()
+        public override Z80Instruction CreateInvalidInstruction()
         {
             return new Z80Instruction
             {
                 InstructionClass = InstrClass.Invalid,
                 Mnemonic = Mnemonic.illegal,
                 Address = this.addr,
+                Operands = MachineInstruction.NoOperands
             };
         }
 
@@ -104,15 +105,15 @@ namespace Reko.Arch.Z80
         private class InstrDecoder : Decoder
         {
             public readonly InstrClass IClass;
-            public readonly Mnemonic i8080Opcode;
-            public readonly Mnemonic Z80Opcode;
+            public readonly Mnemonic i8080mnemonic;
+            public readonly Mnemonic Z80mnemonic;
             private readonly Mutator[] mutators;
 
             public InstrDecoder(InstrClass iclass, Mnemonic i8080, Mnemonic z80, params Mutator [] mutators)
             {
                 this.IClass = iclass;
-                this.i8080Opcode = i8080;
-                this.Z80Opcode = z80;
+                this.i8080mnemonic = i8080;
+                this.Z80mnemonic = z80;
                 this.mutators = mutators;
             }
 
@@ -125,7 +126,7 @@ namespace Reko.Arch.Z80
                         return disasm.CreateInvalidInstruction();
                 }
                 instr.InstructionClass = IClass;
-                instr.Mnemonic = Z80Opcode;
+                instr.Mnemonic = Z80mnemonic;
                 instr.Operands = disasm.ops.ToArray();
                 return instr;
             }

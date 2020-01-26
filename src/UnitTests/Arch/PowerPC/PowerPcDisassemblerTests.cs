@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -94,6 +94,7 @@ namespace Reko.UnitTests.Arch.PowerPC
         {
             PowerPcInstruction instr = DisassembleBytes(new byte[] { 00, 00, 00, 00 });
             Assert.AreEqual(Mnemonic.illegal, instr.Mnemonic);
+            Assert.IsNotNull(instr.Operands);
         }
 
         [Test]
@@ -725,6 +726,13 @@ namespace Reko.UnitTests.Arch.PowerPC
             AssertCode(0x4260fef9, "bdzl\t$000FFEF8");
             //AssertCode(0x4280fef8, "bc+    20,lt,0xffffffffffffff24	 ");
             AssertCode(0x4300fef8, "bdnz\t$000FFEF8");
+        }
+
+        [Test]
+        public void PPCDis_bcctrne()
+        {
+            //$TODO: prefer bcctrne
+            AssertCode(0x4C820420, "bcctr\t04,02");
         }
 
         [Test]

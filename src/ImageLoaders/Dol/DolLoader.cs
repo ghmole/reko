@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,7 +108,7 @@ namespace Reko.ImageLoaders.Dol
 
         public override Program Load(Address addrLoad, IProcessorArchitecture arch, IPlatform platform) {
             BeImageReader rdr = new BeImageReader(this.RawImage, 0);
-            DolStructure? str = new StructureReader<DolStructure>(rdr).Read();
+            DolStructure? str = rdr.ReadStruct<DolStructure>();
             if (!str.HasValue)
                 throw new BadImageFormatException("Invalid DOL header.");
             this.hdr = new DolHeader(str.Value);

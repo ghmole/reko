@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,7 +32,7 @@ namespace Reko.Arch.Avr
 
     // Opcode map: http://lyons42.com/AVR/Opcodes/AVRAllOpcodes.html
     // Opcode map: https://en.wikipedia.org/wiki/Atmel_AVR_instruction_set
-    public class Avr8Disassembler : DisassemblerBase<AvrInstruction>
+    public class Avr8Disassembler : DisassemblerBase<AvrInstruction, Mnemonic>
     {
         private readonly static Decoder[] decoders;
         private readonly static Decoder invalid;
@@ -61,18 +61,28 @@ namespace Reko.Arch.Avr
             instr.Length = (int) length;
 
 #if DEBUG
-            if (instr.opcode == Mnemonic.invalid) EmitUnitTest(wInstr);
+            if (instr.Mnemonic == Mnemonic.invalid) EmitUnitTest(wInstr);
 #endif
             return instr;
         }
 
-        protected override AvrInstruction CreateInvalidInstruction()
+        public override AvrInstruction MakeInstruction(InstrClass iclass, Mnemonic mnemonic)
+        {
+            return new AvrInstruction
+            {
+                Mnemonic = mnemonic,
+                InstructionClass = iclass,
+                Operands = this.ops.ToArray(),
+            };
+        }
+
+        public override AvrInstruction CreateInvalidInstruction()
         {
             return new AvrInstruction
             {
                 InstructionClass = InstrClass.Invalid,
-                opcode = Mnemonic.invalid,
-                operands = new MachineOperand[0]
+                Mnemonic = Mnemonic.invalid,
+                Operands = new MachineOperand[0]
             };
         }
 
@@ -294,16 +304,15 @@ namespace Reko.Arch.Avr
 
         #endregion
 
-        private static InstrDecoder Instr(Mnemonic opcode, params Mutator<Avr8Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic opcode, params Mutator<Avr8Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, mutators);
+            return new InstrDecoder<Avr8Disassembler, Mnemonic, AvrInstruction>(InstrClass.Linear, opcode, mutators);
         }
 
-        private static InstrDecoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<Avr8Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<Avr8Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, iclass, mutators);
+            return new InstrDecoder<Avr8Disassembler, Mnemonic, AvrInstruction>(iclass, opcode, mutators);
         }
-
 
         private MachineOperand Register(int v)
         {
@@ -744,37 +753,6 @@ namespace Reko.Arch.Avr
             };
         }
 
-        public class InstrDecoder : Decoder
-        {
-            private readonly Mnemonic opcode;
-            private readonly InstrClass iclass;
-            private readonly Mutator<Avr8Disassembler>[] mutators;
-
-            public InstrDecoder(Mnemonic opcode, InstrClass iclass, params Mutator<Avr8Disassembler>[] mutators)
-            {
-                this.opcode = opcode;
-                this.iclass = iclass;
-                this.mutators = mutators;
-            }
-
-            public override AvrInstruction Decode(uint wInstr, Avr8Disassembler dasm)
-            {
-                foreach (var m in mutators)
-                {
-                    if (!m(wInstr, dasm))
-                        return invalid.Decode(wInstr, dasm);
-                }
-                return new AvrInstruction
-                {
-                    opcode = opcode,
-                    InstructionClass = iclass,
-                    operands = dasm.ops.ToArray(),
-                };
-            }
-        }
-
-
-
         public class CondDecoder : Decoder
         {
             static readonly Mnemonic[] branches = new Mnemonic[]
@@ -794,8 +772,8 @@ namespace Reko.Arch.Avr
                 return new AvrInstruction
                 {
                     InstructionClass = InstrClass.ConditionalTransfer,
-                    opcode = branches[br],
-                    operands = dasm.ops.ToArray()
+                    Mnemonic = branches[br],
+                    Operands = dasm.ops.ToArray()
                 };
             }
         }

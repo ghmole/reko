@@ -1,8 +1,8 @@
 ﻿#region License
 /* 
- * Copyright (C) 2017-2019 Christian Hostelet.
+ * Copyright (C) 2017-2020 Christian Hostelet.
  * inspired by work from:
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,12 +51,12 @@ namespace Reko.Arch.MicrochipPIC.PIC18
             var addr = instrCurr.Address;
             var len = instrCurr.Length;
 
-            switch (instrCurr.Opcode)
+            switch (instrCurr.Mnemonic)
             {
                 default:
                     host.Warn(
                         instrCurr.Address,
-                        $"PIC18 instruction '{instrCurr.Opcode}' is not supported yet.");
+                        $"PIC18 instruction '{instrCurr.Mnemonic}' is not supported yet.");
                 goto case Mnemonic.invalid;
                 case Mnemonic.invalid:
                 case Mnemonic.unaligned:
@@ -288,7 +288,7 @@ namespace Reko.Arch.MicrochipPIC.PIC18
 
         protected override void SetStatusFlags(Expression dst)
         {
-            FlagM flags = PIC18CC.Defined(instrCurr.Opcode);
+            FlagM flags = PIC18CC.Defined(instrCurr.Mnemonic);
             if (flags != 0)
                 m.Assign(FlagGroup(flags), m.Cond(dst));
         }

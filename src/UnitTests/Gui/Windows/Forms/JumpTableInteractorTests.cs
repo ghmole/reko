@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ namespace Reko.UnitTests.Gui.Windows.Forms
             this.dlg = new JumpTableDialog()
             {
                 Program = program,
-                Instruction = new FakeInstruction(Operation.Jump) { Address = Address.Ptr32(0x1000) }
+                Instruction = new FakeInstruction(Mnemonic.Jump) { Address = Address.Ptr32(0x1000) }
             };
         }
 
@@ -111,8 +111,8 @@ namespace Reko.UnitTests.Gui.Windows.Forms
         {
             arch.Test_DisassemblyStream = new List<MachineInstruction>
             {
-                new FakeInstruction(Operation.Add),
-                new FakeInstruction(Operation.Branch),
+                new FakeInstruction(Mnemonic.Add),
+                new FakeInstruction(Mnemonic.Branch),
             };
         }
 

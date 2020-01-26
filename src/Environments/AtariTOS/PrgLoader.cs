@@ -1,6 +1,6 @@
-﻿#region License
+#region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -77,8 +77,7 @@ namespace Reko.Environments.AtariTOS
 
         private bool TryLoadHeader(BeImageReader rdr, out PrgHeader hdr)
         {
-            var sr = new StructureReader<PrgHeader>(rdr);
-            var h = sr.Read();
+            var h = rdr.ReadStruct<PrgHeader>();
             if (h.Magic != 0x601A)
             {
                 hdr = default(PrgHeader);

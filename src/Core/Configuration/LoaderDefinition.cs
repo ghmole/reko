@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ namespace Reko.Core.Configuration
         /// The offset at which to look for the magic number. By default, a missing value means
         /// offset 0.
         /// </summary>
-        public string Offset { get; set; }
+        public long Offset { get; set; }
 
         /// <summary>
         /// The assembly-qualified name for the .NET type that is responsible for handling this

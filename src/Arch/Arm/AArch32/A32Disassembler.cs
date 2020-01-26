@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ namespace Reko.Arch.Arm.AArch32
 {
     using Decoder = Reko.Core.Machine.Decoder<A32Disassembler, Mnemonic, AArch32Instruction>;
 
-    public partial class A32Disassembler : DisassemblerBase<AArch32Instruction>
+    public partial class A32Disassembler : DisassemblerBase<AArch32Instruction, Mnemonic>
     {
         private static readonly Decoder rootDecoder;
         private static readonly Decoder invalid;
@@ -69,7 +69,7 @@ namespace Reko.Arch.Arm.AArch32
         public class DasmState
         {
             public InstrClass iclass;
-            public Mnemonic opcode;
+            public Mnemonic mnemonic;
             public List<MachineOperand> ops = new List<MachineOperand>();
             public bool updateFlags = false;
             public bool writeback = false;
@@ -95,7 +95,7 @@ namespace Reko.Arch.Arm.AArch32
             public void Invalid()
             {
                 Clear();
-                opcode = Mnemonic.Invalid;
+                mnemonic = Mnemonic.Invalid;
             }
 
             public AArch32Instruction MakeInstruction()
@@ -103,7 +103,7 @@ namespace Reko.Arch.Arm.AArch32
                 var instr = new A32Instruction
                 {
                     InstructionClass = iclass,
-                    opcode = opcode,
+                    Mnemonic = mnemonic,
                     Operands = ops.ToArray(),
                     ShiftType = shiftOp,
                     ShiftValue = shiftValue,
@@ -287,12 +287,12 @@ namespace Reko.Arch.Arm.AArch32
             return CreateInvalidInstruction();
         }
 
-        protected override AArch32Instruction CreateInvalidInstruction()
+        public override AArch32Instruction CreateInvalidInstruction()
         {
             return new A32Instruction
             {
                 InstructionClass = InstrClass.Invalid,
-                opcode = Mnemonic.Invalid,
+                Mnemonic = Mnemonic.Invalid,
                 Operands = new MachineOperand[0]
             };
         }
@@ -1426,7 +1426,7 @@ namespace Reko.Arch.Arm.AArch32
         {
             return (u, d) =>
             {
-                var op = d.state.opcode.ToString();
+                var op = d.state.mnemonic.ToString();
                 string m;
                 if (message == "")
                     m = op;
@@ -1486,7 +1486,7 @@ namespace Reko.Arch.Arm.AArch32
         {
             if (dasm.state.shiftOp != Mnemonic.Invalid)
             {
-                dasm.state.opcode = dasm.state.shiftOp;
+                dasm.state.mnemonic = dasm.state.shiftOp;
                 dasm.state.ops.Add(dasm.state.shiftValue);
                 dasm.state.shiftValue = null;
                 dasm.state.shiftOp = Mnemonic.Invalid;

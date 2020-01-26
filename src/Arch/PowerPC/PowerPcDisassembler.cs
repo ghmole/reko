@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2019 John Källén.
+ * Copyright (C) 1999-2020 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ using System.Text;
 
 namespace Reko.Arch.PowerPC
 {
-    public partial class PowerPcDisassembler : DisassemblerBase<PowerPcInstruction>
+    public partial class PowerPcDisassembler : DisassemblerBase<PowerPcInstruction, Mnemonic>
     {
         private readonly PowerPcArchitecture arch;
         private readonly EndianImageReader rdr;
@@ -57,21 +57,23 @@ namespace Reko.Arch.PowerPC
             this.allowSetCR0 = false;
             this.ops.Clear();
             var instrCur = primaryDecoders[wInstr >> 26].Decode(this, wInstr);
+            if (wInstr == 0)
+                instrCur.InstructionClass |= InstrClass.Zero;
             instrCur.Address = addr;
             instrCur.Length = 4;
             return instrCur;
         }
 
-        protected override PowerPcInstruction CreateInvalidInstruction()
+        public override PowerPcInstruction CreateInvalidInstruction()
         {
             return new PowerPcInstruction(Mnemonic.illegal)
             {
                 InstructionClass = InstrClass.Invalid,
-                Operands = new MachineOperand[0],
+                Operands = MachineInstruction.NoOperands
             };
         }
 
-        private PowerPcInstruction MakeInstruction(InstrClass iclass, Mnemonic opcode)
+        public override PowerPcInstruction MakeInstruction(InstrClass iclass, Mnemonic opcode)
         {
             return new PowerPcInstruction(opcode)
             {
@@ -372,10 +374,7 @@ namespace Reko.Arch.PowerPC
             //        }}
             //");
 #endif
-            return new PowerPcInstruction(Mnemonic.illegal)
-            {
-                InstructionClass = InstrClass.Invalid
-            };
+            return CreateInvalidInstruction();
         }
     }
 }
