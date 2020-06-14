@@ -33,7 +33,7 @@ namespace Reko.Arch.Alpha
 {
     public class AlphaArchitecture : ProcessorArchitecture
     {
-        public AlphaArchitecture(string archId) : base(archId)
+        public AlphaArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Little;
             this.WordWidth = PrimitiveType.Word64;
@@ -86,12 +86,12 @@ namespace Reko.Arch.Alpha
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

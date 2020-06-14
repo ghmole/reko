@@ -27,6 +27,7 @@ using Reko.Core;
 using Reko.Core.Assemblers;
 using Reko.Arch.M68k;
 using Reko.Environments.AmigaOS;
+using System.ComponentModel.Design;
 
 namespace hunktool
 {
@@ -35,21 +36,11 @@ namespace hunktool
         public IProcessorArchitecture GetArchitecture(string archLabel)
         {
             if (archLabel == "m68k")
-                return new M68kArchitecture("m68k");
+                return new M68kArchitecture(new ServiceContainer(), "m68k");
             throw new NotImplementedException();
         }
 
         public ICollection<ArchitectureDefinition> GetArchitectures()
-        {
-            throw new NotImplementedException();
-        }
-
-        public Assembler GetAssembler(string assemblerName)
-        {
-            throw new NotImplementedException();
-        }
-
-        public ICollection<AssemblerDefinition> GetAssemblers()
         {
             throw new NotImplementedException();
         }

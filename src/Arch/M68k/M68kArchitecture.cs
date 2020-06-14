@@ -39,7 +39,7 @@ namespace Reko.Arch.M68k
     {
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public M68kArchitecture(string archId) : base(archId)
+        public M68kArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             InstructionBitSize = 16;
             Endianness = EndianServices.Big;
@@ -53,7 +53,7 @@ namespace Reko.Arch.M68k
 
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader rdr)
         {
-            return M68kDisassembler.Create68020(rdr);
+            return M68kDisassembler.Create68020(this.Services, rdr);
         }
 
         public override IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator)
@@ -63,7 +63,7 @@ namespace Reko.Arch.M68k
 
         public IEnumerable<M68kInstruction> CreateDisassemblerImpl(EndianImageReader rdr)
         {
-            return M68kDisassembler.Create68020(rdr);
+            return M68kDisassembler.Create68020(this.Services, rdr);
         }
 
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
@@ -82,7 +82,7 @@ namespace Reko.Arch.M68k
             return new M68kPointerScanner(rdr, knownLinAddresses, flags).Select(li => Address.Ptr32(li));
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return Enum.GetValues(typeof(Mnemonic))
                 .Cast<Mnemonic>()
@@ -91,7 +91,7 @@ namespace Reko.Arch.M68k
                     v => (int)v);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;

@@ -63,7 +63,7 @@ namespace Reko.Arch.Vax
 
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public VaxArchitecture(string name) : base(name)
+        public VaxArchitecture(IServiceProvider services, string name) : base(services, name)
         {
             this.Endianness = EndianServices.Little;
             this.InstructionBitSize = 8;
@@ -122,14 +122,14 @@ namespace Reko.Arch.Vax
             return fl;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return Enum.GetValues(typeof(Mnemonic))
                 .Cast<Mnemonic>()
                 .ToSortedList(v => Enum.GetName(typeof(Mnemonic), v), v => (int)v);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             if (!Enum.TryParse(name, out Mnemonic result))
                 return null;

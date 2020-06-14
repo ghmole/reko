@@ -26,20 +26,26 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.ComponentModel.Design;
 
 namespace Reko.UnitTests.Arch.M68k
 {
     [TestFixture]
     public class M68kDisassemblerTests : DisassemblerTestBase<M68kInstruction>
     {
-        private M68kArchitecture arch = new M68kArchitecture("m68k");
+        private M68kArchitecture arch;
         private IEnumerator<M68kInstruction> dasm;
+
+        public M68kDisassemblerTests()
+        {
+            arch = new M68kArchitecture(CreateServiceContainer(), "m68k");
+        }
 
         private IEnumerator<M68kInstruction> CreateDasm(byte[] bytes, uint address)
         {
             Address addr = Address.Ptr32(address);
             MemoryArea img = new MemoryArea(addr, bytes);
-            return M68kDisassembler.Create68020(img.CreateBeReader(addr)).GetEnumerator();
+            return M68kDisassembler.Create68020(arch.Services, img.CreateBeReader(addr)).GetEnumerator();
         }
 
         public override IProcessorArchitecture Architecture
@@ -50,12 +56,6 @@ namespace Reko.UnitTests.Arch.M68k
         public override Address LoadAddress
         {
             get { return Address.Ptr32(0x10000000); }
-        }
-
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            return new BeImageWriter(bytes);
         }
 
         private void RunTest(string expected, params ushort[] words)
@@ -769,5 +769,10 @@ namespace Reko.UnitTests.Arch.M68k
         {
             RunTest("eori.b\t#$80,ccr", 0x0A3C, 0x0080);
         }
+
+        /*
+        R:rorl  %a2@(19131)                         E6 EA 4A BB
+        O:rorw %a2@(0)                             E6 EA 4A BB
+        */
     }
 }

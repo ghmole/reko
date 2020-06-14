@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections;
@@ -128,10 +129,7 @@ namespace Reko.Arch.Tlcs.Tlcs900
                 case Mnemonic.xor: RewriteBinOp(m.Xor, "**0*00"); break;
                 case Mnemonic.zcf: RewriteZcf(); break;
                 }
-                yield return new RtlInstructionCluster(instr.Address, instr.Length, instrs.ToArray())
-                {
-                    Class = iclass
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -309,36 +307,10 @@ namespace Reko.Arch.Tlcs.Tlcs900
                 binder.EnsureFlagGroup(arch.GetFlagGroup(flags)));
         }
 
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            EmitUnitTest("Tlcs900_rw_", "00010000");
-
-        }
-
-        [Conditional("DEBUG")]
-        private void EmitUnitTest(string prefix, string sAddr)
-        {
-            //if (seen.Contains(dasm.Current.Opcode))
-            //    return;
-            //seen.Add(dasm.Current.Opcode);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void {0}{1}()", prefix, dasm.Current.Mnemonic);
-            Debug.WriteLine("        {");
-            Debug.Write("            BuildTest(");
-            Debug.Write(string.Join(
-                ", ",
-                bytes.Select(b => string.Format("0x{0:X2}", (int)b))));
-            Debug.WriteLine(");\t// " + dasm.Current.ToString());
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine("                \"0|L--|{0}({1}): 1 instructions\",", sAddr, bytes.Length);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("Tlcs900_rw", instr, rdr, "");
         }
     }
 }

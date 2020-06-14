@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -42,7 +43,7 @@ namespace Reko.Arch.M6800.M6812
         private readonly IEnumerator<M6812Instruction> dasm;
         private M6812Instruction instr;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public M6812Rewriter(M6812Architecture arch, EndianImageReader rdr, M6812State state, IStorageBinder binder, IRewriterHost host)
         {
@@ -51,7 +52,7 @@ namespace Reko.Arch.M6800.M6812
             this.state = state;
             this.binder = binder;
             this.host = host;
-            this.dasm = new M6812Disassembler(rdr).GetEnumerator();
+            this.dasm = new M6812Disassembler(arch, rdr).GetEnumerator();
         }
 
         public IEnumerator<RtlInstructionCluster> GetEnumerator()
@@ -61,20 +62,21 @@ namespace Reko.Arch.M6800.M6812
                 this.instr = dasm.Current;
                 var rtlInstrs = new List<RtlInstruction>();
                 this.m = new RtlEmitter(rtlInstrs);
-                this.rtlc = instr.InstructionClass;
+                this.iclass = instr.InstructionClass;
                 switch (instr.Mnemonic)
                 {
                 case Mnemonic.mov: 
                 case Mnemonic.rev: 
                 case Mnemonic.revw:
-                case Mnemonic.tbl: 
+                case Mnemonic.tbl:
+                    EmitUnitTest();
                     host.Warn(
                         instr.Address,
                         "M6812 instruction '{0}' is not supported yet.",
                         instr.Mnemonic);
                     goto case Mnemonic.invalid;
                 case Mnemonic.invalid:
-                    this.rtlc = InstrClass.Invalid;
+                    this.iclass = InstrClass.Invalid;
                     m.Invalid();
                     break;
                 case Mnemonic.aba: RewriteAba(); break;
@@ -254,19 +256,19 @@ namespace Reko.Arch.M6800.M6812
                 case Mnemonic.wai: RewriteWai(); break;
                 case Mnemonic.wav: RewriteWav(); break;
                 }
-                yield return new RtlInstructionCluster(
-                    instr.Address,
-                    instr.Length,
-                    rtlInstrs.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
+        }
+
+        private void EmitUnitTest()
+        {
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("M6812Rw", instr, rdr, "");
         }
 
         private Expression RewriteOp(MachineOperand op)
@@ -478,7 +480,7 @@ namespace Reko.Arch.M6800.M6812
             var mem = RewriteOp(instr.Operands[0]);
             var mask = RewriteOp(instr.Operands[1]);
             var dst = ((AddressOperand)instr.Operands[2]).Address;
-            m.Branch(m.Eq0(m.And(mem, mask)), dst, rtlc);
+            m.Branch(m.Eq0(m.And(mem, mask)), dst, iclass);
         }
 
         private void RewriteBrset()
@@ -486,7 +488,7 @@ namespace Reko.Arch.M6800.M6812
             var mem = RewriteOp(instr.Operands[0]);
             var mask = RewriteOp(instr.Operands[1]);
             var dst = ((AddressOperand)instr.Operands[2]).Address;
-            m.Branch(m.Eq0(m.And(m.Comp(mem), mask)), dst, rtlc);
+            m.Branch(m.Eq0(m.And(m.Comp(mem), mask)), dst, iclass);
         }
 
 
@@ -576,7 +578,7 @@ namespace Reko.Arch.M6800.M6812
         {
             var reg = RewriteOp(instr.Operands[0]);
             m.Assign(reg, m.ISub(reg, 1));
-            m.Branch(cmp(reg), ((AddressOperand) instr.Operands[1]).Address, rtlc);
+            m.Branch(cmp(reg), ((AddressOperand) instr.Operands[1]).Address, iclass);
         }
 
         private void RewriteEdiv(
@@ -883,7 +885,7 @@ namespace Reko.Arch.M6800.M6812
         {
             var src = RewriteOp(instr.Operands[0]);
             var addr = ((AddressOperand)instr.Operands[1]).Address;
-            m.Branch(test(src), addr, rtlc);
+            m.Branch(test(src), addr, iclass);
         }
 
         private void RewriteTba()

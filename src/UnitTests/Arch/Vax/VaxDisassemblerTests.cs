@@ -26,6 +26,7 @@ using System.Text;
 using Reko.Core;
 using NUnit.Framework;
 using Reko.Core.Types;
+using System.ComponentModel.Design;
 
 namespace Reko.UnitTests.Arch.Vax
 {
@@ -36,7 +37,7 @@ namespace Reko.UnitTests.Arch.Vax
 
         public VaxDisassemblerTests()
         {
-            this.arch = new VaxArchitecture("vax");
+            this.arch = new VaxArchitecture(new ServiceContainer(), "vax");
         }
 
         public override IProcessorArchitecture Architecture
@@ -45,11 +46,6 @@ namespace Reko.UnitTests.Arch.Vax
         }
 
         public override Address LoadAddress { get { return Address.Ptr32(0x00100000); } }
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            return new LeImageWriter(bytes);
-        }
 
         private void AssertCode(string sExp, params byte[] bytes)
         {

@@ -102,7 +102,7 @@ namespace Reko.Environments.Windows
             return null;
         }
 
-        public override SystemService FindService(int vector, ProcessorState state)
+        public override SystemService FindService(int vector, ProcessorState state, SegmentMap segmentMap)
         {
             throw new NotImplementedException("INT services are not supported by " + this.GetType().Name);
         }
@@ -132,12 +132,12 @@ namespace Reko.Environments.Windows
         /// <param name="insts"></param>
         /// <param name="host"></param>
         /// <returns></returns>
-        public override ProcedureBase GetTrampolineDestination(IEnumerable<RtlInstructionCluster> rtls, IRewriterHost host)
+        public override ProcedureBase GetTrampolineDestination(Address addrInstr, IEnumerable<RtlInstruction> rtls, IRewriterHost host)
         {
-            var instrs = rtls.SelectMany(r => r.Instructions)
+            var instrs = rtls
                 .Take(3)
                 .ToArray();
-            var addrFrom = rtls.ElementAt(2).Address;
+            var addrFrom = addrInstr;
             if (instrs.Length < 3)
                 return null;
 

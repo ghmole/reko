@@ -48,16 +48,23 @@ namespace Reko.Arch.Xtensa
 
         public Mnemonic Mnemonic { get; set; }
 
-        public override int OpcodeAsInteger => (int) Mnemonic;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
+            RenderMnemonic(writer);
+            RenderOperands(writer, options);
+        }
+
+        private void RenderMnemonic(MachineInstructionWriter writer)
+        {
             if (!instrNames.TryGetValue(Mnemonic, out string instrName))
             {
-                instrName = Mnemonic.ToString();
+                instrName = Mnemonic.ToString().Replace('_', '.');
             }
-            writer.WriteOpcode(instrName);
-            RenderOperands(writer, options);
+            writer.WriteMnemonic(instrName);
         }
     }
 }

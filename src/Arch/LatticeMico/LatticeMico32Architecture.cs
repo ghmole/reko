@@ -31,7 +31,7 @@ namespace Reko.Arch.LatticeMico
 {
     public class LatticeMico32Architecture : ProcessorArchitecture
     {
-        public LatticeMico32Architecture(string archId) : base(archId)
+        public LatticeMico32Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             Endianness = EndianServices.Big;
             this.FramePointerType = PrimitiveType.Ptr32;
@@ -81,12 +81,12 @@ namespace Reko.Arch.LatticeMico
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

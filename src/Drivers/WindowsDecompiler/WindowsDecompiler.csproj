@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="12.0">
-  <Import Project="$(SolutionDir)Drivers\Common.items" />
+  <Import Project="$(ProjectDir)..\Common.items" />
   <PropertyGroup>
     <ProjectType>Local</ProjectType>
     <ProjectGuid>{1C5DAC93-1202-4704-ABD5-3E49ADCF0E81}</ProjectGuid>
@@ -22,7 +22,7 @@
     <UpgradeBackupLocation>
     </UpgradeBackupLocation>
     <OldToolsVersion>3.5</OldToolsVersion>
-    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseMSBuildEngine>True</UseMSBuildEngine>
     <TargetFrameworkProfile />
@@ -216,6 +216,10 @@
       <Project>{47b16677-2bfc-4a5c-a830-e1683c574aec}</Project>
       <Name>Cray</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\Arch\H8\H8.csproj">
+      <Project>{ba8b271c-4a48-4e32-b55b-26b54297833f}</Project>
+      <Name>H8</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\Arch\i8051\i8051.csproj">
       <Project>{ab5ddeb2-87c0-42c7-8cd3-72cb2b1282fb}</Project>
       <Name>i8051</Name>
@@ -332,18 +336,6 @@
       <Project>{33ce0d6a-8762-4505-975f-ee61c355fd04}</Project>
       <Name>zSeries</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\Assemblers\M68k\M68kAssembler.csproj">
-      <Project>{fd6ad906-bed1-4ac1-a7c5-0a04cca2d7dc}</Project>
-      <Name>M68kAssembler</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\Assemblers\Pdp11\Pdp11Assembler.csproj">
-      <Project>{3bb6b0fb-6686-428b-9dc9-a32f349e50e6}</Project>
-      <Name>Pdp11Assembler</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\Assemblers\x86\X86Assembler.csproj">
-      <Project>{3805de2c-659a-442d-8c34-e88822a4d27c}</Project>
-      <Name>X86Assembler</Name>
-    </ProjectReference>
     <ProjectReference Include="..\..\Core\Core.csproj">
       <Project>{5C315C78-1F97-4B16-81AA-917284969DFE}</Project>
       <Name>Core</Name>
@@ -384,6 +376,10 @@
       <Project>{d0d1798c-08f7-4de6-94e9-cc382e1fbec8}</Project>
       <Name>MacOS</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\Environments\MorphOS\MorphOS.csproj">
+      <Project>{22b34ddf-36cf-48f1-8e62-dc7f18e42594}</Project>
+      <Name>MorphOS</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\Environments\Msdos.Design\Msdos.Design.csproj">
       <Project>{6b0ded4f-5035-49ce-ae54-be92b3354e44}</Project>
       <Name>Msdos.Design</Name>
@@ -395,6 +391,10 @@
     <ProjectReference Include="..\..\Environments\NeoGeo\NeoGeo.csproj">
       <Project>{1e57924e-b623-4894-8e3a-87e3e99e2303}</Project>
       <Name>NeoGeo</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\Environments\OS2\OS2.csproj">
+      <Project>{6369aaec-5946-412b-929b-024c4fb1cfd6}</Project>
+      <Name>OS2</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\Environments\Ps3\Ps3.csproj">
       <Project>{1a60f017-4e4c-48f8-bb97-47d52186c7fd}</Project>
@@ -432,9 +432,9 @@
       <Project>{4a298321-9855-43de-aa9c-79e4efa0ae56}</Project>
       <Name>Windows</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\Environments\Xbox360\Xbox360.csproj">
+    <ProjectReference Include="..\..\Environments\Xbox\Xbox.csproj">
       <Project>{e45b5b79-17ed-4b74-a68b-ce9119c51677}</Project>
-      <Name>Xbox360</Name>
+      <Name>Xbox</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\Environments\ZX81\ZX81.csproj">
       <Project>{2b4e0f2e-b458-4bc2-96ac-6a4d9324f974}</Project>
@@ -496,6 +496,10 @@
       <Project>{0e00ed86-372c-4497-85bb-428bdd1c5ccf}</Project>
       <Name>Omf</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\ImageLoaders\Srec\Srec.csproj">
+      <Project>{6feaf3bb-48d3-4301-9ce5-a1a274db97f5}</Project>
+      <Name>Srec</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\ImageLoaders\TypeLib\TypeLib.csproj">
       <Project>{a4def935-217c-4107-998c-c7845893cfa0}</Project>
       <Name>TypeLib</Name>
@@ -503,6 +507,10 @@
     <ProjectReference Include="..\..\ImageLoaders\VmsExe\VmsExe.csproj">
       <Project>{4059bebf-7b5c-4701-ac98-ade2515d8823}</Project>
       <Name>VmsExe</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\..\ImageLoaders\Xbe\Xbe.csproj">
+      <Project>{4078724e-b5d2-494b-b56a-b8693db2d5ff}</Project>
+      <Name>Xbe</Name>
     </ProjectReference>
     <ProjectReference Include="..\..\ImageLoaders\XexLoader\Xex.csproj">
       <Project>{e6d43750-9abc-407d-b247-c91593c77062}</Project>
@@ -551,7 +559,7 @@
     </BootstrapperPackage>
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <Import Project="$(SolutionDir)Drivers\PreBuild.targets" />
+  <Import Project="$(ProjectDir)..\PreBuild.targets" />
   <PropertyGroup>
     <PreBuildEvent>
     </PreBuildEvent>

@@ -60,7 +60,7 @@ namespace Reko.Arch.Arm.AArch32
 
         /// <summary>
         /// This decoder hands control back to the disassembler, passing the 
-        /// deduced opcode and an array of mutator functions that are called in
+        /// decoded mnemonic and an array of mutator functions that are called in
         /// order to build instruction operands and other ARM instruction
         /// fields.
         /// </summary>
@@ -189,7 +189,7 @@ namespace Reko.Arch.Arm.AArch32
         private class MovMovsDecoder : InstrDecoder
         {
 
-            public MovMovsDecoder(Mnemonic opcode, params Mutator<T32Disassembler>[] mutators) : base(opcode, InstrClass.Linear, ArmVectorData.INVALID, mutators)
+            public MovMovsDecoder(Mnemonic mnemonic, params Mutator<T32Disassembler>[] mutators) : base(mnemonic, InstrClass.Linear, ArmVectorData.INVALID, mutators)
             {
             }
 
@@ -213,13 +213,13 @@ namespace Reko.Arch.Arm.AArch32
                 {
                     Mnemonic = Mnemonic.it,
                     InstructionClass = InstrClass.Linear,
-                    condition = (ArmCondition)SBitfield(wInstr, 4, 4),
+                    Condition = (ArmCondition)SBitfield(wInstr, 4, 4),
                     itmask = (byte)SBitfield(wInstr, 0, 4),
                     Operands = MachineInstruction.NoOperands
                 };
                 // Add an extra bit for the 't' in 'it'.
                 dasm.itState = instr.itmask | (SBitfield(wInstr, 4, 1) << 4);
-                dasm.itCondition = instr.condition;
+                dasm.itCondition = instr.Condition;
                 return instr;
             }
         }
@@ -228,7 +228,7 @@ namespace Reko.Arch.Arm.AArch32
         // differently from how they are repesented in the word.
         private class BfcBfiDecoder : InstrDecoder
         {
-            public BfcBfiDecoder(Mnemonic opcode, Mutator<T32Disassembler> [] mutators) : base(opcode, InstrClass.Linear, ArmVectorData.INVALID, mutators)
+            public BfcBfiDecoder(Mnemonic mnemonic, Mutator<T32Disassembler> [] mutators) : base(mnemonic, InstrClass.Linear, ArmVectorData.INVALID, mutators)
             {
             }
 

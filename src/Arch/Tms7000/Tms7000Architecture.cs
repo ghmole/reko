@@ -16,7 +16,7 @@ namespace Reko.Arch.Tms7000
     {
         private Dictionary<uint, FlagGroupStorage> flagGroups = new Dictionary<uint, FlagGroupStorage>();
         
-        public Tms7000Architecture(string archId) : base(archId)
+        public Tms7000Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Big;
             this.GpRegs = Enumerable.Range(0, 256)
@@ -94,12 +94,12 @@ namespace Reko.Arch.Tms7000
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

@@ -29,15 +29,17 @@ namespace Reko.Arch.Sparc
 {
     public class SparcInstruction : MachineInstruction
     {
-        public Mnemonic Mnemonic;
+        public Mnemonic Mnemonic { get; set; }
 
-        public override int OpcodeAsInteger => (int)Mnemonic; 
+        public override int MnemonicAsInteger => (int)Mnemonic; 
+
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public bool Annul => (InstructionClass & InstrClass.Annul) != 0;
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
-            writer.WriteOpcode(
+            writer.WriteMnemonic(
                 string.Format("{0}{1}",
                 Mnemonic.ToString(),
                 Annul ? ",a" : ""));
@@ -51,17 +53,10 @@ namespace Reko.Arch.Sparc
             case RegisterOperand reg:
                 writer.WriteFormat("%{0}", reg.Register.Name);
                 return;
-            case ImmediateOperand imm:
-                writer.WriteString(imm.Value.ToString());
-                return;
-            case MemoryOperand mem:
-                mem.Write(writer, options);
-                return;
-            case IndexedMemoryOperand idx:
-                idx.Write(writer, options);
+            default:
+                op.Write(writer, options);
                 return;
             }
-            writer.WriteString(op.ToString());
         }
 
         [Flags]

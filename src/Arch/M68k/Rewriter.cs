@@ -28,6 +28,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using Reko.Core.Services;
 
 namespace Reko.Arch.M68k
 {
@@ -41,6 +42,7 @@ namespace Reko.Arch.M68k
 
         // These fields are internal so that the OperandRewriter can use them.
         private readonly M68kArchitecture arch;
+        private readonly EndianImageReader rdr;
         private readonly IStorageBinder binder;
         private readonly M68kState state;
         private readonly IRewriterHost host;
@@ -48,7 +50,7 @@ namespace Reko.Arch.M68k
         private M68kInstruction instr;
         private RtlEmitter m;
         private List<RtlInstruction> rtlInstructions;
-        private InstrClass rtlc;
+        private InstrClass iclass;
         private OperandRewriter orw;
 
         public Rewriter(M68kArchitecture m68kArchitecture, EndianImageReader rdr, M68kState m68kState, IStorageBinder binder, IRewriterHost host)
@@ -57,6 +59,7 @@ namespace Reko.Arch.M68k
             this.state = m68kState;
             this.binder = binder;
             this.host = host;
+            this.rdr = rdr;
             this.dasm = arch.CreateDisassemblerImpl(rdr).GetEnumerator();
         }
 
@@ -68,17 +71,19 @@ namespace Reko.Arch.M68k
                 var addr = instr.Address;
                 var len = instr.Length;
                 rtlInstructions = new List<RtlInstruction>();
-                rtlc = instr.InstructionClass;
+                iclass = instr.InstructionClass;
                 m = new RtlEmitter(rtlInstructions);
-                orw = new OperandRewriter(arch, this.m, this.binder, instr.dataWidth);
+                orw = new OperandRewriter(arch, this.m, this.binder, instr.DataWidth);
                 switch (instr.Mnemonic)
                 {
                 default:
+                    EmitUnitTest();
                     host.Warn(
                         instr.Address,
                         "M68k instruction '{0}' is not supported yet.",
                         instr.Mnemonic);
                     m.Invalid();
+                    iclass = InstrClass.Invalid;
                     break;
                 case Mnemonic.illegal: RewriteIllegal(); break;
                 case Mnemonic.abcd: RewriteAbcd(); break;
@@ -275,20 +280,19 @@ VS Overflow Set 1001 V
                 case Mnemonic.unlk: RewriteUnlk(); break;
                 case Mnemonic.unpk: RewriteUnpk(); break;
                 }
-                yield return new RtlInstructionCluster(
-                    addr,
-                    len,
-                    rtlInstructions.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(addr, len, iclass);
             }
-            yield break;
         }
 
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
+        }
+
+        private void EmitUnitTest()
+        {
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("M68krw", instr, rdr, "");
         }
 
         private RegisterStorage GetRegister(MachineOperand op)
@@ -300,7 +304,7 @@ VS Overflow Set 1001 V
         private void EmitInvalid()
         {
             rtlInstructions.Clear();
-            rtlc = InstrClass.Invalid;
+            iclass = InstrClass.Invalid;
             m.Invalid();
         }
 

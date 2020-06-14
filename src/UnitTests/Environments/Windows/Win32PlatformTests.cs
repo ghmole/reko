@@ -48,7 +48,7 @@ namespace Reko.UnitTests.Environments.Windows
         public void Setup()
         {
             sc = new ServiceContainer();
-            arch = new X86ArchitectureFlat32("x86-protected-32");
+            arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
         }
 
         private void When_Lookup_Procedure(string moduleName, string procName)
@@ -93,6 +93,7 @@ namespace Reko.UnitTests.Environments.Windows
         private void Expect_TypeLibraryLoaderService_LoadLibrary(string expected, IDictionary<string, DataType> types)
         {
             var tl = new TypeLibrary(
+                false,
                 types, 
                 new Dictionary<string, FunctionType>(),
                 new Dictionary<string, DataType>());

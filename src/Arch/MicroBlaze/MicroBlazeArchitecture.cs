@@ -34,7 +34,7 @@ namespace Reko.Arch.MicroBlaze
     {
         private Dictionary<uint, FlagGroupStorage> flagGroups = new Dictionary<uint, FlagGroupStorage>();
 
-        public MicroBlazeArchitecture(string archId) : base(archId)
+        public MicroBlazeArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Big;
             this.FramePointerType = PrimitiveType.Ptr32;
@@ -93,12 +93,12 @@ namespace Reko.Arch.MicroBlaze
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

@@ -25,13 +25,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.ComponentModel.Design;
+using Reko.Core.Services;
+using NUnit.Framework.Interfaces;
 
 namespace Reko.UnitTests.Arch
 {
     public abstract class DisassemblerTestBase<TInstruction> : ArchTestBase
         where TInstruction : MachineInstruction
     {
-        protected abstract ImageWriter CreateImageWriter(byte[] bytes);
+        protected ServiceContainer CreateServiceContainer()
+        {
+            var sc = new ServiceContainer();
+            sc.AddService<ITestGenerationService>(new UnitTestGenerationService(sc));
+            return sc;
+        }
 
         public TInstruction DisassembleBytes(params byte[] a)
         {
@@ -42,7 +50,7 @@ namespace Reko.UnitTests.Arch
         public TInstruction DisassembleWord(uint instr)
         {
             var img = new MemoryArea(LoadAddress, new byte[256]);
-            CreateImageWriter(img.Bytes).WriteUInt32(0, instr);
+            Architecture.CreateImageWriter(img, img.BaseAddress).WriteUInt32(0, instr);
             return Disassemble(img);
         }
 
@@ -50,7 +58,7 @@ namespace Reko.UnitTests.Arch
         {
             var img = new MemoryArea(LoadAddress, new byte[256]);
             uint instr = BitStringToUInt32(bitPattern);
-            CreateImageWriter(img.Bytes).WriteUInt32(0, instr);
+            Architecture.CreateImageWriter(img, img.BaseAddress).WriteUInt32(0, instr);
             return Disassemble(img);
         }
 

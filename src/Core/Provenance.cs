@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 1999-2020 John Källén.
  *
@@ -32,20 +32,25 @@ namespace Reko.Core
     public class Provenance
     {
         public ProvenanceType ProvenanceType;
-        public string Comment;
+        public string? Comment;
     }
 
     public enum ProvenanceType
     {
         None,
-        ImageEntrypoint,     // reached here because image file "said so".
+        ImageEntrypoint,    // reached here because image file "said so".
         UserInput,          // reached here because users input "said so".
         Scanning,           // reached here as part of the scanning process.
-        Heuristic,          // reached here a a guess.
+        Heuristic,          // reached here as a guess.
     }
 
     public class Provenance<T> : Provenance
     {
-        public T ReachedFrom;
+        public readonly T ReachedFrom;
+
+        public Provenance(T from)
+        {
+            this.ReachedFrom = from;
+        }
     }
 }

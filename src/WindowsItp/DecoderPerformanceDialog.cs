@@ -1,7 +1,9 @@
 using Reko.Core;
+using Reko.Core.Rtl;
 using Reko.WindowsItp.Decoders;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -10,9 +12,13 @@ namespace Reko.WindowsItp
 {
     public partial class DecoderPerformanceDialog : Form
     {
+        private List<RtlInstructionCluster> rtls;
+        private ServiceContainer sc;
+
         public DecoderPerformanceDialog()
         {
             InitializeComponent();
+            this.sc = new ServiceContainer();
         }
 
         private async void btnDoit_Click(object sender, EventArgs e)
@@ -40,8 +46,8 @@ namespace Reko.WindowsItp
             Func<long> test;
             if (rdbRealDasm.Checked)
             {
-                //var arch = new Reko.Arch.Arm.Arm32Architecture("arm32");
-                var arch = new Reko.Arch.X86.X86ArchitectureFlat32("x86-protected-32");
+                var arch = new Reko.Arch.Arm.Arm32Architecture(sc, "arm32");
+                //var arch = new Reko.Arch.X86.X86ArchitectureFlat32("x86-protected-32");
 
                 if (rewriter)
                 {
@@ -64,15 +70,15 @@ namespace Reko.WindowsItp
                     m = new Decoders.ThreadedDecoderBuilder();
                 }
                 var root = m.Mask(29, 3,
-                    m.Instr(Opcode.add, "r8,r4,r0"),
-                    m.Instr(Opcode.sub, "r8,r4,r0"),
-                    m.Instr(Opcode.mul, "r8,r4,r0"),
-                    m.Instr(Opcode.div, "r8,r4,r0"),
+                    m.Instr(Mnemonic.add, "r8,r4,r0"),
+                    m.Instr(Mnemonic.sub, "r8,r4,r0"),
+                    m.Instr(Mnemonic.mul, "r8,r4,r0"),
+                    m.Instr(Mnemonic.div, "r8,r4,r0"),
 
-                    m.Instr(Opcode.and, "r8,r4,r0"),
-                    m.Instr(Opcode.or, "r8,r4,r0"),
-                    m.Instr(Opcode.not, "r8,r4"),
-                    m.Instr(Opcode.xor, "r8,r4,r0"));
+                    m.Instr(Mnemonic.and, "r8,r4,r0"),
+                    m.Instr(Mnemonic.or, "r8,r4,r0"),
+                    m.Instr(Mnemonic.not, "r8,r4"),
+                    m.Instr(Mnemonic.xor, "r8,r4,r0"));
 
                 if (rewriter)
                 {
@@ -161,10 +167,12 @@ namespace Reko.WindowsItp
             var rdr = arch.CreateImageReader(mem, mem.BaseAddress);
             var dasm = arch.CreateRewriter(rdr, arch.CreateProcessorState(), new StorageBinder(),
                 new RewriterPerformanceDialog.RewriterHost(new Dictionary<Address, ImportReference>()));
+            this.rtls = new List<RtlInstructionCluster>();
             Stopwatch sw = new Stopwatch();
             sw.Start();
-            foreach (var instr in dasm)
+            foreach (var rtl in dasm)
             {
+                rtls.Add(rtl);
             }
             sw.Stop();
             var time = sw.ElapsedMilliseconds;

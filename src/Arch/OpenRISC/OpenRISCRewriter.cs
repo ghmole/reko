@@ -27,6 +27,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 
 namespace Reko.Arch.OpenRISC
@@ -97,6 +98,7 @@ namespace Reko.Arch.OpenRISC
                 case Mnemonic.l_macrc: RewriteMacrc(); break;
                 case Mnemonic.l_movhi: RewriteMovhi(); break;
                 case Mnemonic.l_mfspr: RewriteMfspr(); break;
+                case Mnemonic.l_msync: RewriteMsync(); break;
                 case Mnemonic.l_mtspr: RewriteMtspr(); break;
                 case Mnemonic.l_mul: RewriteAluV(m.SMul); break;
 
@@ -138,12 +140,8 @@ namespace Reko.Arch.OpenRISC
                 case Mnemonic.l_sys: RewriteSys(); break;
                 case Mnemonic.l_xor: RewriteBinOp(m.Xor); break;
                 case Mnemonic.l_xori: RewriteBinOpImm(m.Xor); break;
-
                 }
-                yield return new RtlInstructionCluster(instrCur.Address, instrCur.Length, rtls.ToArray())
-                {
-                    Class = this.iclass
-                };
+                yield return m.MakeCluster(instrCur.Address, instrCur.Length, iclass);
             }
         }
 
@@ -152,30 +150,14 @@ namespace Reko.Arch.OpenRISC
             return GetEnumerator();
         }
 
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
         /// <summary>
         /// Emits the text of a unit test that can be pasted into the unit tests 
         /// for this rewriter.
         /// </summary>
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadUInt32();
-            Console.WriteLine("        [Test]");
-            Console.WriteLine("        public void OpenRiscRw_" + dasm.Current.Mnemonic + "()");
-            Console.WriteLine("        {");
-            Console.WriteLine("            BuildTest(\"{0:X8}\");\t// {1}", bytes, dasm.Current.ToString());
-            Console.WriteLine("            AssertCode(");
-            Console.WriteLine("                \"0|L--|00100000({0}): 1 instructions\",", dasm.Current.Length);
-            Console.WriteLine("                \"1|L--|@@@\");");
-            Console.WriteLine("        }");
-            Console.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("OpenRiscRw", instrCur, rdr, "");
         }
 
         private Address Addr(MachineOperand op)
@@ -431,6 +413,11 @@ namespace Reko.Arch.OpenRISC
             var dst = Reg(instrCur.Operands[0]);
             var imm = Imm(instrCur.Operands[1]);
             m.Assign(dst, Constant.Word32(imm.ToUInt32() << 16));
+        }
+
+        private void RewriteMsync()
+        {
+            m.SideEffect(host.PseudoProcedure("__msync", VoidType.Instance));
         }
 
         private void RewriteMtspr()

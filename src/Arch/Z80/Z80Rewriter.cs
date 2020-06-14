@@ -39,7 +39,7 @@ namespace Reko.Arch.Z80
         private readonly IStorageBinder binder;
         private readonly IRewriterHost host;
         private readonly IEnumerator<Z80Instruction> dasm;
-        private InstrClass rtlc;
+        private InstrClass iclass;
         private RtlEmitter m;
 
         public Z80Rewriter(Z80ProcessorArchitecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
@@ -47,7 +47,7 @@ namespace Reko.Arch.Z80
             this.arch = arch;
             this.binder = binder;
             this.host = host;
-            this.dasm = new Z80Disassembler(rdr).GetEnumerator();
+            this.dasm = new Z80Disassembler(arch, rdr).GetEnumerator();
         }
 
         public IEnumerator<RtlInstructionCluster> GetEnumerator()
@@ -56,7 +56,7 @@ namespace Reko.Arch.Z80
             {
                 var addr = dasm.Current.Address;
                 var len = dasm.Current.Length;
-                this.rtlc = dasm.Current.InstructionClass;
+                this.iclass = dasm.Current.InstructionClass;
                 var rtlInstructions = new List<RtlInstruction>();
                 m = new RtlEmitter(rtlInstructions);
                 switch (dasm.Current.Mnemonic)
@@ -141,10 +141,7 @@ namespace Reko.Arch.Z80
         case Mnemonic.rrd: goto default;
         case Mnemonic.swap: goto default;
                 }
-                yield return new RtlInstructionCluster(addr, len, rtlInstructions.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(addr, len, iclass);
             }
         }
 
@@ -344,7 +341,7 @@ namespace Reko.Arch.Z80
             var z = FlagGroup(FlagM.ZF);
             m.Assign(z, m.Cond(m.ISub(a, m.Mem8(hl))));
             m.Assign(hl, incDec(hl, m.Int16(1)));
-            m.Assign(bc, m.ISubS(bc, 1));
+            m.Assign(bc, m.ISub(bc, 1));
             if (repeat)
             {
                 m.BranchInMiddleOfInstruction(m.Eq0(bc), addr + dasm.Current.Length, InstrClass.ConditionalTransfer);
@@ -482,7 +479,7 @@ namespace Reko.Arch.Z80
                         cc,
                         binder.EnsureFlagGroup(arch.GetFlagGroup(Registers.f, (uint)cr))),
                     target.Address,
-                    rtlc);
+                    iclass);
             }
             else
             {

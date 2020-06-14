@@ -23,6 +23,7 @@ using Reko.Arch.MicroBlaze;
 using Reko.Core;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -38,18 +39,13 @@ namespace Reko.UnitTests.Arch.MicroBlaze
         [SetUp]
         public void Setup()
         {
-            this.arch = new MicroBlazeArchitecture("microBlaze");
+            this.arch = new MicroBlazeArchitecture(new ServiceContainer(), "microBlaze");
             this.addr = Address.Ptr32(0x00100000);
         }
 
         public override IProcessorArchitecture Architecture => arch;
 
         public override Address LoadAddress => addr;
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            throw new NotImplementedException();
-        }
 
         private void AssertCode(string expectedAsm, string hexInstr)
         {

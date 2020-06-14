@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Core.Rtl;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -50,26 +51,41 @@ namespace Reko.Core
         }
 
         /// <summary>
-        /// Generates the name for a block stating at address <paramref name="addr"/>.
+        /// Generates the name for a block starting at address <paramref name="addr"/>.
         /// </summary>
         /// <returns>The name as a string.</returns>
         public virtual string BlockName(Address addr)
         {
-            if (addr == null) throw new ArgumentNullException(nameof(addr));
+            if (addr is null) throw new ArgumentNullException(nameof(addr));
             return addr.GenerateName("l", "");
         }
 
-        public virtual string StackArgumentName(DataType type, int cbOffset, string nameOverride)
+        public virtual string BlockName(RtlLocation loc)
+        {
+            if (loc.Index == 0)
+                return BlockName(loc.Address);
+            return loc.Address.GenerateName("l", $"_{loc.Index}");
+        }
+
+        public virtual string GlobalName(StructureField field)
+        {
+            if (field.IsNameSet)
+                return field.Name;
+            var fieldName = Types.StructureFieldName(field, null);
+            return string.Format("g_{0}", fieldName);
+        }
+
+        public virtual string StackArgumentName(DataType type, int cbOffset, string? nameOverride)
         {
             return GenerateStackAccessName(type, "Arg", cbOffset, nameOverride);
         }
 
-        public virtual string StackLocalName(DataType type, int cbOffset, string nameOverride)
+        public virtual string StackLocalName(DataType type, int cbOffset, string? nameOverride)
         {
             return GenerateStackAccessName(type, "Loc", cbOffset, nameOverride);
         }
 
-        private string GenerateStackAccessName(DataType type, string prefix, int cbOffset, string nameOverride)
+        private string GenerateStackAccessName(DataType type, string prefix, int cbOffset, string? nameOverride)
         {
             if (nameOverride != null)
                 return nameOverride;

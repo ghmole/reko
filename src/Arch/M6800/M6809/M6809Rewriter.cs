@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections;
@@ -191,41 +192,15 @@ namespace Reko.Arch.M6800.M6809
             }
         }
 
-        private static HashSet<Mnemonic> opcode_seen = new HashSet<Mnemonic>();
-
         IEnumerator IEnumerable.GetEnumerator()
         {
-            throw new NotImplementedException();
+            return GetEnumerator();
         }
 
         private void EmitUnitTest()
         {
-            m.Invalid();
-            iclass = InstrClass.Invalid;
-
-            if (opcode_seen.Contains(instr.Mnemonic))
-                return;
-            opcode_seen.Add(instr.Mnemonic);
-            host.Warn(
-                instr.Address,
-                "M6809 instruction '{0}' is not supported yet.",
-                instr.Mnemonic.ToString());
-
-            var r2 = rdr.Clone();
-            r2.Offset -= instr.Length;
-            var hexBytes = string.Join("", r2.ReadBytes(instr.Length).Select(b => $"{b:X2}"));
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"        [Test]");
-            sb.AppendLine($"        public void M6809Rw_{instr.Mnemonic}()");
-            sb.AppendLine("        {");
-            sb.AppendLine($"            RewriteCode(\"{hexBytes}\"); // {instr}");
-            sb.AppendLine($"            AssertCode(");
-            sb.AppendLine($"                \"0|L--|0100({instr.Length}): 1 instructions\",");
-            sb.AppendLine($"                \"1|L--|@@@\");");
-            sb.AppendLine("        }");
-            Debug.WriteLine(sb.ToString());
-            Console.WriteLine(sb.ToString());
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("M6809Rw", this.instr, rdr, "");
         }
 
         private Expression Clr(Expression e)
@@ -254,12 +229,12 @@ namespace Reko.Arch.M6800.M6809
 
         private Expression Dec(Expression e)
         {
-            return m.ISubS(e, 1);
+            return m.ISub(e, 1);
         }
 
         private Expression Inc(Expression e)
         {
-            return m.IAddS(e, 1);
+            return m.IAdd(e, 1);
         }
 
         private Expression Load(Expression d, Expression t)
@@ -497,7 +472,7 @@ namespace Reko.Arch.M6800.M6809
                     tmp = memFn(bin, dst, ea, mem);
                     break;
                 case MemoryOperand.Mode.Direct:
-                    ea = m.IAdd(binder.EnsureRegister(Registers.DP), Constant.Byte((byte) mem.Offset));
+                    ea = m.IAdd(binder.EnsureRegister(Registers.DP), Constant.Word16((byte) mem.Offset));
                     tmp = memFn(bin, dst, ea, mem);
                     break;
                 case MemoryOperand.Mode.PostInc1:

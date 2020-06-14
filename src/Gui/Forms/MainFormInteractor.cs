@@ -204,6 +204,9 @@ namespace Reko.Gui.Forms
 
             var selSvc = svcFactory.CreateSelectionService();
             sc.AddService<ISelectionService>(selSvc);
+
+            var testGenSvc = svcFactory.CreateTestGenerationService();
+            sc.AddService<ITestGenerationService>(testGenSvc);
         }
 
         public virtual TextWriter CreateTextWriter(string filename)
@@ -320,10 +323,9 @@ namespace Reko.Gui.Forms
                 if (uiSvc.ShowModalDialog(dlg) != DialogResult.OK)
                     return true;
 
-                var typeName = dlg.SelectedArchitectureTypeName;
-                var t = Type.GetType(typeName, true);
-                var asm = (Assembler) t.GetConstructor(Type.EmptyTypes).Invoke(null);
-                OpenBinary(dlg.FileName.Text, (f) => pageInitial.Assemble(f, asm), f => false);
+                var arch = this.config.GetArchitecture(dlg.SelectedArchitectureName);
+                var asm = arch.CreateAssembler(null);
+                OpenBinary(dlg.FileName.Text, (f) => pageInitial.Assemble(f, asm, null), f => false);
                 RememberFilenameInMru(dlg.FileName.Text);
             }
             catch (Exception e)
@@ -565,12 +567,11 @@ namespace Reko.Gui.Forms
                                         0,
                                         (int)seg.MemoryArea.Length)
                                     .Where(o => filter(o, program))
-                                    .Select(offset => new AddressSearchHit
-                                    {
-                                        Program = program,
-                                        Address = program.SegmentMap.MapLinearAddressToAddress(
-                                            linBaseAddr + (ulong)offset)
-                                    });
+                                    .Select(offset => new AddressSearchHit(
+                                        program,
+                                        program.SegmentMap.MapLinearAddressToAddress(
+                                            linBaseAddr + (ulong)offset),
+                                        0));
                             }));
                     srSvc.ShowAddressSearchResults(hits, new CodeSearchDetails());
                 }
@@ -719,10 +720,11 @@ namespace Reko.Gui.Forms
             }
 
             var fsSvc = Services.RequireService<IFileSystemService>();
+            var saver = new ProjectSaver(sc);
+            var sProject = saver.Serialize(ProjectFileName, decompilerSvc.Decompiler.Project);
+
             using (var xw = fsSvc.CreateXmlWriter(ProjectFileName))
             {
-                var saver = new ProjectSaver(sc);
-                var sProject = saver.Serialize(ProjectFileName, decompilerSvc.Decompiler.Project);
                 saver.Save(sProject, xw);
             }
             return true;

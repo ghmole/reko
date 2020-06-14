@@ -23,6 +23,7 @@ using Reko.Arch.Arc;
 using Reko.Core;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -42,7 +43,7 @@ namespace Reko.UnitTests.Arch.Arc
         [SetUp]
         public void Setup()
         {
-            this.arch = new ARCompactArchitecture("arc");
+            this.arch = new ARCompactArchitecture(new ServiceContainer(), "arc");
             arch.LoadUserOptions(new Dictionary<string, object>
             {
                 { "Endianness", "be" }
@@ -52,11 +53,6 @@ namespace Reko.UnitTests.Arch.Arc
         public override IProcessorArchitecture Architecture => arch;
 
         public override Address LoadAddress { get; }
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            return new LeImageWriter(bytes);
-        }
 
         private void AssertCode(string expectedAsm, string hexInstr)
         {

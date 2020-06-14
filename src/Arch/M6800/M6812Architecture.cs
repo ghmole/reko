@@ -36,7 +36,7 @@ namespace Reko.Arch.M6800
     {
         private readonly Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public M6812Architecture(string archId) : base(archId)
+        public M6812Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             Endianness = EndianServices.Big;
             InstructionBitSize = 8;
@@ -49,7 +49,7 @@ namespace Reko.Arch.M6800
 
         public override IEnumerable<MachineInstruction> CreateDisassembler(EndianImageReader imageReader)
         {
-            return new M6812.M6812Disassembler(imageReader);
+            return new M6812.M6812Disassembler(this, imageReader);
         }
 
         public override IProcessorEmulator CreateEmulator(SegmentMap segmentMap, IPlatformEmulator envEmulator)
@@ -96,12 +96,12 @@ namespace Reko.Arch.M6800
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

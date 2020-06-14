@@ -31,6 +31,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using Reko.Core.Lib;
+using Reko.Core.Output;
 
 namespace Reko.Core
 {
@@ -47,10 +48,14 @@ namespace Reko.Core
     {
         public event PropertyChangedEventHandler PropertyChanged;
 
+        public const string SingleFilePolicy = "SingleFile";
+        public const string SegmentFilePolicy = "Segment";
+
         private IProcessorArchitecture archDefault;
         private Identifier globals;
         private Encoding encoding;
 
+#nullable disable
         public Program()
         {
             this.Architectures = new Dictionary<string, IProcessorArchitecture>();
@@ -85,7 +90,12 @@ namespace Reko.Core
             this.Architecture = arch;
             this.Platform = platform;
         }
+#nullable enable
 
+
+        /// <summary>
+        /// The program's file name and extension, but not its path.
+        /// </summary>
         public string Name { get; set; }
 
         /// <summary>
@@ -106,7 +116,7 @@ namespace Reko.Core
 
         /// <summary>
         /// Contains the segments that the binary consists of. This data
-        /// is discovered by the loader, with optiona additional input
+        /// is discovered by the loader, with optional additional input
         /// from the user.
         /// </summary>
         public SegmentMap SegmentMap { get; set; }
@@ -140,7 +150,7 @@ namespace Reko.Core
                 {
                     EnsureGlobals();
                 }
-                return globals;
+                return globals!;
             }
         }
 
@@ -226,6 +236,22 @@ namespace Reko.Core
             return new SymbolTable(Platform, primitiveTypes, namedTypes);
         }
 
+        /// <summary>
+        /// Creates an output policy based on the user's preferences, defaulting to the old
+        /// <see cref="SingleFilePolicy"/>.
+        /// </summary>
+        public OutputFilePolicy CreateOutputPolicy()
+        {
+            switch (User.OutputFilePolicy)
+            {
+            case Program.SingleFilePolicy:
+                return new SingleFilePolicy(this);
+            case Program.SegmentFilePolicy:
+            default:
+                return new SegmentFilePolicy(this);
+            }
+        }
+
         public ProcedureSerializer CreateProcedureSerializer()
         {
             var typeLoader = new TypeLibraryDeserializer(Platform, true, EnvironmentMetadata.Clone());
@@ -253,7 +279,7 @@ namespace Reko.Core
         public SortedList<Address, ImageSymbol> EntryPoints { get; private set; }
 
         /// <summary>
-        /// The name of the file from which this Program was loaded.
+        /// Absolute path of the file from which this Program was loaded.
         /// </summary>
         public string Filename { get; set; }
 
@@ -315,22 +341,22 @@ namespace Reko.Core
         public UserData User { get; set; }
 
         /// <summary>
-        /// The name of the directory into which disassemblies are dumped.
+        /// Absolute path of the directory into which disassemblies are dumped.
         /// </summary>
         public string DisassemblyDirectory { get; set; }
 
         /// <summary>
-        /// The name of the directory into which final source code is stored
+        /// Absolute path of the directory into which final source code is stored
         /// </summary>
         public string SourceDirectory { get; set; }
 
         /// <summary>
-        /// The name of the directory into which type definitions are stored.
+        /// Absolute path of the directory into which type definitions are stored.
         /// </summary>
         public string IncludeDirectory { get; set; }
 
         /// <summary>
-        /// The name of the directory in which embedded resources will be written.
+        /// Absolute path the directory in which embedded resources will be written.
         /// </summary>
         public string ResourcesDirectory { get; set; }
 
@@ -378,6 +404,17 @@ namespace Reko.Core
                 arch.CreateImageReader(segment.MemoryArea, addr));
         }
 
+        public Dictionary<ImageSegment, List<ImageMapItem>> GetItemsBySegment()
+        {
+            return (from seg in this.SegmentMap.Segments.Values
+                    from item in this.ImageMap.Items.Values
+                    where seg.IsInRange(item.Address) && !seg.IsHidden
+                    group new { seg, item } by seg into g
+                    orderby g.Key.Address
+                    select new { g.Key, Items = g.Select(gg => gg.item) })
+                .ToDictionary(a => a.Key, a => a.Items.OrderBy(i => i.Address).ToList());
+        }
+
         // Mutators /////////////////////////////////////////////////////////////////
 
         public IProcessorArchitecture EnsureArchitecture(string archLabel, Func<string,IProcessorArchitecture> getter)
@@ -411,9 +448,8 @@ namespace Reko.Core
             //$TODO: if user enters a segmented address, we need to 
             // place the item in the respective globals struct.
             var size = GetDataSize(arch, address, dataType);
-            var item = new ImageMapItem
+            var item = new ImageMapItem(address)
             {
-                Address = address,
                 Size = size,
                 DataType = dataType,
             };
@@ -431,7 +467,7 @@ namespace Reko.Core
         }
 
         /// <summary>
-        /// Seed the imagemap with image symbols 
+        /// Seed the <see cref="ImageMap"/> with image symbols 
         /// </summary>
         public void BuildImageMap()
         {
@@ -439,25 +475,23 @@ namespace Reko.Core
                 return;
             this.ImageMap = SegmentMap.CreateImageMap();
             foreach (var sym in this.ImageSymbols.Values.Where(
-                s => s.Type == SymbolType.Data && s.DataType.BitSize != 0))
+                s => s.Type == SymbolType.Data && s.DataType!.BitSize != 0))
             {
                 this.ImageMap.AddItemWithSize(
-                    sym.Address,
-                    new ImageMapItem
+                    sym.Address!,
+                    new ImageMapItem(sym.Address!)
                     {
-                        Address = sym.Address,
-                        DataType = sym.DataType,
-                        Size = (uint) sym.DataType.Size,
+                        DataType = sym.DataType!,
+                        Size = (uint) sym.DataType!.Size,
                     });
             }
             var tlDeser = CreateTypeLibraryDeserializer();
             foreach (var kv in User.Globals)
             {
-                var dt = kv.Value.DataType.Accept(tlDeser);
+                var dt = kv.Value.DataType!.Accept(tlDeser);
                 var size = GetDataSize(Architecture, kv.Key, dt);
-                var item = new ImageMapItem(size)
+                var item = new ImageMapItem(kv.Key, size)
                 {
-                    Address = kv.Key,
                     DataType = dt,
                     Name = kv.Value.Name,
                 };
@@ -471,7 +505,7 @@ namespace Reko.Core
                 }
                 //$BUGBUG: what about x86 segmented binaries?
                 int offset = (int)kv.Key.ToLinear();
-                GlobalFields.Fields.Add(offset, dt, kv.Value.Name);
+                GlobalFields.Fields.Add(offset, dt, kv.Value.Name!);
             }
         }
 
@@ -502,7 +536,7 @@ namespace Reko.Core
         private static FunctionType MakeSignatureFromApplication(DataType returnType, Expression[] args)
         {
             return new FunctionType(
-                new Identifier("", returnType, null),
+                new Identifier("", returnType, null!),
                 args.Select((arg, i) => IdFromExpression(arg, i)).ToArray());
         }
 
@@ -510,7 +544,7 @@ namespace Reko.Core
         {
             var id = arg as Identifier;
             var stg = id?.Storage;
-            return new Identifier("", arg.DataType, stg);
+            return new Identifier("", arg.DataType, stg!);
         }
 
         /// <summary>
@@ -524,36 +558,43 @@ namespace Reko.Core
         /// <returns>
         /// The procedure, located at address <paramref name="addr"/>.
         /// </returns>
-        public Procedure EnsureProcedure(IProcessorArchitecture arch, Address addr, string procedureName)
+        public Procedure EnsureProcedure(IProcessorArchitecture arch, Address addr, string? procedureName)
         {
             if (this.Procedures.TryGetValue(addr, out Procedure proc))
                 return proc;
 
-            var generatedName = procedureName ?? this.NamingPolicy.ProcedureName(addr);
-            proc = Procedure.Create(arch, generatedName, addr, arch.CreateFrame());
+            bool deduceSignatureFromName = procedureName != null;
             if (this.ImageSymbols.TryGetValue(addr, out ImageSymbol sym))
             {
-                procedureName = sym.Name;
+                deduceSignatureFromName |= sym.Name != null;
+                var generatedName = procedureName ?? sym.Name ?? this.NamingPolicy.ProcedureName(addr);
+                proc = Procedure.Create(arch, generatedName, addr, arch.CreateFrame());
                 if (sym.Signature != null)
                 {
                     var sser = this.CreateProcedureSerializer();
-                    proc.Signature = sser.Deserialize(sym.Signature, proc.Frame);
+                    proc.Signature = sser.Deserialize(sym.Signature, proc.Frame)!;
+                    deduceSignatureFromName = proc.Signature != null;
                 }
             }
-            if (procedureName != null)
+            else
             {
-                var sProc = this.Platform.SignatureFromName(procedureName);
+                var generatedName = procedureName ?? this.NamingPolicy.ProcedureName(addr);
+                proc = Procedure.Create(arch, generatedName, addr, arch.CreateFrame());
+            }
+
+            if (deduceSignatureFromName)
+            {
+                var sProc = this.Platform.SignatureFromName(procedureName!);
                 if (sProc != null)
                 {
                     var loader = this.CreateTypeLibraryDeserializer();
                     var exp = loader.LoadExternalProcedure(sProc);
-                    proc.Name = exp.Name;
-                    proc.Signature = exp.Signature;
-                    proc.EnclosingType = exp.EnclosingType;
-                }
-                else
-                {
-                    proc.Name = procedureName;
+                    if (!(exp is null))
+                    {
+                        proc.Name = exp.Name;
+                        proc.Signature = exp.Signature;
+                        proc.EnclosingType = exp.EnclosingType;
+                    }
                 }
             }
             this.Procedures.Add(addr, proc);
@@ -577,7 +618,7 @@ namespace Reko.Core
             return intrinsic;
         }
 
-        public Procedure_v1 EnsureUserProcedure(Address address, string name, bool decompile = true)
+        public Procedure_v1 EnsureUserProcedure(Address address, string? name, bool decompile = true)
         {
             if (!User.Procedures.TryGetValue(address, out var up))
             {
@@ -611,9 +652,8 @@ namespace Reko.Core
             var tlDeser = CreateTypeLibraryDeserializer();
             var dt = dataType.Accept(tlDeser);
             var size = GetDataSize(arch, address, dt);
-            var item = new ImageMapItem
+            var item = new ImageMapItem(address)
             {
-                Address = address,
                 Size = size,
                 Name = name,
                 DataType = dt,
@@ -640,7 +680,7 @@ namespace Reko.Core
         public void Reset()
         {
             Procedures.Clear();
-            globals = null;
+            globals = null!;
             TypeFactory = new TypeFactory();
             TypeStore.Clear();
             GlobalFields = TypeFactory.CreateStructureType("Globals", 0);

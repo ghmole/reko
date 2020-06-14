@@ -95,11 +95,11 @@ namespace Reko.Arch.Arm.AArch32
 
         private void RewriteBfi()
         {
-            var opDst = this.Operand(Dst(), PrimitiveType.Word32, true);
             var opSrc = this.Operand(Src1());
-            var tmp = binder.CreateTemporary(PrimitiveType.Word32);
+            var opDst = (Identifier) this.Operand(Dst(), PrimitiveType.Word32, true);
             var lsb = ((ImmediateOperand)instr.Operands[2]).Value.ToInt32();
             var bitsize = ((ImmediateOperand)instr.Operands[3]).Value.ToInt32();
+            var tmp = binder.CreateTemporary(PrimitiveType.CreateWord(bitsize));
             m.Assign(tmp, m.Slice(opSrc, 0, bitsize));
             m.Assign(opDst, m.Dpb(opDst, tmp, lsb));
         }
@@ -226,7 +226,7 @@ namespace Reko.Arch.Arm.AArch32
 
         private void RewriteTableBranch(DataType elemSize)
         {
-            this.rtlClass = InstrClass.Transfer;
+            this.iclass = InstrClass.Transfer;
             var mem = (MemoryOperand) instr.Operands[0];
             Expression tableBase;
             if (mem.BaseRegister == Registers.pc)
@@ -248,7 +248,11 @@ namespace Reko.Arch.Arm.AArch32
             {
                 ea = m.IAdd(tableBase, idxReg);
             }
-            m.Goto(m.IAdd(instr.Address + this.pcValueOffset, m.IMul(m.Mem(elemSize, ea), 2)));
+            m.Goto(m.IAdd(
+                instr.Address + this.pcValueOffset,
+                m.IMul(
+                    m.Cast(PrimitiveType.UInt32, m.Mem(elemSize, ea)),
+                    2)));
         }
 
         private void RewriteTeq()
@@ -303,7 +307,7 @@ namespace Reko.Arch.Arm.AArch32
                     // something other than the LR (or continuation)
                     // of this procedure. That requires more advanced 
                     // analyses than Reko can manage presently.
-                    rtlClass = instr.condition == ArmCondition.AL
+                    iclass = instr.Condition == ArmCondition.AL
                         ? InstrClass.Transfer
                         : InstrClass.ConditionalTransfer;
                     m.Assign(baseReg, m.IAdd(baseReg, mem.Offset));
@@ -322,7 +326,7 @@ namespace Reko.Arch.Arm.AArch32
             }
             if (isJump)
             {
-                rtlClass = InstrClass.Transfer;
+                iclass = InstrClass.Transfer;
                 m.Goto(src);
             }
             else
@@ -430,7 +434,7 @@ namespace Reko.Arch.Arm.AArch32
             }
             if (pcRestored)
             {
-                rtlClass = instr.condition == ArmCondition.AL
+                iclass = instr.Condition == ArmCondition.AL
                     ? InstrClass.Transfer
                     : InstrClass.ConditionalTransfer;
                 m.Return(0, 0);
@@ -496,7 +500,7 @@ namespace Reko.Arch.Arm.AArch32
         {
             if (Dst() is RegisterOperand rOp && rOp.Register == Registers.pc)
             {
-                rtlClass = InstrClass.Transfer;
+                iclass = InstrClass.Transfer;
                 if (Src1() is RegisterOperand ropSrc && ropSrc.Register == Registers.lr)
                 {
                     m.Return(0, 0);
@@ -522,8 +526,8 @@ namespace Reko.Arch.Arm.AArch32
 
         private void RewriteMovt()
         {
-            var opDst = Operand(Dst(), PrimitiveType.Word32, true);
             var iSrc = ((ImmediateOperand)Src1()).Value;
+            var opDst = (Identifier) Operand(Dst(), PrimitiveType.Word32, true);
             Debug.Assert(iSrc.DataType.BitSize == 16);
             var opSrc = m.Dpb(opDst, iSrc, 16);
             m.Assign(opDst, opSrc);
@@ -531,8 +535,8 @@ namespace Reko.Arch.Arm.AArch32
 
         private void RewriteMovw()
         {
-            var dst = Operand(Dst(), PrimitiveType.Word32, true);
             var src = m.Word32(((ImmediateOperand)Src1()).Value.ToUInt32());
+            var dst = Operand(Dst(), PrimitiveType.Word32, true);
             m.Assign(dst, src);
         }
 

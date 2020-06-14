@@ -39,18 +39,19 @@ namespace Reko.Arch.Mos6502
         public const byte Nmask = 0x80;
 
         private static readonly TraceSwitch trace = new TraceSwitch(nameof(Mos6502Emulator), "Trace execution of 6502 Emulator") { Level = TraceLevel.Verbose };
+
         private static readonly RegisterStorage[] dumpRegs = new[]
         {
             Registers.a, Registers.x, Registers.y, Registers.s, Registers.p
         };
 
-        private Mos6502ProcessorArchitecture arch;
+        private Mos6502Architecture arch;
         private SegmentMap map;
         private IPlatformEmulator envEmulator;
         private ushort[] regs;
         private IEnumerator<Instruction> dasm;
 
-        public Mos6502Emulator(Mos6502ProcessorArchitecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator)
+        public Mos6502Emulator(Mos6502Architecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator)
             : base(segmentMap)
         {
             this.arch = arch;
@@ -74,7 +75,7 @@ namespace Reko.Arch.Mos6502
                 if (!map.TryFindSegment(value, out ImageSegment segment))
                     throw new AccessViolationException();
                 var rdr = arch.CreateImageReader(segment.MemoryArea, value);
-                dasm = new Disassembler(rdr).GetEnumerator();
+                dasm = new Disassembler(arch, rdr).GetEnumerator();
             }
         }
 

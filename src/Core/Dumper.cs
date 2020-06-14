@@ -37,7 +37,6 @@ namespace Reko.Core
 	public class Dumper
 	{
         private readonly Program program;
-        private PrimitiveType instrByteSize;
 
         public Dumper(Program program)
 		{
@@ -50,26 +49,25 @@ namespace Reko.Core
         public void Dump(Formatter formatter)
         {
             var map = program.SegmentMap;
-            var mappedItems =
-                from seg in map.Segments.Values
-                from item in program.ImageMap.Items.Values
-                where seg.IsInRange(item.Address) && !seg.IsHidden
-                group new { seg, item } by seg into g
-                orderby g.Key.Address
-                select new { g.Key, Items = g.Select(gg => gg.item) }; 
+            var mappedItems = program.GetItemsBySegment();
+            Dump(mappedItems, formatter);
+        }
 
-            foreach (var g in mappedItems)
+        public void Dump(Dictionary<ImageSegment, List<ImageMapItem>> segmentItems, Formatter formatter)
+        {
+            foreach (var segmentEntry in segmentItems)
             {
-                formatter.WriteLine(";;; Segment {0} ({1})", g.Key.Name, g.Key.Address);
-                if (g.Key.Designer != null)
+                var seg = segmentEntry.Key;
+                formatter.WriteLine(";;; Segment {0} ({1})", seg.Name, seg.Address);
+                if (seg.Designer != null)
                 {
-                    g.Key.Designer.Render(g.Key, program, new AsmCommentFormatter(formatter));
+                    seg.Designer.Render(seg, program, new AsmCommentFormatter(formatter));
                 }
                 else
                 {
-                    foreach (var item in g.Items)
+                    foreach (var item in segmentEntry.Value)
                     {
-                        DumpItem(g.Key, item, formatter);
+                        DumpItem(seg, item, formatter);
                     }
                 }
             }
@@ -77,7 +75,7 @@ namespace Reko.Core
 
         private void DumpItem(ImageSegment segment, ImageMapItem i, Formatter formatter)
         {
-            if (i is ImageMapBlock block)
+            if (i is ImageMapBlock block && block.Block != null)
             {
                 formatter.WriteLine();
                 if (program.Procedures.TryGetValue(block.Address, out var proc))
@@ -104,9 +102,9 @@ namespace Reko.Core
             {
                 formatter.WriteLine(";; Code vector at {0} ({1} bytes)",
                     table.Address, table.Size);
-                foreach (Address addr in table.Addresses)
+                foreach (Address? addr in table.Addresses)
                 {
-                    formatter.WriteLine("\t{0}", addr != null ? addr.ToString() : "-- null --");
+                    formatter.WriteLine("\t{0}", addr is null ? "-- null --" : addr.ToString());
                 }
                 DumpData(program.SegmentMap, program.Architecture, i.Address, i.Size, formatter);
             }
@@ -170,7 +168,7 @@ namespace Reko.Core
             ulong cSkip = linAddr - BytesPerLine * (linAddr / BytesPerLine);
             if (!map.TryFindSegment(address, out var segment) || segment.MemoryArea == null)
                 return;
-            byte[] prevLine = null;
+            byte[]? prevLine = null;
             bool showEllipsis = true;
             cbBytes = Math.Min(cbBytes, segment.MemoryArea.Length - (address - segment.MemoryArea.BaseAddress));
             if (cbBytes <= 0)
@@ -230,7 +228,7 @@ namespace Reko.Core
 			}
 		}
 
-        private bool HaveSameZeroBytes(byte[] prevLine, byte[] ab)
+        private bool HaveSameZeroBytes(byte[]? prevLine, byte[] ab)
         {
             if (prevLine == null)
                 return false;
@@ -251,10 +249,11 @@ namespace Reko.Core
             var dasm = arch.CreateDisassembler(arch.CreateImageReader(segment.MemoryArea, addrStart));
             try
             {
-                var writer = new InstrWriter(formatter);
+                var writer = new InstrWriter(program.Platform, addrStart, formatter);
                 foreach (var instr in dasm)
                 {
-                    if (instr.Address >= addrLast)
+                    writer.Address = instr.Address!;
+                    if (instr.Address! >= addrLast)
                         break;
                     if (!DumpAssemblerLine(segment.MemoryArea, arch, instr, writer))
                         break;
@@ -269,12 +268,13 @@ namespace Reko.Core
 
         public bool DumpAssemblerLine(MemoryArea mem, IProcessorArchitecture arch, MachineInstruction instr, InstrWriter writer)
         {
-            Address addrBegin = instr.Address;
+            var instrAddress = instr.Address!;
+            Address addrBegin = instrAddress;
             if (ShowAddresses)
                 writer.WriteFormat("{0} ", addrBegin);
             if (ShowCodeBytes)
             {
-                WriteByteRange(mem, arch, instr.Address, instr.Address + instr.Length, writer);
+                WriteByteRange(mem, arch, instrAddress, instrAddress + instr.Length, writer);
                 if (instr.Length * 3 < 16)
                 {
                     writer.WriteString(new string(' ', 16 - (instr.Length * 3)));
@@ -282,7 +282,7 @@ namespace Reko.Core
             }
             writer.WriteString("\t");
             writer.Address = addrBegin;
-            writer.Address = instr.Address;
+            writer.Address = instrAddress;
             instr.Render(writer, MachineInstructionWriterOptions.ResolvePcRelativeAddress);
             writer.WriteLine();
             return true;
@@ -303,7 +303,7 @@ namespace Reko.Core
             if (program.ImageSymbols.TryGetValue(addr, out var sym) &&
                 !string.IsNullOrEmpty(sym.Name))
             {
-                w.Write(sym.Name);
+                w.Write(sym.Name!);
                 w.Write("\t\t; {0}",addr);
 
                 w.WriteLine();
@@ -321,28 +321,30 @@ namespace Reko.Core
 			EndianImageReader rdr = arch.CreateImageReader(image, begin);
             var byteSize = (7 + arch.InstructionBitSize) / 8;
             string instrByteFormat = $"{{0:X{byteSize * 2}}} "; // each byte is two nybbles.
-            this.instrByteSize = PrimitiveType.CreateWord(arch.InstructionBitSize);
+            var instrByteSize = PrimitiveType.CreateWord(arch.InstructionBitSize);
 
             while (rdr.Address < addrEnd)
 			{
-                var v = rdr.Read(this.instrByteSize);
+                var v = rdr.Read(instrByteSize);
                 writer.WriteFormat(instrByteFormat, v.ToUInt64());
 			}
 		}
 
         public class InstrWriter : MachineInstructionWriter
         {
-            private Formatter formatter;
+            private readonly Formatter formatter;
             private int chars;
-            private List<string> annotations;
+            private readonly List<string> annotations;
 
-            public InstrWriter(Formatter formatter)
+            public InstrWriter(IPlatform platform, Address addr, Formatter formatter)
             {
+                this.Platform = platform;
+                this.Address = addr;
                 this.formatter = formatter;
                 this.annotations = new List<string>();
             }
 
-            public IPlatform Platform { get; private set; }
+            public IPlatform Platform { get; }
             public Address Address { get; set; }
 
             public void Tab()
@@ -353,7 +355,7 @@ namespace Reko.Core
 
             public void WriteString(string s)
             {
-                chars += (s ?? "").Length;
+                chars += s.Length;
                 formatter.Write(s);
             }
 
@@ -389,10 +391,10 @@ namespace Reko.Core
                 formatter.WriteHyperlink(formattedAddress, addr);
             }
 
-            public void WriteOpcode(string opcode)
+            public void WriteMnemonic(string sMnemonic)
             {
-                chars += opcode.Length;
-                formatter.Write(opcode);
+                chars += sMnemonic.Length;
+                formatter.Write(sMnemonic);
             }
 
             public void WriteLine()
@@ -421,7 +423,7 @@ namespace Reko.Core
 
         class AsmCommentFormatter : Formatter
         {
-            private Formatter w;
+            private readonly Formatter w;
             private bool needPrefix;
 
             public AsmCommentFormatter(Formatter w)

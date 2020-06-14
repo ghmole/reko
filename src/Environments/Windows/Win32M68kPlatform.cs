@@ -44,13 +44,13 @@ namespace Reko.Environments.Windows
 			return null;
 		}
 
-		public override SystemService FindService(int vector, ProcessorState state)
+		public override SystemService FindService(int vector, ProcessorState state, SegmentMap segmentMap)
 		{
 			//throw new NotImplementedException("INT services are not supported by " + this.GetType().Name);
 			return null;
 		}
 
-		public override ProcedureBase GetTrampolineDestination(IEnumerable<RtlInstructionCluster> rtls, IRewriterHost host)
+		public override ProcedureBase GetTrampolineDestination(Address addrInstr, IEnumerable<RtlInstruction> rtls, IRewriterHost host)
 		{
 			return null;
 		}

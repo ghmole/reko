@@ -23,6 +23,7 @@ using Reko.Arch.WE32100;
 using Reko.Core;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -37,18 +38,13 @@ namespace Reko.UnitTests.Arch.WE32100
 
         public WE32100DisassemblerTests()
         {
-            this.arch = new WE32100Architecture("we32100");
+            this.arch = new WE32100Architecture(new ServiceContainer(), "we32100");
             this.addr = Address.Ptr32(0x00100000);
         }
 
         public override IProcessorArchitecture Architecture => arch;
 
         public override Address LoadAddress => addr;
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            throw new NotImplementedException();
-        }
 
         private void AssertCode(string sExpected, string hexInstr)
         {

@@ -31,13 +31,13 @@ namespace Reko.Arch.Arm.AArch32
     {
         #region Special cases
 
-        // Specially rendered opcodes
-        private static readonly Dictionary<Mnemonic, string> opcodes = new Dictionary<Mnemonic, string>
+        // Specially rendered mnemonics
+        private static readonly Dictionary<Mnemonic, string> mnemonics = new Dictionary<Mnemonic, string>
         {
         };
 
-        // Block data transfer opcodes that affect the rendering of the first operand.
-        private static readonly HashSet<Mnemonic> blockDataXferOpcodes = new HashSet<Mnemonic>
+        // Block data transfer mnemonics that affect the rendering of the first operand.
+        private static readonly HashSet<Mnemonic> blockDataXferMnemonics = new HashSet<Mnemonic>
         {
             Mnemonic.ldm, Mnemonic.ldmda, Mnemonic.ldmdb, Mnemonic.ldmib,
             Mnemonic.stm, Mnemonic.stmda, Mnemonic.stmdb, Mnemonic.stmib,
@@ -83,13 +83,14 @@ namespace Reko.Arch.Arm.AArch32
 
         public AArch32Instruction()
         {
-            this.condition = ArmCondition.AL;
+            this.Condition = ArmCondition.AL;
         }
 
         public Mnemonic Mnemonic { get; set; }
-        public ArmCondition condition { get; set; }
+        public ArmCondition Condition { get; set; }
 
-        public override int OpcodeAsInteger => (int) Mnemonic;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         /// <summary>
         /// PC-relative addressing has an extra offset.This varies
@@ -103,9 +104,9 @@ namespace Reko.Arch.Arm.AArch32
             if (Mnemonic == Mnemonic.it)
             {
                 var itMnemonic = RenderIt();
-                writer.WriteOpcode(itMnemonic);
+                writer.WriteMnemonic(itMnemonic);
                 writer.Tab();
-                writer.WriteString(condition.ToString().ToLowerInvariant());
+                writer.WriteString(Condition.ToString().ToLowerInvariant());
                 return;
             }
             var (ops, writeback) = RenderMnemonic(writer);
@@ -114,7 +115,7 @@ namespace Reko.Arch.Arm.AArch32
                 writer.Tab();
                 RenderOperand(ops[0], writer, options);
                 if (writeback &&
-                    blockDataXferOpcodes.Contains(Mnemonic) &&
+                    blockDataXferMnemonics.Contains(Mnemonic) &&
                     ops[0] is RegisterOperand)
                 {
                     writer.WriteChar('!');
@@ -133,7 +134,7 @@ namespace Reko.Arch.Arm.AArch32
                     !imm.Value.IsZero)
                 {
                     writer.WriteChar(',');
-                    writer.WriteOpcode(ShiftType.ToString());
+                    writer.WriteMnemonic(ShiftType.ToString());
                     if (ShiftType != Mnemonic.rrx)
                     {
                         writer.WriteChar(' ');
@@ -185,12 +186,12 @@ namespace Reko.Arch.Arm.AArch32
                 sMnemonic = armAlias.sMnemonic;
                 ops = armAlias.NewOperands(this);
             }
-            else if (!opcodes.TryGetValue(Mnemonic, out sMnemonic))
+            else if (!mnemonics.TryGetValue(Mnemonic, out sMnemonic))
             {
                 sMnemonic = Mnemonic.ToString();
             }
             var sUpdate = SetFlags ? "s" : "";
-            var sCond = condition == ArmCondition.AL ? "" : condition.ToString().ToLowerInvariant();
+            var sCond = Condition == ArmCondition.AL ? "" : Condition.ToString().ToLowerInvariant();
             sb.Append(sMnemonic);
             if (Mnemonic != Mnemonic.Invalid)
             {
@@ -210,16 +211,16 @@ namespace Reko.Arch.Arm.AArch32
                     sb.Append(".w");
                 }
             }
-            writer.WriteOpcode(sb.ToString());
+            writer.WriteMnemonic(sb.ToString());
             return ops;
         }
 
         private string RenderIt()
         {
             var sb = new StringBuilder();
-            ;  sb.Append("it");
+            sb.Append("it");
             int mask = this.itmask;
-            var bit = (~(int)this.condition & 1) << 3;
+            var bit = (~(int)this.Condition & 1) << 3;
 
             while ((mask & 0xF) != 8)
             {
@@ -342,7 +343,7 @@ namespace Reko.Arch.Arm.AArch32
                 writer.WriteAddress(addr.ToString(), addr);
                 writer.WriteChar(']');
 
-                var sr = new StringRenderer();
+                var sr = new StringRenderer(this.Address);
                 RenderMemoryOperand(mem, sr);
                 var str = sr.ToString();
                 writer.AddAnnotation(str);

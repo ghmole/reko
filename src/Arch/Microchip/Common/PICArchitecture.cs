@@ -47,7 +47,7 @@ namespace Reko.Arch.MicrochipPIC.Common
         /// <summary>
         /// Instantiates a new PIC architecture for the specified PIC generic family.
         /// </summary>
-        public PICArchitecture(string archId) : base(archId)
+        public PICArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             flagGroups = new Dictionary<uint, FlagGroupStorage>();
             Endianness = EndianServices.Little;
@@ -57,7 +57,7 @@ namespace Reko.Arch.MicrochipPIC.Common
             WordWidth = PrimitiveType.Byte;
         }
 
-        public PICArchitecture() : this("pic") { }
+        public PICArchitecture(IServiceProvider services) : this(services, "pic") { }
 
         /// <summary>
         /// Gets or sets the PIC architecture options.
@@ -91,7 +91,7 @@ namespace Reko.Arch.MicrochipPIC.Common
         public override IEqualityComparer<MachineInstruction> CreateInstructionComparer(Normalize norm)
             => new PICInstructionComparer(norm);
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return Enum.GetValues(typeof(Mnemonic))
                 .Cast<Mnemonic>()
@@ -100,7 +100,7 @@ namespace Reko.Arch.MicrochipPIC.Common
                     v => (int)v);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;

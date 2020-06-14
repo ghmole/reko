@@ -34,7 +34,7 @@ namespace Reko.Arch.Arc
     {
         private readonly Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public ARCompactArchitecture(string archId) : base(archId)
+        public ARCompactArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             base.Endianness = EndianServices.Little;
             base.FramePointerType = PrimitiveType.Ptr32;
@@ -94,12 +94,12 @@ namespace Reko.Arch.Arc
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

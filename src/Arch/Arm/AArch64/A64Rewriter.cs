@@ -27,6 +27,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 
 namespace Reko.Arch.Arm.AArch64
@@ -42,7 +43,7 @@ namespace Reko.Arch.Arm.AArch64
         private IEnumerator<AArch64Instruction> dasm;
         private AArch64Instruction instr;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public A64Rewriter(Arm64Architecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
@@ -61,7 +62,7 @@ namespace Reko.Arch.Arm.AArch64
                 this.instr = dasm.Current;
                 var cluster = new List<RtlInstruction>();
                 m = new RtlEmitter(cluster);
-                rtlc = instr.InstructionClass;
+                iclass = instr.InstructionClass;
                 switch (instr.Mnemonic)
                 {
                 default:
@@ -72,7 +73,7 @@ namespace Reko.Arch.Arm.AArch64
                         instr);
                     goto case Mnemonic.Invalid;
                 case Mnemonic.Invalid:
-                    rtlc = InstrClass.Invalid;
+                    iclass = InstrClass.Invalid;
                     m.Invalid();
                     break;
                 case Mnemonic.add: RewriteMaybeSimdBinary(m.IAdd, "__add_{0}"); break;
@@ -212,10 +213,7 @@ namespace Reko.Arch.Arm.AArch64
                 case Mnemonic.uxtw: RewriteUSxt(Domain.UnsignedInt, 32); break;
                 case Mnemonic.xtn: RewriteSimdUnary("__xtn_{0}", Domain.None); break;
                 }
-                yield return new RtlInstructionCluster(instr.Address, instr.Length, cluster.ToArray())
-                {
-                    Class = rtlc,
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -229,34 +227,15 @@ namespace Reko.Arch.Arm.AArch64
         {
             uint wInstr;
             wInstr = rdr.PeekLeUInt32(-4);
-            host.Error(instr.Address, "Rewriting A64 opcode '{0}' ({1:X4}) is not supported yet.", instr.Mnemonic, wInstr);
+            host.Error(instr.Address, "Rewriting A64 mnemonic '{0}' ({1:X4}) is not supported yet.", instr.Mnemonic, wInstr);
             EmitUnitTest();
             m.Invalid();
         }
 
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var wInstr = r2.ReadUInt32();
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void A64Rw_" + dasm.Current.Mnemonic + "()");
-            Debug.WriteLine("        {");
-            Debug.Write("            Given_Instruction(");
-            Debug.Write($"0x{wInstr:X8}");
-            Debug.WriteLine(");\t// " + dasm.Current.ToString());
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine($"                \"0|L--|{dasm.Current.Address}({dasm.Current.Length}): 1 instructions\",");
-            Debug.WriteLine( "                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("A64Rw", this.instr, rdr, "");
         }
 
         private Expression RewriteOp(MachineOperand op, bool maybe0 = false)

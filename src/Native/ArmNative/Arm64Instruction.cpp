@@ -29,11 +29,11 @@ STDMETHODIMP Arm64Instruction::Render(INativeInstructionWriter * w, MachineInstr
 	auto & writer = *w;
 	if (this->instr == nullptr)
 	{
-		writer.WriteOpcode("Invalid");
+		writer.WriteMnemonic("Invalid");
 		return S_OK;
 	}
 	auto & instruction = *static_cast<cs_insn*>(this->instr);
-	writer.WriteOpcode(instruction.mnemonic);
+	writer.WriteMnemonic(instruction.mnemonic);
 	auto & ops = instruction.detail->arm64.operands;
 	if (instruction.detail->arm64.op_count < 1)
 		return S_OK;
@@ -63,7 +63,7 @@ void Arm64Instruction::Write(const cs_insn & instruction, const cs_arm64_op & op
 		writer.WriteString(Arm64Architecture::aRegs[op.reg].Name);
 		return;
 	case ARM64_OP_IMM:
-		snprintf(risky, sizeof(risky), "#&%X", op.imm);
+		snprintf(risky, sizeof(risky), "#&%llX", (unsigned long long int)op.imm);
 		writer.WriteString(risky);
 		return;
 	default: 

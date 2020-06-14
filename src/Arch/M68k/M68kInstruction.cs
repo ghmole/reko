@@ -30,10 +30,12 @@ namespace Reko.Arch.M68k
 {
     public class M68kInstruction : MachineInstruction
     {
-        public Mnemonic Mnemonic;
-        public PrimitiveType dataWidth;
+        public Mnemonic Mnemonic { get; set; }
+        public PrimitiveType DataWidth { get; set; }
 
-        public override int OpcodeAsInteger => (int) Mnemonic;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
@@ -44,20 +46,20 @@ namespace Reko.Arch.M68k
                 // We may have to generalize the Platform API to allow specifying 
                 // the opcode of the invoking instruction, to disambiguate from 
                 // "legitimate" TRAP calls.
-                var svc = writer.Platform.FindService((int)imm.Constant.ToUInt32(), null);
+                var svc = writer.Platform.FindService((int)imm.Constant.ToUInt32(), null, null);
                 if (svc != null)
                 {
                     writer.WriteString(svc.Name);
                     return;
                 }
             }
-            if (dataWidth != null)
+            if (DataWidth != null)
             {
-                writer.WriteOpcode(string.Format("{0}{1}", Mnemonic, DataSizeSuffix(dataWidth)));
+                writer.WriteMnemonic(string.Format("{0}{1}", Mnemonic, DataSizeSuffix(DataWidth)));
             }
             else
             {
-                writer.WriteOpcode(Mnemonic.ToString());
+                writer.WriteMnemonic(Mnemonic.ToString());
             }
             RenderOperands(writer, options);
         }

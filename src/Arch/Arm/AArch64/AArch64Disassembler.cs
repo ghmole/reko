@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -35,13 +36,15 @@ namespace Reko.Arch.Arm.AArch64
 
     public partial class AArch64Disassembler : DisassemblerBase<AArch64Instruction, Mnemonic>
     {
+#pragma warning disable IDE1006 // Naming Styles
+
         private const uint RegisterMask = 0b11111;
 
         private static readonly Decoder rootDecoder;
         private static readonly Decoder invalid;
 
-        private Arm64Architecture arch;
-        private EndianImageReader rdr;
+        private readonly Arm64Architecture arch;
+        private readonly EndianImageReader rdr;
         private Address addr;
         private DasmState state;
 
@@ -232,10 +235,10 @@ namespace Reko.Arch.Arm.AArch64
                 return true;
             };
         }
-        private static Mutator<AArch64Disassembler> W_0 = W(0, 5);
-        private static Mutator<AArch64Disassembler> W_5 = W(5, 5);
-        private static Mutator<AArch64Disassembler> W_10 = W(10, 5);
-        private static Mutator<AArch64Disassembler> W_16 = W(16, 5);
+        private static readonly Mutator<AArch64Disassembler> W_0 = W(0, 5);
+        private static readonly Mutator<AArch64Disassembler> W_5 = W(5, 5);
+        private static readonly Mutator<AArch64Disassembler> W_10 = W(10, 5);
+        private static readonly Mutator<AArch64Disassembler> W_16 = W(16, 5);
 
         // 32-bit register - but use stack register instead of w31
 
@@ -252,9 +255,9 @@ namespace Reko.Arch.Arm.AArch64
                 return true;
             };
         }
-        private static Mutator<AArch64Disassembler> Ws_0 = Ws(0, 5);
-        private static Mutator<AArch64Disassembler> Ws_5 = Ws(5, 5);
-        private static Mutator<AArch64Disassembler> Ws_16 = Ws(16, 5);
+        private static readonly Mutator<AArch64Disassembler> Ws_0 = Ws(0, 5);
+        private static readonly Mutator<AArch64Disassembler> Ws_5 = Ws(5, 5);
+        private static readonly Mutator<AArch64Disassembler> Ws_16 = Ws(16, 5);
 
 
         // 64-bit register.
@@ -1162,10 +1165,10 @@ namespace Reko.Arch.Arm.AArch64
         //            n = ReadUnsignedBitField(wInstr, format, ref i);
         //            switch (n)
         //            {
-        //            case 0: state.shiftCode = Opcode.lsl; break;
-        //            case 1: state.shiftCode = Opcode.lsr; break;
-        //            case 2: state.shiftCode = Opcode.asr; break;
-        //            case 3: state.shiftCode = Opcode.ror; break;
+        //            case 0: state.shiftCode = Mnemonic.lsl; break;
+        //            case 1: state.shiftCode = Mnemonic.lsr; break;
+        //            case 2: state.shiftCode = Mnemonic.asr; break;
+        //            case 3: state.shiftCode = Mnemonic.ror; break;
         //            }
         //            Expect(',', format, ref i);
         //            n = ReadUnsignedBitField(wInstr, format, ref i);
@@ -1253,7 +1256,7 @@ namespace Reko.Arch.Arm.AArch64
                     m = op;
                 else
                     m = $"{op} - {message}";
-                d.NotYetImplemented(m, u);
+                d.NotYetImplemented(u, m);
                 d.CreateInvalidInstruction();
                 return false;
             };
@@ -1473,19 +1476,19 @@ namespace Reko.Arch.Arm.AArch64
 
         // Factory methods for different kinds of decoders.
 
-        private static Decoder Instr(Mnemonic opcode, params Mutator<AArch64Disassembler> [] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, params Mutator<AArch64Disassembler> [] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, VectorData.Invalid, mutators);
+            return new InstrDecoder(mnemonic, InstrClass.Linear, VectorData.Invalid, mutators);
         }
 
-        private static Decoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<AArch64Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, InstrClass iclass, params Mutator<AArch64Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, iclass, VectorData.Invalid, mutators);
+            return new InstrDecoder(mnemonic, iclass, VectorData.Invalid, mutators);
         }
 
-        private static Decoder Instr(Mnemonic opcode, VectorData vectorData, params Mutator<AArch64Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, VectorData vectorData, params Mutator<AArch64Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, vectorData, mutators);
+            return new InstrDecoder(mnemonic, InstrClass.Linear, vectorData, mutators);
         }
 
         private static Decoder Sparse(int pos, uint mask, Decoder @default, params (uint, Decoder)[] decoders)
@@ -1521,15 +1524,10 @@ namespace Reko.Arch.Arm.AArch64
             return new NyiDecoder<AArch64Disassembler, Mnemonic, AArch64Instruction>(str);
         }
 
-        private AArch64Instruction NotYetImplemented(string message, uint wInstr)
+        public override AArch64Instruction NotYetImplemented(uint wInstr, string message)
         {
-            var instrHex = $"{wInstr:X8}";
-            base.EmitUnitTest("AArch64", instrHex, message, "AArch64Dis", this.addr, Console =>
-            {
-                Console.WriteLine($"    Given_Instruction(0x{wInstr:X8});");
-                Console.WriteLine($"    Expect_Code(\"@@@\");");
-                Console.WriteLine();
-            });
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingDecoder("AArch64Dis", this.addr, this.rdr, message);
             return CreateInvalidInstruction();
         }
 

@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 1999-2020 John Källén.
  *
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core.Expressions;
+using Reko.Core.Machine;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -94,6 +95,15 @@ namespace Reko.Arch.PowerPC
             var dst = RewriteOperand(instr.Operands[0]);
             var src = RewriteOperand(instr.Operands[1]);
             m.Assign(dst, host.PseudoProcedure("trunc", PrimitiveType.Real64, src));
+        }
+
+        private void RewriteFctiw()
+        {
+            var dst = RewriteOperand(instr.Operands[0]);
+            var src = RewriteOperand(instr.Operands[1]);
+            var tmp = binder.CreateTemporary(PrimitiveType.Real64);
+            m.Assign(tmp, src);
+            m.Assign(dst, host.PseudoProcedure("__fctiw", PrimitiveType.Int32, tmp));
         }
 
         private void RewriteFctiwz()
@@ -225,7 +235,7 @@ namespace Reko.Arch.PowerPC
 
         public void RewriteMtfsf()
         {
-            var op1 = RewriteOperand(instr.Operands[0]);
+            var op1 = ((ImmediateOperand)instr.Operands[0]).Value;
             var op2 = RewriteOperand(instr.Operands[1]);
             m.SideEffect(
                 host.PseudoProcedure("__mtfsf",

@@ -31,7 +31,7 @@ using Reko.UnitTests.Mocks;
 using NUnit.Framework;
 using System;
 using System.Linq;
-using Reko.Assemblers.x86;
+using Reko.Arch.X86.Assembler;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Collections.Generic;
@@ -154,7 +154,7 @@ namespace Reko.UnitTests.Scanning
         [SetUp]
         public void Setup()
         {
-            arch = new FakeArchitecture();
+            arch = new FakeArchitecture(new ServiceContainer());
             m = new ProcedureBuilder();
             state = arch.CreateProcessorState();
             listener = new FakeDecompilerEventListener();
@@ -171,13 +171,13 @@ namespace Reko.UnitTests.Scanning
             var el = new FakeDecompilerEventListener();
             sc.AddService<IFileSystemService>(fsSvc);
             sc.AddService<DecompilerEventListener>(el);
-            var arch = new X86ArchitectureFlat32("x86-protected-32");
-            var asm = new X86TextAssembler(sc, arch);
+            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            var asm = new X86TextAssembler(arch);
             using (var rdr = new StreamReader(FileUnitTester.MapTestPath(relativePath)))
             {
                 var platform = new DefaultPlatform(sc, arch);
-                asm.Platform = platform;
                 program = asm.Assemble(Address.Ptr32(0x10000000), rdr);
+                program.Platform = platform;
             }
             var scanner = new Scanner(program, null, sc);
             scanner.EnqueueImageSymbol(ImageSymbol.Procedure(program.Architecture, program.ImageMap.BaseAddress), true);

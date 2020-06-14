@@ -30,6 +30,7 @@ using System.Diagnostics;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Types;
+using Reko.Core.Services;
 
 namespace Reko.Arch.Tlcs.Tlcs90
 {
@@ -42,7 +43,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
         private readonly Tlcs90Architecture arch;
         private readonly IEnumerator<Tlcs90Instruction> dasm;
         private Tlcs90Instruction instr;
-        private InstrClass rtlc;
+        private InstrClass iclass;
         private RtlEmitter m;
 
         public Tlcs90Rewriter(Tlcs90Architecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
@@ -60,7 +61,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
             while (dasm.MoveNext())
             {
                 this.instr = dasm.Current;
-                rtlc = instr.InstructionClass;
+                iclass = instr.InstructionClass;
                 var instrs = new List<RtlInstruction>();
                 this.m = new RtlEmitter(instrs);
                 switch (instr.Mnemonic)
@@ -130,10 +131,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
                 case Mnemonic.swi: RewriteSwi(); break;
                 case Mnemonic.xor: RewriteBinOp(m.Xor, "**-10*00"); break;
                 }
-                yield return new RtlInstructionCluster(instr.Address, instr.Length, instrs.ToArray())
-                {
-                    Class = rtlc,
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -149,7 +147,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
                string.Format(
                    "Rewriting of TLCS-90 instruction '{0}' not implemented yet.",
                    instr.Mnemonic));
-            rtlc = InstrClass.Invalid;
+            iclass = InstrClass.Invalid;
             m.Invalid();
         }
 
@@ -315,34 +313,10 @@ namespace Reko.Arch.Tlcs.Tlcs90
             throw new ArgumentException();
         }
 
-
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            EmitUnitTest("Tlcs90_rw_");
-        }
-
-        [Conditional("DEBUG")]
-        private void EmitUnitTest(string prefix)
-        {
-            //if (seen.Contains(dasm.Current.Opcode))
-            //    return;
-            //seen.Add(dasm.Current.Opcode);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void {0}{1}()", prefix, dasm.Current.Mnemonic);
-            Debug.WriteLine("        {");
-            Debug.Print("            RewriteCode(\"{0}\");  // {1}",
-                string.Join("", bytes.Select(b => string.Format("{0:X2}", (int)b))),
-                dasm.Current);
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine("                \"0|L--|{0}({1}): 1 instructions\",", instr.Address, bytes.Length);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("Tlcs90_rw", instr, rdr, "");
         }
     }
 }

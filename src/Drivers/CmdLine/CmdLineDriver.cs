@@ -46,18 +46,25 @@ namespace Reko.CmdLine
         public static void Main(string[] args)
         {
             var services = new ServiceContainer();
-            var listener = new CmdLineListener();
-            var config = RekoConfigurationService.Load();
+            var listener = new CmdLineListener
+            {
+                Quiet = Console.IsOutputRedirected
+            };
+            var config = RekoConfigurationService.Load(services);
             var diagnosticSvc = new CmdLineDiagnosticsService(Console.Out);
             var fsSvc = new FileSystemServiceImpl();
+            var dcSvc = new DecompilerService();
+            services.AddService<IDecompilerService>(dcSvc);
             services.AddService<DecompilerEventListener>(listener);
             services.AddService<IConfigurationService>(config);
             services.AddService<ITypeLibraryLoaderService>(new TypeLibraryLoaderServiceImpl(services));
             services.AddService<IDiagnosticsService>(diagnosticSvc);
             services.AddService<IFileSystemService>(fsSvc);
             services.AddService<IDecompiledFileService>(new DecompiledFileService(fsSvc));
+            services.AddService<ITestGenerationService>(new TestGenerationService(services));
             var ldr = new Loader(services);
             var decompiler = new Decompiler(ldr, services);
+            dcSvc.Decompiler = decompiler;
             var driver = new CmdLineDriver(services, ldr, decompiler, listener);
             driver.Execute(args);
         }
@@ -129,7 +136,7 @@ namespace Reko.CmdLine
                 // decompilation.
                 if (pArgs.ContainsKey("--arch") &&
                     pArgs.ContainsKey("--base") &&
-                    pArgs.ContainsKey("filename"))
+                    (pArgs.ContainsKey("filename") || pArgs.ContainsKey("--data")))
                 {
                     return true;
                 }
@@ -197,34 +204,35 @@ namespace Reko.CmdLine
         {
             try
             {
-                var arch = config.GetArchitecture((string)pArgs["--arch"]);
+                var arch = config.GetArchitecture((string) pArgs["--arch"]);
                 if (arch == null)
                     throw new ApplicationException(string.Format("Unknown architecture {0}", pArgs["--arch"]));
                 if (pArgs.TryGetValue("--arch-options", out var oArchOptions))
                 {
-                    var archOptions = (Dictionary<string, object>)oArchOptions;
+                    var archOptions = (Dictionary<string, object>) oArchOptions;
                     arch.LoadUserOptions(archOptions);
                 }
                 pArgs.TryGetValue("--env", out object sEnv);
 
-                if (!arch.TryParseAddress((string)pArgs["--base"], out Address addrBase))
+                if (!arch.TryParseAddress((string) pArgs["--base"], out Address addrBase))
                     throw new ApplicationException(string.Format("'{0}' doesn't appear to be a valid address.", pArgs["--base"]));
                 pArgs.TryGetValue("--entry", out object oAddrEntry);
 
                 pArgs.TryGetValue("--loader", out object sLoader);
-                var program = decompiler.LoadRawImage((string)pArgs["filename"], new LoadDetails
+                var loadDetails = new LoadDetails
                 {
-                    LoaderName = (string)sLoader,
-                    ArchitectureName = (string)pArgs["--arch"],
+                    LoaderName = (string) sLoader,
+                    ArchitectureName = (string) pArgs["--arch"],
                     ArchitectureOptions = null, //$TODO: How do we handle options for command line?
-                    PlatformName = (string)sEnv,
-                    LoadAddress = (string)pArgs["--base"],
-                    EntryPoint = new EntryPointDefinition { Address = (string)oAddrEntry }
-                });
+                    PlatformName = (string) sEnv,
+                    LoadAddress = (string) pArgs["--base"],
+                    EntryPoint = new EntryPointDefinition { Address = (string) oAddrEntry }
+                };
+                var program = LoadProgram(pArgs, loadDetails);
                 var state = CreateInitialState(arch, program.SegmentMap, pArgs);
                 if (pArgs.TryGetValue("heuristics", out object oHeur))
                 {
-                    decompiler.Project.Programs[0].User.Heuristics = ((string[])oHeur).ToSortedSet();
+                    decompiler.Project.Programs[0].User.Heuristics = ((string[]) oHeur).ToSortedSet();
                 }
                 decompiler.ScanPrograms();
                 decompiler.AnalyzeDataFlow();
@@ -235,6 +243,20 @@ namespace Reko.CmdLine
             catch (Exception ex)
             {
                 diagnosticSvc.Error(ex, "An error occurred during decompilation.");
+            }
+        }
+
+        private Program LoadProgram(Dictionary<string, object> pArgs, LoadDetails loadDetails)
+        {
+            if (pArgs.ContainsKey("--data"))
+            {
+                var hexBytes = (string) pArgs["--data"];
+                var image = BytePattern.FromHexBytes(hexBytes).ToArray();
+                return decompiler.LoadRawImage(image, loadDetails);
+            }
+            else
+            {
+                return decompiler.LoadRawImage((string) pArgs["filename"], loadDetails);
             }
         }
 
@@ -272,6 +294,10 @@ namespace Reko.CmdLine
                 {
                     Usage(w);
                     return null;
+                }
+                if (arg == "-q" || arg == "--quiet")
+                {
+                    listener.Quiet = true;
                 }
                 else if (arg.StartsWith("--version"))
                 {
@@ -356,6 +382,16 @@ namespace Reko.CmdLine
                     }
                     parsedArgs["time-limit"] = timeLimit;
                     ++i;
+                }
+                else if (args[i] == "--data")
+                {
+                    if (i >= args.Length - 1)
+                    {
+                        w.WriteLine("error: --data option expects a string of hex bytes.");
+                        return null;
+                    }
+                    ++i;
+                    parsedArgs["--data"] = args[i];
                 }
                 else if (args[i] == "--dasm-address")
                 {
@@ -450,12 +486,15 @@ namespace Reko.CmdLine
             DumpEnvironments(config, w, "    {0,-25} {1}");
             w.WriteLine(" --base <address>         Use <address> as the base address of the program.");
             w.WriteLine(" --dasm-address           Display addresses in disassembled machine code.");
+            w.WriteLine(" --dasm-bytes             Display individual bytes in disassembled machine code.");
+            w.WriteLine(" --data <hex-bytes>       Supply machine code as hex bytes");
             w.WriteLine(" --default-to <format>    If no executable format can be recognized, default");
             w.WriteLine("                          to one of the following formats:");
             DumpRawFiles(config, w, "    {0,-25} {1}");
             w.WriteLine(" --entry <address>        Use <address> as an entry point to the program.");
             w.WriteLine(" --extract-resources <flag>  If <flag> is true, extract any embedded");
             w.WriteLine("                          resources (defaults to true).");
+            w.WriteLine(" -q, --quiet              Suppress most output during execution.");
             w.WriteLine(" --reg <regInit>          Set register to value, where regInit is formatted as");
             w.WriteLine("                          reg_name:value, e.g. sp:FF00");
             w.WriteLine(" --heuristic <h1>[,<h2>...]  Use one of the following heuristics to examine");

@@ -42,6 +42,11 @@ namespace Reko.WebSite
 			discard = new StringWriter();
 		}
 
+        public TextWriter CreateTextWriter(string path)
+        {
+            throw new NotImplementedException();
+        }
+
 		public string FetchSample(HttpServerUtility server, string file)
 		{
 			StringWriter sw = new StringWriter();
@@ -96,12 +101,12 @@ namespace Reko.WebSite
 			writer.WriteLine("<br />");
 		}
 
-        public void WriteDisassembly(Program program, Action<string, Formatter> writer)
+        public void WriteDisassembly(Program program, Action<string, Dictionary<ImageSegment, List<ImageMapItem>>, Formatter> writer)
         {
             throw new NotImplementedException();
         }
 
-        public void WriteIntermediateCode(Program program, Action<string, TextWriter> writer)
+        public void WriteIntermediateCode(Program program, Action<string, IEnumerable<Procedure>, TextWriter> writer)
         {
             throw new NotImplementedException();
         }

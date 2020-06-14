@@ -28,6 +28,7 @@ using System;
 using Reko.Core.Types;
 using System.Diagnostics;
 using System.Linq;
+using Reko.Core.Services;
 
 namespace Reko.Arch.RiscV
 {
@@ -41,7 +42,7 @@ namespace Reko.Arch.RiscV
         private readonly ProcessorState state;
         private RiscVInstruction instr;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public RiscVRewriter(RiscVArchitecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
@@ -61,7 +62,7 @@ namespace Reko.Arch.RiscV
                 var addr = dasm.Current.Address;
                 var len = dasm.Current.Length;
                 var rtlInstructions = new List<RtlInstruction>();
-                this.rtlc = this.instr.InstructionClass;
+                this.iclass = this.instr.InstructionClass;
                 this.m = new RtlEmitter(rtlInstructions);
 
                 switch (instr.Mnemonic)
@@ -72,10 +73,10 @@ namespace Reko.Arch.RiscV
                         "Risc-V instruction '{0}' not supported yet.",
                         instr.Mnemonic);
                     EmitUnitTest();
-                    rtlc = InstrClass.Invalid;
+                    iclass = InstrClass.Invalid;
                     m.Invalid();
                     break;
-                case Mnemonic.invalid: rtlc = InstrClass.Invalid; m.Invalid(); break;
+                case Mnemonic.invalid: iclass = InstrClass.Invalid; m.Invalid(); break;
                 case Mnemonic.add: RewriteAdd(); break;
                 case Mnemonic.addi: RewriteAdd(); break;
                 case Mnemonic.addiw: RewriteAddw(); break;
@@ -172,13 +173,7 @@ namespace Reko.Arch.RiscV
                 case Mnemonic.xor: RewriteXor(); break;
                 case Mnemonic.xori: RewriteXor(); break;
                 }
-                yield return new RtlInstructionCluster(
-                    addr,
-                    len,
-                    rtlInstructions.ToArray())
-                {
-                    Class = rtlc,
-                };
+                yield return m.MakeCluster(addr, len, iclass);
             }
         }
 
@@ -194,8 +189,7 @@ namespace Reko.Arch.RiscV
             case RegisterOperand rop:
                 if (rop.Register.Number == 0)
                 {
-                    //$TODO: 32-bit!
-                    return Constant.Word64(0);
+                    return Constant.Zero(arch.WordWidth);
                 }
                 return binder.EnsureRegister(rop.Register);
             case ImmediateOperand immop:
@@ -233,35 +227,14 @@ namespace Reko.Arch.RiscV
             return m.Shr(a, b);
         }
 
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
         /// <summary>
         /// Emits the text of a unit test that can be pasted into the unit tests 
         /// for this rewriter.
         /// </summary>
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (seen.Contains(instr.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void RiscV_rw_" + instr.Mnemonic + "()");
-            Debug.WriteLine("        {");
-            Debug.Write("            RewriteCode(\"");
-            Debug.Write(string.Join(
-                "",
-                bytes.Select(b => string.Format("{0:X2}", (int) b))));
-            Debug.WriteLine("\");\t// " + dasm.Current.ToString());
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine("                \"0|L--|0000000000010000({0}): 1 instructions\",", dasm.Current.Length);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("RiscV_rw", instr, rdr, "");
         }
     }
 }

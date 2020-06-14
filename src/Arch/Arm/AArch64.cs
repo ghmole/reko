@@ -43,7 +43,7 @@ namespace Reko.Arch.Arm
 #endif
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public Arm64Architecture(string archId) : base(archId)
+        public Arm64Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Little;
             this.InstructionBitSize = 32;
@@ -155,12 +155,12 @@ namespace Reko.Arch.Arm
             return new A64Rewriter(this, rdr, state, binder, host);
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return new SortedList<string, int>();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             return null;
         }

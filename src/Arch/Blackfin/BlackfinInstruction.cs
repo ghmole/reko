@@ -30,14 +30,17 @@ namespace Reko.Arch.Blackfin
 {
     public class BlackfinInstruction : MachineInstruction
     {
-        public Mnemonic Mnemonic;
+        public Mnemonic Mnemonic { get; set; }
 
-        public override int OpcodeAsInteger => (int) Mnemonic;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
+
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
             (string prefix, string infix, string suffix) aaOpcode;
-            if (!mapOpcodes.TryGetValue(Mnemonic, out aaOpcode))
+            if (!mapMnemonics.TryGetValue(Mnemonic, out aaOpcode))
             {
                 aaOpcode.prefix = Mnemonic.ToString();
             }
@@ -64,7 +67,7 @@ namespace Reko.Arch.Blackfin
             }
             else
             {
-                writer.WriteOpcode(aaOpcode.prefix);
+                writer.WriteMnemonic(aaOpcode.prefix);
                 var sep = " ";
                 if (Operands == null)
                     return;
@@ -82,7 +85,7 @@ namespace Reko.Arch.Blackfin
             writer.WriteString(";");
         }
 
-        private static readonly Dictionary<Mnemonic, (string,string,string)> mapOpcodes = 
+        private static readonly Dictionary<Mnemonic, (string,string,string)> mapMnemonics = 
             new Dictionary<Mnemonic, (string, string, string)>
         {
             { Mnemonic.add, (null, " += ", null) },

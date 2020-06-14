@@ -102,8 +102,8 @@ namespace Reko.Arch.Mips
             var op1 = RewriteOperand(instr.Operands[0]);
             var op2 = RewriteOperand(instr.Operands[1]);
 
-            this.rtlc = InstrClass.ConditionalTransfer;
-            m.BranchInMiddleOfInstruction(
+            this.iclass = InstrClass.ConditionalTransfer;
+            m.Branch(
                         op(op1, op2).Invert(),
                         instr.Address + instr.Length,
                         InstrClass.ConditionalTransfer);

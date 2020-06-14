@@ -30,11 +30,6 @@ namespace Reko.Core
 {
 	public abstract class EndianImageReader : ImageReader
 	{
-		/// <summary>
-		/// If nothing else is specified, this is the address at which the image will be loaded.
-		/// </summary>
-		public virtual Address PreferredBaseAddress { get; set; }
-
 		protected EndianImageReader(MemoryArea img, Address addr) : base(img, addr) { }
 		protected EndianImageReader(MemoryArea img, Address addrBegin, Address addrEnd) : base(img, addrBegin, addrEnd) { }
 		protected EndianImageReader(MemoryArea img, ulong off) : base(img, off) { }
@@ -55,7 +50,7 @@ namespace Reko.Core
 			EndianImageReader rdr;
 			if (image != null)
 			{
-				rdr = CreateNew(image, addrStart);
+				rdr = CreateNew(image, addrStart!);
 				rdr.off = off;
 			}
 			else
@@ -114,12 +109,14 @@ namespace Reko.Core
 		{
 			int length = Read(lengthType).ToInt32();
 			int iStart = (int)Offset;
-			return new StringConstant(
+            var cStr = new StringConstant(
 				StringType.LengthPrefixedStringType(charType, lengthType),
 				encoding.GetString(
 					bytes,
 					iStart,
 					length * charType.Size));
+            Offset += length;
+            return cStr;
 		}
 
 		public abstract short ReadInt16();

@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 1999-2020 John Källén.
  *
@@ -33,66 +33,14 @@ namespace Reko.Core.CLanguage
     {
         private TextReader rdr;
         private StringBuilder sb;
+        private Dictionary<string, CTokenType> keywordHash;
 
-        private static Dictionary<string, CTokenType> keywordHash = new Dictionary<string, CTokenType>
-        {
-            { "#line", CTokenType.LineDirective },
-            { "#pragma", CTokenType.PragmaDirective },
-            { "auto", CTokenType.Auto },
-            { "bool", CTokenType.Bool },
-            { "char", CTokenType.Char },
-            { "class", CTokenType.Class },
-            { "const", CTokenType.Const },
-            { "do", CTokenType.Do },
-            { "double", CTokenType.Double },
-            { "enum", CTokenType.Enum },
-            { "extern", CTokenType.Extern },
-            { "float", CTokenType.Float },
-            { "int", CTokenType.Int },
-            { "long", CTokenType.Long },
-            { "register", CTokenType.Register },
-            { "return", CTokenType.Return },
-            { "short", CTokenType.Short },
-            { "signed", CTokenType.Signed },
-            { "sizeof", CTokenType.Sizeof },
-            { "static", CTokenType.Static },
-            { "struct", CTokenType.Struct },
-            { "typedef", CTokenType.Typedef },
-            { "unsigned", CTokenType.Unsigned },
-            { "union", CTokenType.Union },
-            { "void", CTokenType.Void },
-            { "volatile", CTokenType.Volatile },
-            { "wchar_t", CTokenType.Wchar_t },
-            { "while", CTokenType.While },
-
-            { "_Bool", CTokenType._Bool },
-            { "_cdecl", CTokenType.__Cdecl },
-            { "_far", CTokenType._Far },
-            { "_near", CTokenType._Near },
-            { "__asm", CTokenType.__Asm },
-            { "__cdecl", CTokenType.__Cdecl },
-            { "__declspec", CTokenType.__Declspec },
-            { "__fastcall", CTokenType.__Fastcall },
-            { "__forceinline", CTokenType.__ForceInline },
-            { "__in", CTokenType.__In },
-            { "__in_opt", CTokenType.__In_Opt },
-            { "__inline", CTokenType.__Inline },
-            { "__int64", CTokenType.__Int64 },
-            { "__out", CTokenType.__Out},
-            { "__out_bcount_opt", CTokenType.__Out_Bcount_Opt },
-            { "__pragma", CTokenType.__Pragma },
-            { "__ptr64", CTokenType.__Ptr64 },
-            { "__stdcall", CTokenType.__Stdcall },
-            { "__success", CTokenType.__Success },
-            { "__thiscall", CTokenType.__Thiscall },
-            { "__w64", CTokenType.__W64 },
-        };
-
-        public CLexer(TextReader rdr)
+        public CLexer(TextReader rdr, Dictionary<string, CTokenType> keywords)
         {
             this.rdr = rdr;
             this.sb = new StringBuilder();
             this.LineNumber = 1;
+            this.keywordHash = keywords;
         }
 
         private enum State
@@ -100,6 +48,7 @@ namespace Reko.Core.CLanguage
             Start,
             Zero,
             DecimalNumber,
+            OctalNumber,
             HexNumber,
             RealNumber,
             RealDecimalPoint,
@@ -130,9 +79,27 @@ namespace Reko.Core.CLanguage
             DotDot,
             Colon,
             LineComment,
+            MultiLineComment,
+            MultiLineCommentStar,
         }
 
         public int LineNumber { get; private set; }
+
+        /// <summary>
+        /// Keywords used by the standard C language.
+        /// </summary>
+        public static Dictionary<string, CTokenType> StdKeywords { get; }
+
+        /// <summary>
+        /// Keywords used by the GCC compiler.
+        /// </summary>
+        public static Dictionary<string, CTokenType> GccKeywords { get; }
+
+        /// <summary>
+        /// Keywords used by the MSVC compiler.
+        /// </summary>
+        public static Dictionary<string, CTokenType> MsvcKeywords { get; }
+
 
         public CToken Peek()
         {
@@ -142,7 +109,7 @@ namespace Reko.Core.CLanguage
         public CToken Read()
         {
             if (!EatWs())
-                return Tok( CTokenType.EOF);
+                return Tok(CTokenType.EOF);
 
             State state = State.Start;
             ClearBuffer();
@@ -234,15 +201,34 @@ namespace Reko.Core.CLanguage
                         sb.Append(ch);
                         state = State.RealDecimalPoint;
                         break;
+                    case '0': case '1': case '2': case '3':
+                    case '4': case '5': case '6': case '7':
+                        rdr.Read();
+                        sb.Append(ch);
+                        state = State.OctalNumber;
+                        break;
+                    case '8': case '9':
+                        rdr.Read();
+                        sb.Append(ch);
+                        state = State.DecimalNumber;
+                        break;
                     default:
-                        if (Char.IsDigit(ch))
-                        {
-                            rdr.Read();
-                            sb.Append(ch);
-                            state = State.DecimalNumber;
-                        }
                         //$BUG: L, u, F suffixes.
                         return Tok(CTokenType.NumericLiteral, Convert.ToInt32(sb.ToString()));
+                    }
+                    break;
+                case State.OctalNumber:
+                    if (c < 0)
+                        return Tok(CTokenType.NumericLiteral, Convert.ToInt32(sb.ToString(), 8));
+                    switch (c)
+                    {
+                    case '0': case '1': case '2': case '3': 
+                    case '4': case '5': case '6': case '7':
+                        rdr.Read();
+                        sb.Append(ch);
+                        break;
+                    default:
+                        return Tok(CTokenType.NumericLiteral, Convert.ToInt32(sb.ToString(), 8));
                     }
                     break;
                 case State.DecimalNumber:
@@ -371,7 +357,12 @@ namespace Reko.Core.CLanguage
                     }
                     else
                     {
-                        return LookupId();
+                        var tokenId = LookupId();
+                        if (tokenId.Type != CTokenType.__Extension)
+                            return tokenId;
+                        EatWs();
+                        state = State.Start;
+                        sb.Clear();
                     }
                     break;
                 case State.CharLiteral:
@@ -553,6 +544,7 @@ namespace Reko.Core.CLanguage
                     {
                     case '=': rdr.Read(); return Tok(CTokenType.DivAssign);
                     case '/': rdr.Read(); state = State.LineComment; break;
+                    case '*': rdr.Read(); state = State.MultiLineComment; break;
                     default: return Tok(CTokenType.Slash);
                     }
                     break;
@@ -662,6 +654,47 @@ namespace Reko.Core.CLanguage
                         rdr.Read(); break;
                     }
                     break;
+                case State.MultiLineComment:
+                    if (c < 0)
+                        throw new FormatException("Unterminated comment.");
+                    switch (ch)
+                    {
+                    case '\r':
+                    case '\n':
+                        EatWs();
+                        break;
+                    case '*':
+                        rdr.Read();
+                        state = State.MultiLineCommentStar;
+                        break;
+                    default:
+                        rdr.Read(); break;
+                    }
+                    break;
+                case State.MultiLineCommentStar:
+                    if (c < 0)
+                        throw new FormatException("Unterminated comment.");
+                    switch (ch)
+                    {
+                    case '\r':
+                    case '\n':
+                        EatWs();
+                        state = State.MultiLineComment;
+                        break;
+                    case '*':
+                        rdr.Read();
+                        state = State.MultiLineCommentStar;
+                        break;
+                    case '/':
+                        rdr.Read();
+                        if (!EatWs())
+                            return Tok(CTokenType.EOF);
+                        state = State.Start;
+                        break;
+                    default:
+                        rdr.Read(); break;
+                    }
+                    break;
                 default:
                     Nyi(state, ch);
                     break;
@@ -692,8 +725,7 @@ namespace Reko.Core.CLanguage
         private CToken LookupId()
         {
             string id = sb.ToString();
-            CTokenType type;
-            if (keywordHash.TryGetValue(id, out type))
+            if (keywordHash.TryGetValue(id, out CTokenType type))
             {
                 return new CToken(type);
             }
@@ -756,25 +788,130 @@ namespace Reko.Core.CLanguage
                 }
             }
         }
+
+        static CLexer()
+        {
+            StdKeywords = new Dictionary<string, CTokenType>
+            {
+                { "#line", CTokenType.LineDirective },
+                { "#pragma", CTokenType.PragmaDirective },
+                { "auto", CTokenType.Auto },
+                { "bool", CTokenType.Bool },
+                { "char", CTokenType.Char },
+                { "class", CTokenType.Class },
+                { "const", CTokenType.Const },
+                { "do", CTokenType.Do },
+                { "double", CTokenType.Double },
+                { "enum", CTokenType.Enum },
+                { "extern", CTokenType.Extern },
+                { "float", CTokenType.Float },
+                { "int", CTokenType.Int },
+                { "long", CTokenType.Long },
+                { "register", CTokenType.Register },
+                { "restrict", CTokenType.Restrict },
+                { "return", CTokenType.Return },
+                { "short", CTokenType.Short },
+                { "signed", CTokenType.Signed },
+                { "sizeof", CTokenType.Sizeof },
+                { "static", CTokenType.Static },
+                { "struct", CTokenType.Struct },
+                { "typedef", CTokenType.Typedef },
+                { "unsigned", CTokenType.Unsigned },
+                { "union", CTokenType.Union },
+                { "void", CTokenType.Void },
+                { "volatile", CTokenType.Volatile },
+                { "wchar_t", CTokenType.Wchar_t },
+                { "while", CTokenType.While },
+                { "_Atomic", CTokenType._Atomic }
+            };
+
+            GccKeywords = new Dictionary<string, CTokenType>
+            {
+                { "_Bool", CTokenType._Bool },
+                { "_cdecl", CTokenType.__Cdecl },
+                { "_far", CTokenType._Far },
+                { "_near", CTokenType._Near },
+                { "__asm", CTokenType.__Asm },
+                { "__asm__", CTokenType.__Asm },
+                { "__attribute__", CTokenType.__Attribute },
+                { "__cdecl", CTokenType.__Cdecl },
+                { "__declspec", CTokenType.__Declspec },
+                { "__extension__", CTokenType.__Extension },
+                { "__extension__extern", CTokenType.Extern },
+                { "__far", CTokenType._Far },
+                { "__fastcall", CTokenType.__Fastcall },
+                { "__forceinline", CTokenType.__ForceInline },
+                { "__in_opt", CTokenType.__In_Opt },
+                { "__inline", CTokenType.__Inline },
+                { "__int64", CTokenType.__Int64 },
+                { "__loadds", CTokenType.__LoadDs },
+                { "__near", CTokenType._Near },
+                { "__out_bcount_opt", CTokenType.__Out_Bcount_Opt },
+                { "__pascal", CTokenType.__Pascal },
+                { "__pragma", CTokenType.__Pragma },
+                { "__restrict", CTokenType.Restrict },
+                { "__ptr64", CTokenType.__Ptr64 },
+                { "__signed__", CTokenType.Signed },
+                { "__stdcall", CTokenType.__Stdcall },
+                { "__success", CTokenType.__Success },
+                { "__thiscall", CTokenType.__Thiscall },
+                { "__w64", CTokenType.__W64 },
+            }.Concat(StdKeywords)
+            .ToDictionary(de => de.Key, de => de.Value);
+
+            MsvcKeywords = new Dictionary<string, CTokenType>
+            {
+                { "_Bool", CTokenType._Bool },
+                { "_cdecl", CTokenType.__Cdecl },
+                { "_far", CTokenType._Far },
+                { "_near", CTokenType._Near },
+                { "__asm", CTokenType.__Asm },
+                { "__asm__", CTokenType.__Asm },
+                { "__attribute__", CTokenType.__Attribute },
+                { "__cdecl", CTokenType.__Cdecl },
+                { "__declspec", CTokenType.__Declspec },
+                { "__extension__", CTokenType.__Extension },
+                { "__far", CTokenType._Far },
+                { "__fastcall", CTokenType.__Fastcall },
+                { "__forceinline", CTokenType.__ForceInline },
+                { "__in", CTokenType.__In },
+                { "__in_opt", CTokenType.__In_Opt },
+                { "__inline", CTokenType.__Inline },
+                { "__int64", CTokenType.__Int64 },
+                { "__loadds", CTokenType.__LoadDs },
+                { "__near", CTokenType._Near },
+                { "__out", CTokenType.__Out },
+                { "__out_bcount_opt", CTokenType.__Out_Bcount_Opt },
+                { "__pascal", CTokenType.__Pascal },
+                { "__pragma", CTokenType.__Pragma },
+                { "__restrict", CTokenType.Restrict },
+                { "__ptr64", CTokenType.__Ptr64 },
+                { "__stdcall", CTokenType.__Stdcall },
+                { "__success", CTokenType.__Success },
+                { "__thiscall", CTokenType.__Thiscall },
+                { "__w64", CTokenType.__W64 },
+            }.Concat(StdKeywords)
+            .ToDictionary(de => de.Key, de => de.Value);
+        }
     }
 
     public struct CToken
     {
         private CTokenType type;
-        private object value;
+        private object? value;
 
         public CToken(CTokenType type) : this(type, null)
         {
         }
 
-        public CToken(CTokenType type, object value)
+        public CToken(CTokenType type, object? value)
         {
             this.type = type;
             this.value = value;
         }
 
         public CTokenType Type { get { return type; } }
-        public object Value { get { return value; } }
+        public object? Value { get { return value; } }
     }
 
     public enum CTokenType
@@ -853,6 +990,7 @@ namespace Reko.Core.CLanguage
         Question,
         Register,
         Return,
+        Restrict,
         Short,
         Signed,
         Sizeof,
@@ -865,20 +1003,25 @@ namespace Reko.Core.CLanguage
         Volatile,
         Wchar_t,
         Xor,
+        _Atomic,
         _Bool,
         _Far,
         _Near,
         __Asm,
+        __Attribute,
         __Cdecl,
         __Declspec,
+        __Extension,
         __Fastcall,
         __ForceInline,
         __In,
         __In_Opt,
         __Inline,
         __Int64,
+        __LoadDs,
         __Out,
         __Out_Bcount_Opt,
+        __Pascal,
         __Pragma,
         __Ptr64,
         __Stdcall,

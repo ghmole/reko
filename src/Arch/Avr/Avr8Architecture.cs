@@ -37,7 +37,7 @@ namespace Reko.Arch.Avr
         private readonly Dictionary<uint, FlagGroupStorage> grfs;
         private readonly List<Tuple<FlagM, char>> grfToString;
 
-        public Avr8Architecture(string archId) : base(archId)
+        public Avr8Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Little;
             this.PointerType = PrimitiveType.Ptr16;
@@ -133,12 +133,12 @@ namespace Reko.Arch.Avr
             return fl;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

@@ -31,9 +31,11 @@ using System.Threading.Tasks;
 
 namespace Reko.Arch.zSeries
 {
+#pragma warning disable IDE1006 // Naming Styles
+
     public class zSeriesArchitecture : ProcessorArchitecture
     {
-        public zSeriesArchitecture(string archId) : base(archId)
+        public zSeriesArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Big;
             this.InstructionBitSize = 16;
@@ -89,12 +91,12 @@ namespace Reko.Arch.zSeries
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

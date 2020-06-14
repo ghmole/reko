@@ -28,6 +28,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using static Reko.Arch.Arm.AArch32.ArmVectorData;
 
@@ -61,7 +62,7 @@ namespace Reko.Arch.Arm.AArch32
             var instr = rootDecoder.Decode(wInstr, this);
             instr.Address = this.addr;
             instr.InstructionClass |= wInstr == 0 ? InstrClass.Zero : 0;
-            instr.InstructionClass |= instr.condition != ArmCondition.AL ? InstrClass.Conditional : 0;
+            instr.InstructionClass |= instr.Condition != ArmCondition.AL ? InstrClass.Conditional : 0;
             instr.Length = 4;
             return instr;
         }
@@ -275,15 +276,10 @@ namespace Reko.Arch.Arm.AArch32
             return imm32;
         }
 
-        private AArch32Instruction NotYetImplemented(string message, uint wInstr)
+        public override AArch32Instruction NotYetImplemented(uint wInstr, string message)
         {
-            var hexBytes = wInstr.ToString("X8");
-            base.EmitUnitTest("A32", hexBytes, message, "ArmDasm", this.addr,
-                w =>
-            {
-                w.WriteLine($"    Disassemble32(0x{hexBytes});");
-                w.WriteLine($"    Expect_Code(\"@@@\");");
-            });
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingDecoder("ArmDasm", this.addr, this.rdr, message);
             return CreateInvalidInstruction();
         }
 
@@ -814,27 +810,6 @@ namespace Reko.Arch.Arm.AArch32
         private static PrimitiveType s4 => PrimitiveType.Int32;
         private static PrimitiveType s8 => PrimitiveType.Int64;
 
-        //case '[':
-        //    {
-        //        int shift = 0;
-        //        ++i;
-        //        var memType = format[i];
-        //        ++i;
-        //        if (PeekAndDiscard('<', format, ref i))
-        //        {
-        //            shift = ReadDecimal(format, ref i);
-        //        }
-        //        Expect(':', format, ref i);
-        //        var dom = format[i];
-        //        ++i;
-        //        var size = format[i] - '0';
-        //        ++i;
-        //        var dt = GetDataType(dom, size);
-        //        (op, writeback) = DecodeMemoryAccess(u, memType, shift, dt);
-        //    }
-        //    break;
-
-
         // Multiple registers
         private static Mutator<A32Disassembler> Mr(int pos, int size) {
             var bitfields = new[]
@@ -1065,13 +1040,6 @@ namespace Reko.Arch.Arm.AArch32
         private static readonly Mutator<A32Disassembler> Q5_0 = Q(5, 1, 0, 4);
         private static readonly Mutator<A32Disassembler> Q7_16 = Q(7, 1, 16, 4);
         private static readonly Mutator<A32Disassembler> Q22_12 = Q(22, 1, 12, 4);
-
-        //if (PeekAndDiscard('[', format, ref i))
-        //{
-        //    // D13[3] - index into sub-element
-        //    vector_index = (int)ReadBitfields(u, format, ref i);
-        //    Expect(']', format, ref i);
-        //}
 
         // Endianness
         private static Mutator<A32Disassembler> E(int pos, int size)
@@ -1432,7 +1400,7 @@ namespace Reko.Arch.Arm.AArch32
                     m = op;
                 else
                     m = $"{op} - {message}";
-                d.NotYetImplemented(m, u);
+                d.NotYetImplemented(u, m);
                 d.CreateInvalidInstruction();
                 return false;
             };
@@ -1494,32 +1462,19 @@ namespace Reko.Arch.Arm.AArch32
             return true;
         }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-        private static Decoder Instr(Mnemonic opcode, params Mutator<A32Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, params Mutator<A32Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, ArmVectorData.INVALID, mutators);
+            return new InstrDecoder(mnemonic, InstrClass.Linear, ArmVectorData.INVALID, mutators);
         }
 
-        private static Decoder Instr(Mnemonic opcode, InstrClass iclass, params Mutator<A32Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, InstrClass iclass, params Mutator<A32Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, iclass, ArmVectorData.INVALID, mutators);
+            return new InstrDecoder(mnemonic, iclass, ArmVectorData.INVALID, mutators);
         }
 
-        private static Decoder Instr(Mnemonic opcode, ArmVectorData vec, params Mutator<A32Disassembler>[] mutators)
+        private static Decoder Instr(Mnemonic mnemonic, ArmVectorData vec, params Mutator<A32Disassembler>[] mutators)
         {
-            return new InstrDecoder(opcode, InstrClass.Linear, vec, mutators);
+            return new InstrDecoder(mnemonic, InstrClass.Linear, vec, mutators);
         }
 
         private static Decoder Select(string tag, int shift, uint mask, Predicate<uint> predicate, Decoder trueDecoder, Decoder falseDecoder)
@@ -2970,25 +2925,25 @@ namespace Reko.Arch.Arm.AArch32
 
             //var AdvancedSIMDElementMovDuplicate = Mask(20, 1, "AdvancedSIMDElementMovDuplicate",
             //    Mask(21,2,5,2,
-            //        Instr(Opcode.vmov, I32, r(3), D7_16, Ix(21,1)),
-            //        Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b00 01)")),
-            //        Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b00 10)")),
-            //        Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b00 11)")),
+            //        Instr(Mnemonic.vmov, I32, r(3), D7_16, Ix(21,1)),
+            //        Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b00 01)")),
+            //        Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b00 10)")),
+            //        Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b00 11)")),
 
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b01 00)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b01 01)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b01 10)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b01 11)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b01 00)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b01 01)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b01 10)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b01 11)")),
 
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b10 00)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b10 01)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b10 10)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b10 11)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b10 00)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b10 01)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b10 10)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b10 11)")),
 
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b11 00)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b11 01)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b11 10)")),
-            //Instr(Opcode.vmov, r(3), x("*Scalar to GP op1:op2=0b11 11)))"))));
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b11 00)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b11 01)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b11 10)")),
+            //Instr(Mnemonic.vmov, r(3), x("*Scalar to GP op1:op2=0b11 11)))"))));
 
             var FloatingPointMoveSpecialReg = Mask(20, 1,
                 Instr(Mnemonic.vmsr, i(16,4), r(3)),

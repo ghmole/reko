@@ -28,6 +28,7 @@ using System.Linq;
 using Reko.Core.Machine;
 using Reko.Core.Expressions;
 using Reko.Core.Types;
+using Reko.Core.Services;
 
 namespace Reko.Arch.Msp430
 {
@@ -41,7 +42,7 @@ namespace Reko.Arch.Msp430
         private readonly IEnumerator<Msp430Instruction> dasm;
         private Msp430Instruction instr;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public Msp430Rewriter(Msp430Architecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
@@ -60,7 +61,7 @@ namespace Reko.Arch.Msp430
                 this.instr = dasm.Current;
                 var instrs = new List<RtlInstruction>();
                 this.m = new RtlEmitter(instrs);
-                this.rtlc = InstrClass.Linear;
+                this.iclass = InstrClass.Linear;
                 switch (instr.Mnemonic)
                 {
                 case Mnemonics.invalid: Invalid(); break;
@@ -105,11 +106,7 @@ namespace Reko.Arch.Msp430
                 case Mnemonics.sxt: RewriteSxt("0-----NZC"); break;
                 case Mnemonics.xor: RewriteBinop(m.Xor,  "V-----NZC"); break;
                 }
-                var rtlc = new RtlInstructionCluster(instr.Address, instr.Length, instrs.ToArray())
-                {
-                    Class = this.rtlc,
-                };
-                yield return rtlc;
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -135,23 +132,41 @@ namespace Reko.Arch.Msp430
             case RegisterOperand rop:
                 return binder.EnsureRegister(rop.Register);
             case MemoryOperand mop:
-                Expression ea = binder.EnsureRegister(mop.Base);
-                if (mop.PostIncrement)
+                Expression ea;
+                if (mop.Base != null)
                 {
-                    var tmp = binder.CreateTemporary(op.Width);
-                    m.Assign(tmp, m.Mem(op.Width, ea));
-                    m.Assign(ea, m.IAdd(ea, m.Int16((short) op.Width.Size)));
-                    return tmp;
-                }
-                else if (mop.Offset != 0)
-                {
-                    var tmp = binder.CreateTemporary(op.Width);
-                    m.Assign(tmp, m.Mem(op.Width, m.IAdd(ea, m.Int16(mop.Offset))));
-                    return tmp;
+                    ea = binder.EnsureRegister(mop.Base);
+                    if (mop.PostIncrement)
+                    {
+                        var tmp = binder.CreateTemporary(op.Width);
+                        m.Assign(tmp, m.Mem(op.Width, ea));
+                        m.Assign(ea, m.IAdd(ea, m.Int16((short) op.Width.Size)));
+                        return tmp;
+                    }
+                    else if (mop.Base == Registers.pc)
+                    {
+                        ea = instr.Address + mop.Offset;
+                        var tmp = binder.CreateTemporary(op.Width);
+                        m.Assign(tmp, m.Mem(op.Width, ea));
+                        return tmp;
+                    }
+                    else if (mop.Offset != 0)
+                    {
+                        var tmp = binder.CreateTemporary(op.Width);
+                        m.Assign(tmp, m.Mem(op.Width, m.IAdd(ea, m.Int16(mop.Offset))));
+                        return tmp;
+                    }
+                    else
+                    {
+                        var tmp = binder.CreateTemporary(op.Width);
+                        m.Assign(tmp, m.Mem(op.Width, ea));
+                        return tmp;
+                    }
                 }
                 else
                 {
                     var tmp = binder.CreateTemporary(op.Width);
+                    ea = Address.Ptr16((ushort) mop.Offset);
                     m.Assign(tmp, m.Mem(op.Width, ea));
                     return tmp;
                 }
@@ -180,10 +195,25 @@ namespace Reko.Arch.Msp430
                 }
                 return dst;
             case MemoryOperand mop:
-                Expression ea = binder.EnsureRegister(mop.Base);
-                if (mop.Offset != 0)
+                Expression ea;
+                if (mop.Base != null)
                 {
-                    ea = m.IAdd(ea, m.Int16(mop.Offset));
+                    if (mop.Base == Registers.pc)
+                    {
+                        ea = instr.Address + mop.Offset;
+                    }
+                    else
+                    {
+                        ea = binder.EnsureRegister(mop.Base);
+                        if (mop.Offset != 0)
+                        {
+                            ea = m.IAdd(ea, m.Int16(mop.Offset));
+                        }
+                    }
+                }
+                else
+                {
+                    ea = Address.Ptr16((ushort) mop.Offset);
                 }
                 var tmp = binder.CreateTemporary(mop.Width);
                 m.Assign(tmp, m.Mem(tmp.DataType, ea));
@@ -276,20 +306,20 @@ namespace Reko.Arch.Msp430
 
         private void RewriteBr()
         {
-            rtlc = InstrClass.Transfer;
+            iclass = InstrClass.Transfer;
             m.Goto(RewriteOp(instr.Operands[0]));
         }
 
         private void RewriteBranch(ConditionCode cc, FlagM flags)
         {
-            rtlc = InstrClass.ConditionalTransfer;
+            iclass = InstrClass.ConditionalTransfer;
             var grf = binder.EnsureFlagGroup(arch.GetFlagGroup(Registers.sr, (uint)flags));
             m.Branch(m.Test(cc, grf), ((AddressOperand)instr.Operands[0]).Address, InstrClass.ConditionalTransfer);
         }
 
         private void RewriteCall()
         {
-            rtlc = InstrClass.Transfer | InstrClass.Call;
+            iclass = InstrClass.Transfer | InstrClass.Call;
             m.Call(RewriteOp(instr.Operands[0]), 2);
         }
 
@@ -302,7 +332,7 @@ namespace Reko.Arch.Msp430
 
         private void RewriteGoto()
         {
-            rtlc = InstrClass.Transfer;
+            iclass = InstrClass.Transfer;
             m.Goto(RewriteOp(instr.Operands[0]));
         }
 
@@ -354,13 +384,13 @@ namespace Reko.Arch.Msp430
 
         private void RewriteRet()
         {
-            rtlc = InstrClass.Transfer;
+            iclass = InstrClass.Transfer;
             m.Return(2, 0);
         }
 
         private void RewriteReti()
         {
-            rtlc = InstrClass.Transfer;
+            iclass = InstrClass.Transfer;
             m.Return(2, 0);
         }
 
@@ -435,34 +465,14 @@ namespace Reko.Arch.Msp430
         private void Invalid()
         {
             m.Invalid();
-            rtlc = InstrClass.Invalid;
+            iclass = InstrClass.Invalid;
         }
-
-        private static HashSet<Mnemonics> seen = new HashSet<Mnemonics>();
 
         [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (seen.Contains(instr.Mnemonic))
-                return;
-            seen.Add(instr.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Console.WriteLine("        [Test]");
-            Console.WriteLine("        public void Msp430Rw_" + instr.Mnemonic + "()");
-            Console.WriteLine("        {");
-            Console.Write("            BuildTest(");
-            Console.Write(string.Join(
-                ", ",
-                bytes.Select(b => string.Format("0x{0:X2}", (int)b))));
-            Console.WriteLine(");\t// " + dasm.Current.ToString());
-            Console.WriteLine("            AssertCode(");
-            Console.WriteLine("                \"0|L--|0100(2): 1 instructions\",");
-            Console.WriteLine("                \"1|L--|@@@\");");
-            Console.WriteLine("        }");
-            Console.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("Msp430Rw", instr, rdr, "");
         }
     }
 }

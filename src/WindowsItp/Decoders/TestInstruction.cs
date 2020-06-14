@@ -13,8 +13,26 @@ namespace Reko.WindowsItp.Decoders
         public TestInstruction()
         { }
 
-        public Opcode Opcode { get; set; }
+        public Mnemonic Mnemonic { get; set; }
 
-        public override int OpcodeAsInteger => (int) Opcode;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
+    }
+
+    public enum Mnemonic
+    {
+        Invalid,
+
+        add,
+        sub,
+        mul,
+        div,
+
+        and,
+        or,
+        xor,
+        not,
+
     }
 }

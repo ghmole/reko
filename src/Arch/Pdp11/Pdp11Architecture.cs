@@ -75,7 +75,7 @@ namespace Reko.Arch.Pdp11
         private FlagGroupStorage[] flagRegs;
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public Pdp11Architecture(string archId) : base(archId)
+        public Pdp11Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             regs = new RegisterStorage[] { 
                 Registers.r0, Registers.r1, Registers.r2, Registers.r3, 
@@ -150,7 +150,7 @@ namespace Reko.Arch.Pdp11
                 : null;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return Enum.GetValues(typeof(Mnemonic))
                 .Cast<Mnemonic>()
@@ -159,7 +159,7 @@ namespace Reko.Arch.Pdp11
                     v => (int)v);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;

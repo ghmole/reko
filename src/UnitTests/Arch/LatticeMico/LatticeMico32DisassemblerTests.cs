@@ -23,6 +23,7 @@ using Reko.Arch.LatticeMico;
 using Reko.Core;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -36,17 +37,12 @@ namespace Reko.UnitTests.Arch.LatticeMico
 
         public LatticeMico32DisassemblerTests()
         {
-            this.arch = new LatticeMico32Architecture("latticeMico32");
+            this.arch = new LatticeMico32Architecture(new ServiceContainer(), "latticeMico32");
         }
 
         public override IProcessorArchitecture Architecture => arch;
 
         public override Address LoadAddress => Address.Ptr32(0x00100000);
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            throw new NotImplementedException();
-        }
 
         private void Assert_HexBytes(string sExpected, string sHexBytes)
         {

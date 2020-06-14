@@ -33,7 +33,7 @@ namespace Reko.Arch.Blackfin
 {
     public class BlackfinArchitecture : ProcessorArchitecture
     {
-        public BlackfinArchitecture(string archId) : base(archId)
+        public BlackfinArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             Endianness = EndianServices.Little;
             PointerType = PrimitiveType.Ptr32;
@@ -87,12 +87,12 @@ namespace Reko.Arch.Blackfin
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

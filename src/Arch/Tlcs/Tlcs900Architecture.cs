@@ -39,7 +39,7 @@ namespace Reko.Arch.Tlcs
     // https://toshiba.semicon-storage.com/product/micro/900H1_CPU_BOOK_CP3_CPU_en.pdf
     public class Tlcs900Architecture : ProcessorArchitecture
     {
-        public Tlcs900Architecture(string archId) : base(archId)
+        public Tlcs900Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.CarryFlagMask = Registers.C.FlagGroupBits;
             this.Endianness = EndianServices.Little;
@@ -111,12 +111,12 @@ namespace Reko.Arch.Tlcs
             return fl;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }
@@ -130,10 +130,11 @@ namespace Reko.Arch.Tlcs
         {
             if (!Registers.Subregisters.TryGetValue(regDomain, out var subs))
                 return null;
-            int key = (range.Extent << 4) | range.Lsb;
-            if (!subs.TryGetValue(key, out var subreg))
-                return null;
-            return subreg;
+            int key = (range.Extent * 4) + range.Lsb;
+            if (subs.TryGetValue(key, out var subreg))
+                return subreg;
+            else
+                return Registers.regs[regDomain - StorageDomain.Register];
         }
 
         public override RegisterStorage[] GetRegisters()

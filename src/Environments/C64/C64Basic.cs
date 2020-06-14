@@ -42,7 +42,7 @@ namespace Reko.Environments.C64
 
         private SortedList<ushort, C64BasicInstruction> program;
 
-        public C64Basic(string archId) : base(archId)
+        public C64Basic(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Description = "Commodore 64 Basic";
             this.Endianness = EndianServices.Little;
@@ -52,7 +52,7 @@ namespace Reko.Environments.C64
             this.FramePointerType = PrimitiveType.Ptr16;
         }
 
-        public C64Basic(SortedList<ushort, C64BasicInstruction> program) : this("c64Basic")
+        public C64Basic(IServiceProvider services, SortedList<ushort, C64BasicInstruction> program) : this(services, "c64Basic")
         {
             this.program = program;
         }
@@ -123,7 +123,7 @@ namespace Reko.Environments.C64
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             return Enumerable.Range(0, C64BasicInstruction.TokenMax - C64BasicInstruction.TokenMin)
                 .ToSortedList(
@@ -131,7 +131,7 @@ namespace Reko.Environments.C64
                     v => v);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             int i = Array.IndexOf(C64BasicInstruction.TokenStrs, name);
             if (i < 0)
@@ -192,10 +192,6 @@ namespace Reko.Environments.C64
             }
 
             public override void SetRegister(RegisterStorage r, Core.Expressions.Constant v)
-            {
-            }
-
-            public override void SetInstructionPointer(Address addr)
             {
             }
 

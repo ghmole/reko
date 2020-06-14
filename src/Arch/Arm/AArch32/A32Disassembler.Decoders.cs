@@ -50,8 +50,7 @@ namespace Reko.Arch.Arm.AArch32
 
             public override AArch32Instruction Decode(uint wInstr, A32Disassembler dasm)
             {
-                Debug.Print("NYI: {0}", message);
-                return dasm.NotYetImplemented(message, wInstr);
+                return dasm.NotYetImplemented(wInstr, message);
             }
 
             public override string ToString()
@@ -103,7 +102,7 @@ namespace Reko.Arch.Arm.AArch32
             public override AArch32Instruction Decode(uint wInstr, A32Disassembler dasm)
             {
                 var instr = base.Decode(wInstr, dasm);
-                instr.condition = (ArmCondition)(wInstr >> 28);
+                instr.Condition = (ArmCondition)(wInstr >> 28);
                 return instr;
             }
         }

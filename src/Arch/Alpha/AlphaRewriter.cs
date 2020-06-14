@@ -23,6 +23,7 @@ using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Operators;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections;
@@ -40,7 +41,7 @@ namespace Reko.Arch.Alpha
         private readonly IRewriterHost host;
         private readonly IEnumerator<AlphaInstruction> dasm;
         private AlphaInstruction instr;
-        private InstrClass rtlc;
+        private InstrClass iclass;
         private RtlEmitter m;
 
         public AlphaRewriter(AlphaArchitecture arch, EndianImageReader rdr, IStorageBinder binder, IRewriterHost host)
@@ -59,7 +60,7 @@ namespace Reko.Arch.Alpha
                 this.instr = dasm.Current;
                 var instrs = new List<RtlInstruction>();
                 this.m = new RtlEmitter(instrs);
-                this.rtlc = instr.InstructionClass;
+                this.iclass = instr.InstructionClass;
                 switch (instr.Mnemonic)
                 {
                 default:
@@ -210,45 +211,18 @@ namespace Reko.Arch.Alpha
                 case Mnemonic.xor: RewriteBin(xor); break;
                 case Mnemonic.zap: RewriteInstrinsic("__zap"); break;
                 case Mnemonic.zapnot: RewriteInstrinsic("__zapnot"); break;
-
                 }
-                yield return new RtlInstructionCluster(instr.Address, instr.Length, instrs.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
-
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
 
         /// <summary>
         /// Emits the text of a unit test that can be pasted into the unit tests 
         /// for this rewriter.
         /// </summary>
-        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void AlphaRw_" + dasm.Current.Mnemonic + "()");
-            Debug.WriteLine("        {");
-            Debug.Write("            RewriteCode(\"");
-            Debug.Write(string.Join(
-                "",
-                bytes.Select(b => string.Format("{0:X2}", (int)b))));
-            Debug.WriteLine("\");\t// " + dasm.Current.ToString());
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine("                \"0|L--|00100000({0}): 1 instructions\",", dasm.Current.Length);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            arch.Services.GetService<ITestGenerationService>()?.ReportMissingRewriter("AlphaRw", dasm.Current, rdr, "");
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -259,7 +233,7 @@ namespace Reko.Arch.Alpha
         private void Invalid()
         {
             m.Invalid();
-            rtlc = InstrClass.Invalid;
+            iclass = InstrClass.Invalid;
         }
 
         private Expression Rewrite(MachineOperand op, bool highWord = false)

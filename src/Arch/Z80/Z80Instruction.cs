@@ -29,20 +29,20 @@ namespace Reko.Arch.Z80
 {
     public class Z80Instruction : MachineInstruction
     {
-        public Mnemonic Mnemonic;
-
-        public override int OpcodeAsInteger => (int)Mnemonic;
+        public Mnemonic Mnemonic { get; set; }
+        public override int MnemonicAsInteger => (int)Mnemonic;
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
             if (Mnemonic == Mnemonic.ex_af)
             {
-                writer.WriteOpcode("ex");
+                writer.WriteMnemonic("ex");
                 writer.Tab();
                 writer.WriteString("af,af'");
                 return;
             }
-            writer.WriteOpcode(Mnemonic.ToString());
+            writer.WriteMnemonic(Mnemonic.ToString());
             RenderOperands(writer, options);
         }
     }

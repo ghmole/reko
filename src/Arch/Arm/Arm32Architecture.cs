@@ -48,7 +48,7 @@ namespace Reko.Arch.Arm
 #endif
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public Arm32Architecture(string archId) : base(archId)
+        public Arm32Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             Endianness = EndianServices.Little;
             InstructionBitSize = 32;
@@ -221,14 +221,14 @@ namespace Reko.Arch.Arm
             if ((grf & (uint) FlagM.VF) != 0) yield return GetFlagGroup(flags.FlagRegister, (uint) FlagM.VF);
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             if (!Enum.TryParse(name, true, out Mnemonic result))
                 return null;
             return (int)result;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             //$TOD: write a dictionary mapping ARM instructions to ARM_INS_xxx.
             return new SortedList<string, int>();

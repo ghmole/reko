@@ -26,10 +26,13 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 
 namespace Reko.Arch.zSeries
 {
+#pragma warning disable IDE1006
+
     public partial class zSeriesRewriter : IEnumerable<RtlInstructionCluster>
     {
         private readonly zSeriesArchitecture arch;
@@ -41,7 +44,7 @@ namespace Reko.Arch.zSeries
         private readonly ExpressionValueComparer cmp;
         private zSeriesInstruction instr;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public zSeriesRewriter(zSeriesArchitecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
@@ -59,7 +62,7 @@ namespace Reko.Arch.zSeries
             while (dasm.MoveNext())
             {
                 this.instr = dasm.Current;
-                this.rtlc = InstrClass.Linear;
+                this.iclass = InstrClass.Linear;
                 var instrs = new List<RtlInstruction>();
                 this.m = new RtlEmitter(instrs);
                 switch (instr.Mnemonic)
@@ -68,7 +71,7 @@ namespace Reko.Arch.zSeries
                     EmitUnitTest();
                     goto case Mnemonic.invalid;
                 case Mnemonic.invalid:
-                    rtlc = InstrClass.Invalid;
+                    iclass = InstrClass.Invalid;
                     m.Invalid();
                     break;
                 case Mnemonic.aghi: RewriteAhi(PrimitiveType.Word64); break;
@@ -115,10 +118,7 @@ namespace Reko.Arch.zSeries
                 case Mnemonic.stmg: RewriteStmg(); break;
                 case Mnemonic.xc: RewriteXc(); break;
                 }
-                yield return new RtlInstructionCluster(instr.Address, instr.Length, instrs.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -127,32 +127,11 @@ namespace Reko.Arch.zSeries
             return this.GetEnumerator();
         }
 
-#if DEBUG
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
+        [Conditional("DEBUG")]
         private void EmitUnitTest()
         {
-            if (rdr == null || seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-
-            Debug.Print("        [Test]");
-            Debug.Print("        public void zSeriesRw_{0}()", dasm.Current.Mnemonic);
-            Debug.Print("        {");
-            Debug.Print("            Given_MachineCode(\"{0}\");", string.Join("", bytes.Select(b => b.ToString("X2"))));
-            Debug.Print("            AssertCode(     // {0}", dasm.Current);
-            Debug.Print("                \"0|L--|00100000({0}): 1 instructions\",", dasm.Current.Length);
-            Debug.Print("                \"1|L--|@@@\");");
-            Debug.Print("        }");
-            Debug.Print("");
+            arch.Services.GetService<ITestGenerationService>()?.ReportMissingRewriter("zSeriesRw", dasm.Current, rdr, "");
         }
-#else
-        private void EmitUnitTest() { }
-#endif
 
         private Address Addr(MachineOperand op)
         {

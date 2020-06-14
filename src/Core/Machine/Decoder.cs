@@ -36,12 +36,14 @@ namespace Reko.Core.Machine
     public abstract class Decoder<TDasm, TMnemonic, TInstr> 
         where TInstr : MachineInstruction
     {
+        private static readonly TraceSwitch trace = new TraceSwitch(nameof(Decoder), "Trace the progress of machine code decoders") { Level = TraceLevel.Warning };
+
         public abstract TInstr Decode(uint wInstr, TDasm dasm);
 
         [Conditional("DEBUG")]
         public static void DumpMaskedInstruction(uint wInstr, uint shMask, TMnemonic mnemonic)
         {
-            DumpMaskedInstruction(wInstr, shMask, mnemonic.ToString());
+            DumpMaskedInstruction(wInstr, shMask, mnemonic!.ToString());
         }
 
         [Conditional("DEBUG")]
@@ -54,7 +56,8 @@ namespace Reko.Core.Machine
         [Conditional("DEBUG")]
         public static void DumpMaskedInstruction(uint wInstr, uint shMask, string tag)
         {
-            return;
+            if (trace.Level != TraceLevel.Verbose)
+                return;
             var hibit = 0x80000000u;
             var sb = new StringBuilder();
             for (int i = 0; i < 32; ++i)
@@ -74,7 +77,8 @@ namespace Reko.Core.Machine
             {
                 sb.AppendFormat(" {0}", tag);
             }
-            Debug.Print(sb.ToString());
+            Debug.WriteLine(sb.ToString());
+            Console.WriteLine(sb.ToString());
         }
     }
 

@@ -60,7 +60,7 @@ namespace Reko.Environments.Switch
             return null;
         }
 
-        public override SystemService FindService(int vector, ProcessorState state)
+        public override SystemService FindService(int vector, ProcessorState state, SegmentMap segmentMap)
         {
             throw new NotImplementedException();
         }
@@ -75,7 +75,7 @@ namespace Reko.Environments.Switch
             throw new NotImplementedException();
         }
 
-        public override ProcedureBase GetTrampolineDestination(IEnumerable<RtlInstructionCluster> rdr, IRewriterHost host)
+        public override ProcedureBase GetTrampolineDestination(Address addrInstr, IEnumerable<RtlInstruction> rdr, IRewriterHost host)
         {
             //$TODO: for now we don't attempt to locate trampolines.
             return null;

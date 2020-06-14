@@ -59,7 +59,7 @@ namespace Reko.UserInterfaces.WindowsForms
 
         public IConfigurationService CreateDecompilerConfiguration()
         {
-            return RekoConfigurationService.Load();
+            return RekoConfigurationService.Load(services);
         }
 
         public IDiagnosticsService CreateDiagnosticsService()
@@ -205,6 +205,11 @@ namespace Reko.UserInterfaces.WindowsForms
             var fsSvc = services.RequireService<IFileSystemService>();
             var svc = new DecompiledFileService(fsSvc);
             return svc;
+        }
+
+        public ITestGenerationService CreateTestGenerationService()
+        {
+            return new TestGenerationService(services);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 1999-2020 John Källén.
  *
@@ -59,6 +59,7 @@ namespace Reko.Core
             private PointerScanner<T> scanner;
             private EndianImageReader r;
 
+#nullable disable
             public Enumerator(PointerScanner<T> scanner, EndianImageReader rdr)
             {
                 this.scanner = scanner;
@@ -68,6 +69,7 @@ namespace Reko.Core
             public T Current { get; set; }
 
             object System.Collections.IEnumerator.Current { get { return Current; } }
+#nullable enable
 
             public bool MoveNext()
             {
@@ -96,8 +98,7 @@ namespace Reko.Core
         {
             linAddrInstr = GetLinearAddress(rdr.Address);
             T target;
-            uint opcode;
-            if (TryPeekOpcode(rdr, out opcode))
+            if (TryPeekOpcode(rdr, out uint opcode))
             {
                 if ((flags & PointerScannerFlags.Calls) != 0)
                 {

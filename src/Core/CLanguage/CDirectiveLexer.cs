@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 1999-2020 John Källén.
  *
@@ -18,6 +18,8 @@
  */
 #endregion
 
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -31,8 +33,8 @@ namespace Reko.Core.CLanguage
     /// </summary>
     public class CDirectiveLexer
     {
-        private CLexer lexer;
-        private ParserState state;
+        private readonly CLexer lexer;
+        private readonly ParserState state;
         private CToken tokenPrev;
 
         public CDirectiveLexer(ParserState state, CLexer lexer)
@@ -68,29 +70,26 @@ namespace Reko.Core.CLanguage
                 switch (state)
                 {
                 case State.Start:
-                    if (token.Type == CTokenType.LineDirective)
+                    switch (token.Type)
                     {
+                    case CTokenType.LineDirective:
                         Expect(CTokenType.NumericLiteral);
                         Expect(CTokenType.StringLiteral);
                         token = lexer.Read();
-                    }
-                    else if (token.Type == CTokenType.PragmaDirective)
-                    {
+                        break;
+                    case CTokenType.PragmaDirective:
                         token = ReadPragma((string) lexer.Read().Value);
-                    }
-                    else if (token.Type == CTokenType.__Pragma)
-                    {
+                        break;
+                    case CTokenType.__Pragma:
                         Expect(CTokenType.LParen);
-                        token = ReadPragma((string) lexer.Read().Value);
+                        ReadPragma((string) lexer.Read().Value);
                         token = lexer.Read();
-                    }
-                    else if (token.Type == CTokenType.StringLiteral)
-                    {
+                        break;
+                    case CTokenType.StringLiteral:
                         state = State.Strings;
                         lastString = (string) token.Value;
-                    }
-                    else
-                    {
+                        break;
+                    default:
                         return token;
                     }
                     break;
@@ -114,7 +113,6 @@ namespace Reko.Core.CLanguage
                         if (lastString != null)
                         {
                             var tok = new CToken(CTokenType.StringLiteral, lastString);
-                            lastString = null;
                             return tok;
                         }
                         else
@@ -228,9 +226,11 @@ namespace Reko.Core.CLanguage
                 lexer.SkipToNextLine();
                 return lexer.Read();
             }
-            else 
+            else
             {
-                throw new FormatException(string.Format("Unknown #pragma {0}.", pragma));
+                // Ignore unknown #pragmas
+                lexer.SkipToNextLine();
+                return lexer.Read();
             }
         }
 

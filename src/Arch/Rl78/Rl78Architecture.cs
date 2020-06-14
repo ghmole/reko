@@ -36,7 +36,7 @@ namespace Reko.Arch.Rl78
     {
         private Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public Rl78Architecture(string archId) : base(archId)
+        public Rl78Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             InstructionBitSize = 8;
             FramePointerType = PrimitiveType.Ptr32;
@@ -94,12 +94,12 @@ namespace Reko.Arch.Rl78
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

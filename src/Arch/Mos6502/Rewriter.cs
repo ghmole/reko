@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -36,28 +37,28 @@ namespace Reko.Arch.Mos6502
         private readonly ProcessorState state;
         private readonly IStorageBinder binder;
         private readonly IRewriterHost host;
-        private readonly Mos6502ProcessorArchitecture arch;
+        private readonly Mos6502Architecture arch;
         private readonly EndianImageReader rdr;
         private readonly IEnumerator<Instruction> dasm;
         private Instruction instrCur;
-        private InstrClass rtlc;
+        private InstrClass iclass;
         private RtlEmitter m;
 
-        public Rewriter(Mos6502ProcessorArchitecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
+        public Rewriter(Mos6502Architecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
             this.arch = arch;
             this.state = state;
             this.binder = binder;
             this.host = host;
             this.rdr = rdr;
-            this.dasm = new Disassembler(rdr).GetEnumerator();
+            this.dasm = new Disassembler(arch, rdr).GetEnumerator();
         }
 
         private AddressCorrelatedException NYI()
         {
             return new AddressCorrelatedException(
                 instrCur.Address,
-                "Rewriting 6502 opcode '{0}' is not supported yet.",
+                "Rewriting 6502 instruction '{0}' is not supported yet.",
                 instrCur.Mnemonic);
         }
 
@@ -67,13 +68,13 @@ namespace Reko.Arch.Mos6502
             {
                 this.instrCur = dasm.Current;
                 var instrs = new List<RtlInstruction>();
-                this.rtlc = instrCur.InstructionClass;
+                this.iclass = instrCur.InstructionClass;
                 this.m = new RtlEmitter(instrs);
                 switch (instrCur.Mnemonic)
                 {
                 default:
-                    EmitUnitTest();
-                    rtlc = InstrClass.Invalid;
+                    EmitUnitTest(instrCur);
+                    iclass = InstrClass.Invalid;
                     m.Invalid();
                     break;
                 case Mnemonic.illegal: m.Invalid(); break;
@@ -134,13 +135,7 @@ namespace Reko.Arch.Mos6502
                 case Mnemonic.txs: Copy(Registers.s, Registers.x); break;
                 case Mnemonic.tya: Copy(Registers.a, Registers.y); break;
                 }
-                yield return new RtlInstructionCluster(
-                    instrCur.Address,
-                    instrCur.Length,
-                    instrs.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(instrCur.Address, instrCur.Length, iclass);
             }
         }
 
@@ -174,7 +169,7 @@ namespace Reko.Arch.Mos6502
             m.Branch(
                 m.Test(cc, f),
                 Address.Ptr16(((Operand)instrCur.Operands[0]).Offset.ToUInt16()),
-                rtlc);
+                iclass);
         }
 
         private Identifier FlagGroupStorage(FlagM flags)
@@ -411,7 +406,7 @@ namespace Reko.Arch.Mos6502
 
         private Expression RewriteOperand(MachineOperand mop)
         {
-            Constant offset;
+            Address addrZeroPage;
             var op = (Operand) mop;
             switch (op.Mode)
             {
@@ -422,19 +417,19 @@ namespace Reko.Arch.Mos6502
                 return op.Offset;
             case AddressMode.IndirectIndexed:
                 var y = binder.EnsureRegister(Registers.y);
-                offset = Constant.Word16((ushort) op.Offset.ToByte());
+                addrZeroPage = m.Ptr16(op.Offset.ToByte());
                 return m.Mem8(
                     m.IAdd(
-                        m.Mem(PrimitiveType.Ptr16, offset),
+                        m.Mem(PrimitiveType.Ptr16, addrZeroPage),
                         m.Cast(PrimitiveType.UInt16, y)));
             case AddressMode.IndexedIndirect:
                 var x = binder.EnsureRegister(Registers.x);
-                offset = Constant.Word16(op.Offset.ToByte());
+                addrZeroPage = m.Ptr16(op.Offset.ToByte());
                 return m.Mem8(
                     m.Mem(
                         PrimitiveType.Ptr16,
                         m.IAdd(
-                            offset,
+                            addrZeroPage,
                             m.Cast(PrimitiveType.UInt16, x))));
             case AddressMode.Absolute:
                 return m.Mem8(arch.MakeAddressFromConstant(op.Offset, false));
@@ -456,32 +451,11 @@ namespace Reko.Arch.Mos6502
             }
         }
 
-        private static HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
         [Conditional("DEBUG")]
-        private void EmitUnitTest()
+        private void EmitUnitTest(Instruction instr)
         {
-            if (seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            r2.Offset -= dasm.Current.Length;
-            var bytes = r2.ReadBytes(dasm.Current.Length);
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void Rw6502_" + dasm.Current.Mnemonic + "()");
-            Debug.WriteLine("        {");
-            Debug.Write("            BuildTest(");
-            Debug.Write(string.Join(
-                ", ",
-                bytes.Select(b => string.Format("0x{0:X2}", (int) b))));
-            Debug.WriteLine(");\t// " + dasm.Current.ToString());
-            Debug.WriteLine("            AssertCode(");
-            Debug.WriteLine("                \"0|L--|{0}({1}): 1 instructions\",", dasm.Current.Address, dasm.Current.Length);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("Rw6502", instr, rdr, "");
         }
-
     }
 }

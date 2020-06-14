@@ -53,7 +53,7 @@ namespace Reko.Arch.RiscV
         internal readonly PrimitiveType NaturalSignedInteger;
         private Dictionary<string, RegisterStorage> regsByName;
 
-        public RiscVArchitecture(string archId) : base(archId)
+        public RiscVArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             this.Endianness = EndianServices.Little;
             this.InstructionBitSize = 16;
@@ -132,12 +132,12 @@ namespace Reko.Arch.RiscV
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

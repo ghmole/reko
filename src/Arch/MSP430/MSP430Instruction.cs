@@ -34,7 +34,9 @@ namespace Reko.Arch.Msp430
         public int repeatImm;
         public RegisterStorage repeatReg;
 
-        public override int OpcodeAsInteger => (int) Mnemonic;
+        public override int MnemonicAsInteger => (int) Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
@@ -46,14 +48,14 @@ namespace Reko.Arch.Msp430
         {
             if (repeatReg != null)
             {
-                writer.WriteOpcode("rpt");
+                writer.WriteMnemonic("rpt");
                 writer.WriteString(" ");
                 writer.WriteString(repeatReg.Name);
                 writer.WriteString(" ");
             }
             else if (repeatImm > 1)
             {
-                writer.WriteOpcode("rpt");
+                writer.WriteMnemonic("rpt");
                 writer.WriteString(" #");
                 writer.WriteString(repeatImm.ToString());
                 writer.WriteString(" ");
@@ -67,14 +69,14 @@ namespace Reko.Arch.Msp430
                         ? "w"
                         : "a");
             }
-            writer.WriteOpcode(sb.ToString());
+            writer.WriteMnemonic(sb.ToString());
         }
 
         protected override void RenderOperand(MachineOperand op, MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
             if (op is AddressOperand && (base.InstructionClass & InstrClass.Transfer) == 0)
             {
-                writer.WriteString("&");
+                writer.WriteString("#");
             }
             if (op is ImmediateOperand && Mnemonic != Mnemonics.call)
             {

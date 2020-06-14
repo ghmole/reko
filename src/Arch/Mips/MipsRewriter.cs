@@ -23,6 +23,7 @@ using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Operators;
 using Reko.Core.Rtl;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
 using System.Collections;
@@ -45,7 +46,7 @@ namespace Reko.Arch.Mips
         private readonly IRewriterHost host;
         private readonly ExpressionValueComparer cmp;
         private RtlEmitter m;
-        private InstrClass rtlc;
+        private InstrClass iclass;
 
         public MipsRewriter(MipsProcessorArchitecture arch, EndianImageReader rdr, IEnumerable<MipsInstruction> instrs, IStorageBinder binder, IRewriterHost host)
         {
@@ -63,7 +64,7 @@ namespace Reko.Arch.Mips
             {
                 var instr = dasm.Current;
                 var rtlInstructions = new List<RtlInstruction>();
-                this.rtlc = instr.InstructionClass;
+                this.iclass = instr.InstructionClass;
                 this.m = new RtlEmitter(rtlInstructions);
                 switch (instr.Mnemonic)
                 {
@@ -71,10 +72,10 @@ namespace Reko.Arch.Mips
                     host.Error(
                         instr.Address,
                         string.Format("MIPS instruction '{0}' is not supported yet.", instr));
-                    EmitUnitTest();
+                    EmitUnitTest(instr);
                     goto case Mnemonic.illegal;
                 case Mnemonic.illegal:
-                    rtlc = InstrClass.Invalid; m.Invalid(); break;
+                    iclass = InstrClass.Invalid; m.Invalid(); break;
                 case Mnemonic.add:
                 case Mnemonic.addi:
                 case Mnemonic.addiu:
@@ -319,13 +320,7 @@ namespace Reko.Arch.Mips
                 case Mnemonic.swxs: RewriteSwxs(instr); break;
                 case Mnemonic.ualwm: RewriteLwm(instr); break;
                 }
-                yield return new RtlInstructionCluster(
-                    instr.Address,
-                    instr.Length,
-                    rtlInstructions.ToArray())
-                {
-                    Class = rtlc
-                };
+                yield return m.MakeCluster(instr.Address, instr.Length, iclass);
             }
         }
 
@@ -334,32 +329,11 @@ namespace Reko.Arch.Mips
             return GetEnumerator();
         }
 
-#if DEBUG
-        private static readonly HashSet<Mnemonic> seen = new HashSet<Mnemonic>();
-
-        private void EmitUnitTest()
+        protected void EmitUnitTest(MipsInstruction instr)
         {
-            if (rdr == null || seen.Contains(dasm.Current.Mnemonic))
-                return;
-            seen.Add(dasm.Current.Mnemonic);
-
-            var r2 = rdr.Clone();
-            int cbInstr = dasm.Current.Length;
-            r2.Offset -= cbInstr;
-            var uInstr = cbInstr == 2 ? r2.ReadUInt16() : r2.ReadUInt32();
-            Debug.WriteLine("        [Test]");
-            Debug.WriteLine("        public void MipsRw_{0}()", dasm.Current.Mnemonic);
-            Debug.WriteLine("        {");
-            Debug.WriteLine("            AssertCode(0x{0:X8},   // {1}", uInstr, dasm.Current);
-            Debug.WriteLine("                \"0|L--|00100000({0}): 1 instructions\",", cbInstr);
-            Debug.WriteLine("                \"1|L--|@@@\");");
-            Debug.WriteLine("        }");
-            Debug.WriteLine("");
+            var testGenSvc = arch.Services.GetService<ITestGenerationService>();
+            testGenSvc?.ReportMissingRewriter("MipsRw", instr, rdr, "");
         }
-#else
-        private void EmitUnitTest() { }
-#endif
-
 
         private Expression RewriteOperand(MachineOperand op)
         {

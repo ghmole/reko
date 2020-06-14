@@ -142,7 +142,7 @@ namespace Reko.Arch.Tlcs
             }
         };
 
-        public Tlcs90Architecture(string archId) : base(archId)
+        public Tlcs90Architecture(IServiceProvider services, string archId) : base(services, archId)
         {
             base.CarryFlagMask = Registers.C.FlagGroupBits;
             base.Endianness = EndianServices.Little;
@@ -215,12 +215,12 @@ namespace Reko.Arch.Tlcs
             return fl;
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }

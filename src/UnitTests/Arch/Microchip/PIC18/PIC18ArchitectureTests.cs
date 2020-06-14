@@ -1,4 +1,4 @@
-﻿#region License
+#region License
 /* 
  * Copyright (C) 2017-2020 Christian Hostelet.
  * inspired by work of:
@@ -29,6 +29,7 @@ using Reko.Core.Types;
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 
 namespace Reko.UnitTests.Arch.Microchip.PIC18
 {
@@ -40,7 +41,7 @@ namespace Reko.UnitTests.Arch.Microchip.PIC18
 
         private PICArchitecture GetArch(string picName, PICExecMode mode = PICExecMode.Traditional)
         {
-            var arch = new PICArchitecture("pic") { Options = new PICArchitectureOptions(picName, mode) };
+            var arch = new PICArchitecture(new ServiceContainer(), "pic") { Options = new PICArchitectureOptions(picName, mode) };
             Assert.NotNull(arch);
             arch.CreatePICProcessorModel();
             return arch;
@@ -178,11 +179,11 @@ namespace Reko.UnitTests.Arch.Microchip.PIC18
             PICMemoryDescriptor.ExecMode = PICExecMode.Traditional;
             Assert.AreEqual(
                 "__CONFIG,__IDLOCS,ADDFSR,ADDLW,ADDULNK,ADDWF",
-                string.Join(",", arch.GetOpcodeNames().Keys.Take(6)));
+                string.Join(",", arch.GetMnemonicNames().Keys.Take(6)));
             PICMemoryDescriptor.ExecMode = PICExecMode.Extended;
             Assert.AreEqual(
                 "__CONFIG,__IDLOCS,ADDFSR,ADDLW,ADDULNK,ADDWF",
-                string.Join(",", arch.GetOpcodeNames().Keys.Take(6)));
+                string.Join(",", arch.GetMnemonicNames().Keys.Take(6)));
         }
 
         [Test]
@@ -190,11 +191,11 @@ namespace Reko.UnitTests.Arch.Microchip.PIC18
         {
             var arch = GetArch(PIC18EggName);
             PICMemoryDescriptor.ExecMode = PICExecMode.Traditional;
-            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetOpcodeNumber("MOVWF"));
-            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetOpcodeNumber("LFSR"));
+            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetMnemonicNumber("MOVWF"));
+            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetMnemonicNumber("LFSR"));
             PICMemoryDescriptor.ExecMode = PICExecMode.Extended;
-            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetOpcodeNumber("MOVWF"));
-            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetOpcodeNumber("LFSR"));
+            Assert.AreEqual(Mnemonic.MOVWF, (Mnemonic)arch.GetMnemonicNumber("MOVWF"));
+            Assert.AreEqual(Mnemonic.LFSR, (Mnemonic)arch.GetMnemonicNumber("LFSR"));
         }
 
         [Test]

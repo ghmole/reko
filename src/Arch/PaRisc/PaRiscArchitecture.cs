@@ -33,7 +33,7 @@ namespace Reko.Arch.PaRisc
 {
     public class PaRiscArchitecture : ProcessorArchitecture
     {
-        public PaRiscArchitecture(string archId) : base(archId)
+        public PaRiscArchitecture(IServiceProvider services, string archId) : base(services, archId)
         {
             InstructionBitSize = 32;
             StackRegister = Registers.GpRegs[30];
@@ -88,19 +88,22 @@ namespace Reko.Arch.PaRisc
             throw new NotImplementedException();
         }
 
-        public override SortedList<string, int> GetOpcodeNames()
+        public override SortedList<string, int> GetMnemonicNames()
         {
             throw new NotImplementedException();
         }
 
-        public override int? GetOpcodeNumber(string name)
+        public override int? GetMnemonicNumber(string name)
         {
             throw new NotImplementedException();
         }
 
         public override RegisterStorage GetRegister(StorageDomain domain, BitRange range)
         {
-            throw new NotImplementedException();
+            if (Registers.RegistersByStorageDomain.TryGetValue(domain, out var reg))
+                return reg;
+            else
+                return null;
         }
 
         public override RegisterStorage GetRegister(string name)

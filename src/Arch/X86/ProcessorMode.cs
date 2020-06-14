@@ -70,7 +70,7 @@ namespace Reko.Arch.X86
             get { return Registers.sp; }
         }
 
-        public abstract X86Disassembler CreateDisassembler(EndianImageReader rdr, X86Options options);
+        public abstract X86Disassembler CreateDisassembler(IServiceProvider services, EndianImageReader rdr, X86Options options);
 
         public abstract IProcessorEmulator CreateEmulator(IntelArchitecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator);
 
@@ -103,7 +103,7 @@ namespace Reko.Arch.X86
                 return null;
         }
 
-        public virtual List<RtlInstruction> InlineCall(Address addrCallee, Address addrContinuation, EndianImageReader rdr, IStorageBinder binder)
+        public virtual List<RtlInstruction> InlineCall(IServiceProvider services, Address addrCallee, Address addrContinuation, EndianImageReader rdr, IStorageBinder binder)
         {
             return null;
         }
@@ -171,9 +171,9 @@ namespace Reko.Arch.X86
             return new X86RealModePointerScanner(rdr, knownLinAddresses, flags).Select(li => map.MapLinearAddressToAddress(li));
         }
 
-        public override X86Disassembler CreateDisassembler(EndianImageReader rdr, X86Options options)
+        public override X86Disassembler CreateDisassembler(IServiceProvider services, EndianImageReader rdr, X86Options options)
         {
-            var dasm = new X86Disassembler(this, rdr, PrimitiveType.Word16, PrimitiveType.Word16, false);
+            var dasm = new X86Disassembler(services, this, rdr, PrimitiveType.Word16, PrimitiveType.Word16, false);
             if (options != null)
             {
                 dasm.Emulate8087 = options.Emulate8087;
@@ -198,7 +198,8 @@ namespace Reko.Arch.X86
 
         public override Address MakeAddressFromConstant(Constant c)
         {
-            throw new NotSupportedException("Must pass segment:offset to make a segmented address.");
+            // Must pass segment:offset to make a segmented address.
+            return null;
         }
 
         public override bool TryReadCodeAddress(int byteSize, EndianImageReader rdr, ProcessorState state, out Address addr)
@@ -219,9 +220,9 @@ namespace Reko.Arch.X86
         {
         }
 
-        public override X86Disassembler CreateDisassembler(EndianImageReader rdr, X86Options options)
+        public override X86Disassembler CreateDisassembler(IServiceProvider services, EndianImageReader rdr, X86Options options)
         {
-            return new X86Disassembler(this, rdr, PrimitiveType.Word16, PrimitiveType.Word16, false);
+            return new X86Disassembler(services, this, rdr, PrimitiveType.Word16, PrimitiveType.Word16, false);
         }
 
         public override IProcessorEmulator CreateEmulator(IntelArchitecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator)
@@ -274,12 +275,13 @@ namespace Reko.Arch.X86
         }
 
         public override List<RtlInstruction> InlineCall(
+            IServiceProvider services,
             Address addrCallee, 
             Address addrContinuation, 
             EndianImageReader rdr,
             IStorageBinder binder)
         {
-            var dasm = CreateDisassembler(rdr, new X86Options());
+            var dasm = CreateDisassembler(services, rdr, new X86Options());
             var instrs = dasm.Take(2).ToArray();
             if (instrs.Length < 2)
                 return null;
@@ -289,8 +291,8 @@ namespace Reko.Arch.X86
             // which is used by i386 ELF binaries to capture
             // the value in the EIP register.
 
-            if (instrs[0].code == Mnemonic.mov && 
-                instrs[1].code == Mnemonic.ret)
+            if (instrs[0].Mnemonic == Mnemonic.mov && 
+                instrs[1].Mnemonic == Mnemonic.ret)
             {
                 if (!(instrs[0].Operands[1] is MemoryOperand mop))
                     return null;
@@ -332,9 +334,9 @@ namespace Reko.Arch.X86
             return new X86PointerScanner32(rdr, knownLinaddresses, flags).Select(li => map.MapLinearAddressToAddress(li));
         }
 
-        public override X86Disassembler CreateDisassembler(EndianImageReader rdr, X86Options options)
+        public override X86Disassembler CreateDisassembler(IServiceProvider services, EndianImageReader rdr, X86Options options)
         {
-            return new X86Disassembler(this, rdr, PrimitiveType.Word32, PrimitiveType.Word32, false);
+            return new X86Disassembler(services, this, rdr, PrimitiveType.Word32, PrimitiveType.Word32, false);
         }
 
         public override IProcessorEmulator CreateEmulator(IntelArchitecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator)
@@ -407,9 +409,9 @@ namespace Reko.Arch.X86
             return Address.Ptr64(offset);
         }
 
-        public override X86Disassembler CreateDisassembler(EndianImageReader rdr, X86Options options)
+        public override X86Disassembler CreateDisassembler(IServiceProvider services, EndianImageReader rdr, X86Options options)
         {
-            return new X86Disassembler(this, rdr, PrimitiveType.Word32, PrimitiveType.Word64, true);
+            return new X86Disassembler(services, this, rdr, PrimitiveType.Word32, PrimitiveType.Word64, true);
         }
 
         public override IProcessorEmulator CreateEmulator(IntelArchitecture arch, SegmentMap segmentMap, IPlatformEmulator envEmulator)

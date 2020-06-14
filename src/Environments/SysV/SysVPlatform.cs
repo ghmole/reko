@@ -67,6 +67,9 @@ namespace Reko.Environments.SysV
             case "ppc-be-32":
             case "ppc-le-32":
                 return new PowerPcCallingConvention(Architecture);
+            case "ppc-be-64":
+            case "ppc-le-64":
+                return new PowerPc64CallingConvention(Architecture);
             case "sparc32":
                 return new SparcCallingConvention(Architecture);
             case "x86-protected-32":
@@ -94,6 +97,8 @@ namespace Reko.Environments.SysV
                 return new M68kCallingConvention(Architecture);
             case "avr8":
                 return new Avr8CallingConvention(Architecture);
+            case "avr32":
+                return new Avr32CallingConvention(Architecture);
             case "msp430":
                 return new Msp430CallingConvention(Architecture);
             case "risc-v":
@@ -122,7 +127,7 @@ namespace Reko.Environments.SysV
             return this.trashedRegs.ToHashSet();
         }
 
-        public override SystemService FindService(int vector, ProcessorState state)
+        public override SystemService FindService(int vector, ProcessorState state, SegmentMap segmentMap)
         {
             return null;
         }
@@ -146,16 +151,16 @@ namespace Reko.Environments.SysV
             }
         }
 
-        public override ProcedureBase GetTrampolineDestination(IEnumerable<RtlInstructionCluster> rw, IRewriterHost host)
+        public override ProcedureBase GetTrampolineDestination(Address addrInstr, IEnumerable<RtlInstruction> rw, IRewriterHost host)
         {
-            var rtlc = rw.FirstOrDefault();
-            if (rtlc == null || rtlc.Instructions.Length == 0)
+            var instr = rw.FirstOrDefault();
+            if (instr == null)
                 return null;
 
             // Match x86 pattern.
             // jmp [destination]
             Address addrTarget = null;
-            if (rtlc.Instructions[0] is RtlGoto jump)
+            if (instr is RtlGoto jump)
             {
                 if (jump.Target is ProcedureConstant pc)
                     return pc.Procedure;
@@ -174,7 +179,7 @@ namespace Reko.Environments.SysV
             if (addrTarget == null)
                 return null;
             var arch = this.Architecture;
-            ProcedureBase proc = host.GetImportedProcedure(arch, addrTarget, rtlc.Address);
+            ProcedureBase proc = host.GetImportedProcedure(arch, addrTarget, addrInstr);
             if (proc != null)
                 return proc;
             return host.GetInterceptedCall(arch, addrTarget);

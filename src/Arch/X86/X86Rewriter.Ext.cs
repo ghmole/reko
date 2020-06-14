@@ -47,7 +47,7 @@ namespace Reko.Arch.X86
 
         public void RewriteClts()
         {
-            rtlc = InstrClass.System;
+            iclass = InstrClass.System;
             var cr0 = binder.EnsureRegister(arch.GetControlRegister(0));
             m.Assign(cr0, host.PseudoProcedure("__clts", cr0.DataType, cr0));
         }
@@ -71,6 +71,14 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure("__invd", VoidType.Instance));
         }
 
+        private void RewriteInvlpg()
+        {
+            var op = SrcOp(instrCur.Operands[0]);
+            m.SideEffect(host.PseudoProcedure("__invlpg", VoidType.Instance,
+                op));
+
+        }
+
         private void RewriteLar()
         {
             m.Assign(
@@ -82,6 +90,11 @@ namespace Reko.Arch.X86
             m.Assign(
                 orw.FlagGroup(FlagM.ZF),
                 Constant.True());
+        }
+
+        private void RewriteLmsw()
+        {
+            m.SideEffect(host.PseudoProcedure("__lmsw", VoidType.Instance, SrcOp(instrCur.Operands[0])));
         }
 
         private void RewriteLsl()
@@ -96,7 +109,7 @@ namespace Reko.Arch.X86
 
         private void RewriteLxdt(string intrinsicName)
         {
-            rtlc = InstrClass.System;
+            iclass = InstrClass.System;
             m.SideEffect(
                 host.PseudoProcedure(
                     intrinsicName,
@@ -106,7 +119,7 @@ namespace Reko.Arch.X86
 
         private void RewriteSxdt(string intrinsicName)
         {
-            rtlc = InstrClass.System;
+            iclass = InstrClass.System;
             m.Assign(
                 SrcOp(instrCur.Operands[0]),
                 host.PseudoProcedure(
@@ -134,6 +147,11 @@ namespace Reko.Arch.X86
             m.SideEffect(host.PseudoProcedure(name, VoidType.Instance, SrcOp(instrCur.Operands[0])));
         }
 
+        private void RewriteSmsw()
+        {
+            var dst = SrcOp(instrCur.Operands[0]);
+            m.Assign(dst, host.PseudoProcedure("__smsw", dst.DataType));
+        }
 
         public void RewriteSfence()
         {
@@ -157,7 +175,7 @@ namespace Reko.Arch.X86
 
         private void RewriteWbinvd()
         {
-            rtlc = InstrClass.System;
+            iclass = InstrClass.System;
             m.SideEffect(host.PseudoProcedure("__wbinvd", VoidType.Instance));
         }
 

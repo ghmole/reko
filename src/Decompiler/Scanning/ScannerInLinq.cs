@@ -96,7 +96,7 @@ namespace Reko.Scanning
             var pads = ppf.FindPaddingBlocks();
             ppf.Remove(pads);
 
-            // Detect procedures from the "soup" of baslic blocks in sr.
+            // Detect procedures from the "soup" of basic blocks in sr.
             var pd = new ProcedureDetector(program, sr, this.eventListener);
             var procs = pd.DetectProcedures();
             sr.Procedures = procs;
@@ -104,7 +104,16 @@ namespace Reko.Scanning
             return sr;
         }
 
-        public ScanResults ScanInstructions(ScanResults sr)
+        /// <summary>
+        /// Shingle scan all unscanned regions of the image map, returning an unstructured
+        /// "soup" of instructions in the <see cref="ScanResults"/>.
+        /// </summary>
+        /// <param name="sr">Initial scan results, with known entry points,
+        /// procedures, etc.</param>
+        /// <returns>The <paramref name="sr"/> object, mutated to contain all the
+        /// new instructions.
+        /// </returns>
+        public ScanResults? ScanInstructions(ScanResults sr)
         {
             var ranges = FindUnscannedRanges().ToList();
             DumpRanges(ranges);
@@ -163,7 +172,7 @@ namespace Reko.Scanning
             return MakeTriples(program.ImageMap.Items.Values)
                 .Select(triple => CreateUnscannedArea(triple))
                 .Where(triple => triple.HasValue)
-                .Select(triple => triple.Value);
+                .Select(triple => triple!.Value);
         }
 
         /// <summary>
@@ -221,7 +230,7 @@ namespace Reko.Scanning
             // Determine an architecture for the item.
             var prevArch = GetBlockArchitecture(prev);
             var nextArch = GetBlockArchitecture(next);
-            IProcessorArchitecture arch = null;
+            IProcessorArchitecture? arch = null;
             if (prevArch == null)
             {
                 arch = nextArch ?? program.Architecture;
@@ -256,10 +265,10 @@ namespace Reko.Scanning
                 item.Size);
         }
 
-        private static IProcessorArchitecture GetBlockArchitecture(ImageMapItem item)
+        private static IProcessorArchitecture? GetBlockArchitecture(ImageMapItem item)
         {
             return (item is ImageMapBlock imb)
-                ? imb.Block.Procedure.Architecture
+                ? imb.Block!.Procedure.Architecture
                 : null;
         }
 

@@ -64,13 +64,17 @@ namespace Reko.Environments.MacOS.Classic
 
         public override CallingConvention GetCallingConvention(string ccName)
         {
-            if (ccName == "pascal")
-                return new PascalCallingConvention((M68kArchitecture)this.Architecture);
-            else
-                return new M68kCallingConvention((M68kArchitecture)this.Architecture);
+            switch (ccName)
+            {
+            case "pascal":
+            case "__pascal":
+                return new PascalCallingConvention((M68kArchitecture) this.Architecture);
+            default:
+                return new M68kCallingConvention((M68kArchitecture) this.Architecture);
+            }
         }
 
-        public override SystemService FindService(int vector, ProcessorState state)
+        public override SystemService FindService(int vector, ProcessorState state, SegmentMap segmentMap)
         {
             EnsureTypeLibraries(PlatformIdentifier);
             vector &= 0xFFFF;

@@ -29,7 +29,9 @@ namespace Reko.Arch.Mips
     {
         public Mnemonic Mnemonic;
 
-        public override int OpcodeAsInteger => (int)Mnemonic;
+        public override int MnemonicAsInteger => (int)Mnemonic;
+
+        public override string MnemonicAsString => Mnemonic.ToString();
 
         public override void Render(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
         {
@@ -40,7 +42,7 @@ namespace Reko.Arch.Mips
         private void WriteMnemonic(MachineInstructionWriter writer)
         {
             var name = this.Mnemonic.ToString().Replace('_', '.');
-            writer.WriteOpcode(name);
+            writer.WriteMnemonic(name);
         }
     }
 }

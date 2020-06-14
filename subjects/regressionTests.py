@@ -81,12 +81,17 @@ def cmdline_split(s):
         a.append(sub)
     return a
 
+# On Windows file removal is asynchronous but renames are atomic
+def remove_file(file):
+    os.rename(file, '%s.rmtmp' % file)
+    os.remove('%s.rmtmp' % file)
+
 # Remove output files
 def clear_dir(dir_name, files):
     for pname in files:
         for ext in output_extensions:
             if pname.endswith(ext):
-                os.remove(os.path.join(dir_name, pname))
+                remove_file(os.path.join(dir_name, pname))
 
 def strip_id_nums(dirs):
     for dir in dirs:
@@ -112,6 +117,9 @@ def strip_id_nums_for_file(file_name):
 
 def collect_jobs(dir_name, files, pool_state):
     needClear = True
+    if dir_name.endswith(".reko"):
+        clear_dir(dir_name, files)
+        needClear = False
     for pname in files:
         if pname.endswith(".dcproject"):
             if needClear:

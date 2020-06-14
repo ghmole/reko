@@ -2,6 +2,7 @@
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="12.0">
   <Import Project="..\packages\NUnit3TestAdapter.3.13.0\build\net35\NUnit3TestAdapter.props" Condition="Exists('..\packages\NUnit3TestAdapter.3.13.0\build\net35\NUnit3TestAdapter.props')" />
   <Import Project="..\packages\NUnit.3.11.0\build\NUnit.props" Condition="Exists('..\packages\NUnit.3.11.0\build\NUnit.props')" />
+  <Import Project="$(ProjectDir)..\Drivers\Common.items" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -15,7 +16,7 @@
     <OldToolsVersion>3.5</OldToolsVersion>
     <UpgradeBackupLocation>
     </UpgradeBackupLocation>
-    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <PublishUrl>publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Disk</InstallFrom>
@@ -165,14 +166,33 @@
     <Compile Include="Arch\Arc\ARCompactRewriterTests.cs" />
     <Compile Include="Arch\Arm\A64RewriterTests.cs" />
     <Compile Include="Arch\Arm\Arm64ArchitectureTests.cs" />
+    <Compile Include="Arch\Avr\Avr32DisassemblerTests.cs" />
+    <Compile Include="Arch\Avr\Avr32RewriterTests.cs" />
     <Compile Include="Arch\Blackfin\BlackfinDisassemblerTests.cs" />
     <Compile Include="Arch\Blackfin\BlackfinRewriterTests.cs" />
     <Compile Include="Arch\Cray\Cray1\Cray1DisassemblerTests.cs" />
     <Compile Include="Arch\Cray\Ymp\YmpDisassemblerTests.cs" />
     <Compile Include="Arch\Cray\Ymp\YmpRewriterTests.cs" />
+    <Compile Include="Arch\H8\H8DisassemblerTests.cs" />
+    <Compile Include="Arch\H8\H8RewriterTests.cs" />
     <Compile Include="Arch\i8051\i8051DisassemblerTests.cs" />
     <Compile Include="Arch\i8051\i8051RewriterTests.cs" />
-    <Compile Include="Arch\Intel\FastcallConventionTests.cs" />
+    <Compile Include="Arch\M68k\Assembler\M68kAssemblerTests.cs" />
+    <Compile Include="Arch\M68k\Assembler\M68kTextAssemblerTests.cs" />
+    <Compile Include="Arch\Pdp11\Assembler\Pdp11TextAssemblerTests.cs" />
+    <Compile Include="Arch\PowerPC\PowerPcDisassemblerTests.Xenon.cs" />
+    <Compile Include="Arch\PowerPC\PowerPcEmulatorTests.cs" />
+    <Compile Include="Arch\SuperH\SuperHArchitectureTests.cs" />
+    <Compile Include="Arch\UnitTestGenerationService.cs" />
+    <Compile Include="Arch\X86\Assembler\AssembleFragmentTests.cs" />
+    <Compile Include="Arch\X86\Assembler\AssemblerAdvanced.cs" />
+    <Compile Include="Arch\X86\Assembler\AssemblerBasic.cs" />
+    <Compile Include="Arch\X86\Assembler\AssemblerData.cs" />
+    <Compile Include="Arch\X86\Assembler\AssemblerOverrides.cs" />
+    <Compile Include="Arch\X86\Assembler\IntelCodeAssemblerTests.cs" />
+    <Compile Include="Arch\X86\Assembler\OperandParserTests.cs" />
+    <Compile Include="Arch\X86\Assembler\X86TextAssemblerTests.cs" />
+    <Compile Include="Arch\X86\FastcallConventionTests.cs" />
     <Compile Include="Arch\LatticeMico\LatticeMico32DisassemblerTests.cs" />
     <Compile Include="Arch\LatticeMico\LatticeMico32RewriterTests.cs" />
     <Compile Include="Arch\M6800\M6809DisassemblerTests.cs" />
@@ -182,6 +202,8 @@
     <Compile Include="Arch\MicroBlaze\MicroBlazeDisassemblerTests.cs" />
     <Compile Include="Arch\MicroBlaze\MicroBlazeRewriterTests.cs" />
     <Compile Include="Arch\Mips\MicroMipsDisassemblerTests.cs" />
+    <Compile Include="Arch\Mips\Mips16eDisassemblerTests.cs" />
+    <Compile Include="Arch\Mips\Mips16eRewriterTests.cs" />
     <Compile Include="Arch\Mips\NanoMipsDisassemblerTests.cs" />
     <Compile Include="Arch\Mos6502\EmulatorTests.cs" />
     <Compile Include="Arch\OpenRISC\OpenRISCDisassemblerTests.cs" />
@@ -248,6 +270,8 @@
     <Compile Include="Core\Lib\BTreeDictionaryTests.cs" />
     <Compile Include="Core\Lib\Float16Tests.cs" />
     <Compile Include="Core\Lib\MBFFloatTests.cs" />
+    <Compile Include="Core\Output\SegmentFilePolicyTests.cs" />
+    <Compile Include="Core\Output\SingleFilePolicyTests.cs" />
     <Compile Include="Core\Pascal\PascalLexerTests.cs" />
     <Compile Include="Core\Pascal\PascalParserTests.cs" />
     <Compile Include="Arch\MSP430\MSP430DisassemblerTests.cs" />
@@ -265,7 +289,7 @@
     <Compile Include="Arch\SuperH\SuperHDisassemblerTests.cs" />
     <Compile Include="Arch\SuperH\SuperHRewriterTests.cs" />
     <Compile Include="Analysis\SsaStateTests.cs" />
-    <Compile Include="Arch\Intel\X86FrameApplicationBuilderTests.cs" />
+    <Compile Include="Arch\X86\X86FrameApplicationBuilderTests.cs" />
     <Compile Include="Arch\Tlcs\Tlcs900DisassemblerTests.cs" />
     <Compile Include="Arch\Tlcs\Tlcs900RewriterTests.cs" />
     <Compile Include="Arch\Tlcs\Tlcs90DisassemblerTests.cs" />
@@ -293,6 +317,7 @@
     <Compile Include="Core\Types\DataTypeComparerTests.cs" />
     <Compile Include="DecompiledFileServiceTests.cs" />
     <Compile Include="Drivers\CmdLine\CmdLineDriverTests.cs" />
+    <Compile Include="Environments\MacOS\Classic\A5RelocatorTests.cs" />
     <Compile Include="Environments\MacOS\Classic\MacOSClassicTests.cs" />
     <Compile Include="Environments\MacOS\Classic\MacsBugSymbolScannerTests.cs" />
     <Compile Include="Environments\MacOS\Classic\MpwPascalInterfaceLoaderTests.cs" />
@@ -303,7 +328,10 @@
     <Compile Include="Environments\MacOS\Classic\TypeImporterTests.cs" />
     <Compile Include="Environments\RT11\LdaFileLoaderTests.cs" />
     <Compile Include="Environments\SysV\ArchSpecific\Arm32CallingConventionTests.cs" />
+    <Compile Include="Environments\SysV\ArchSpecific\Arm64CallingConventionTests.cs" />
     <Compile Include="Environments\SysV\ArchSpecific\Avr8CallingConventionTests.cs" />
+    <Compile Include="Environments\SysV\ArchSpecific\PowerPc64CallingConventionTests.cs" />
+    <Compile Include="Environments\SysV\ArchSpecific\XtensaCallingConventionTests.cs" />
     <Compile Include="Environments\SysV\GccMangledNameParserTests.cs" />
     <Compile Include="Environments\Windows\AlphaCallingConventionTests.cs" />
     <Compile Include="Environments\Windows\BorlandMangledNameParserTests.cs" />
@@ -326,7 +354,11 @@
     <Compile Include="ImageLoaders\IntelHex\HexLoaderTests.cs" />
     <Compile Include="ImageLoaders\MzExe\CodeView\CodeViewTypeLoaderTests.cs" />
     <Compile Include="ImageLoaders\MzExe\CodeView\TypeBuilderTests.cs" />
-    <Compile Include="ImageLoaders\OdbgScript\OllyLang.Tests.cs" />
+    <Compile Include="ImageLoaders\OdbgScript\OllyScriptHostTests.cs" />
+    <Compile Include="ImageLoaders\OdbgScript\OllyLangInterpreterTests.cs" />
+    <Compile Include="ImageLoaders\OdbgScript\OllyScriptParserTests.cs" />
+    <Compile Include="ImageLoaders\Omf\OmfLoaderTests.cs" />
+    <Compile Include="ImageLoaders\Srec\SrecLoaderTests.cs" />
     <Compile Include="Loading\NullImageLoaderTests.cs" />
     <Compile Include="Loading\SymbolLoadingServiceTests.cs" />
     <Compile Include="ImageLoaders\Llvm\LlvmLexerTests.cs" />
@@ -357,7 +389,7 @@
     <Compile Include="Analysis\SequenceIdentifierGeneratorTests.cs" />
     <Compile Include="Analysis\UsedRegisterFinderTests.cs" />
     <Compile Include="Analysis\UserSignatureBuilderTests.cs" />
-    <Compile Include="Arch\Intel\X86InstructionComparer.Tests.cs" />
+    <Compile Include="Arch\X86\X86InstructionComparer.Tests.cs" />
     <Compile Include="Arch\Mips\MipsPointerScannerTests.cs" />
     <Compile Include="Arch\Vax\VaxDisassemblerTests.cs" />
     <Compile Include="Arch\Vax\VaxRewriterTests.cs" />
@@ -423,10 +455,10 @@
     <Compile Include="Arch\Arm\T32RewriterTests.cs" />
     <Compile Include="Arch\Cil\CilDisassemblerTests.cs" />
     <Compile Include="Arch\DisassemblerTestBase.cs" />
-    <Compile Include="Arch\Intel\AssemblerFragment.cs" />
-    <Compile Include="Arch\Intel\FstswChainMatcherTests.cs" />
-    <Compile Include="Arch\Intel\X86EmulatorTests.cs" />
-    <Compile Include="Arch\Intel\X86PointerScannerTests.cs" />
+    <Compile Include="Arch\X86\AssemblerFragment.cs" />
+    <Compile Include="Arch\X86\FstswChainMatcherTests.cs" />
+    <Compile Include="Arch\X86\X86EmulatorTests.cs" />
+    <Compile Include="Arch\X86\X86PointerScannerTests.cs" />
     <Compile Include="Arch\M68k\M68kStateTests.cs" />
     <Compile Include="Arch\M68k\M68kPointerScannerTests.cs" />
     <Compile Include="Arch\M68k\OperandRewriterTests.cs" />
@@ -446,9 +478,6 @@
     <Compile Include="Arch\Sparc\SparcRewriterTests.cs" />
     <Compile Include="Arch\Z80\DisassemblerTests.cs" />
     <Compile Include="Arch\Z80\RewriterTests.cs" />
-    <Compile Include="Assemblers\M68k\M68kAssemblerTests.cs" />
-    <Compile Include="Assemblers\M68k\M68kTextAssemblerTests.cs" />
-    <Compile Include="Assemblers\Pdp11\Pdp11TextAssemblerTests.cs" />
     <Compile Include="Core\AbsynCodeFormatterTests.cs" />
     <Compile Include="Core\CodeEmitterTests.cs" />
     <Compile Include="Core\ImageReaderTests.cs" />
@@ -527,32 +556,23 @@
     <Compile Include="Mocks\RtlTraceBuilder.cs" />
     <Compile Include="Scanning\BackwalkerTests.cs" />
     <Compile Include="Scanning\Backwalker_x86_Tests.cs" />
-    <Compile Include="Arch\Intel\DeadConditionFlagsFinderTests.cs" />
-    <Compile Include="Arch\Intel\X86DisassemblerTests.cs" />
-    <Compile Include="Arch\Intel\Fragments\Factorial.cs" />
-    <Compile Include="Arch\Intel\ImportResolution.cs" />
-    <Compile Include="Arch\Intel\X86ArchitectureTests.cs" />
-    <Compile Include="Arch\Intel\IntelAssemblerTests.cs" />
-    <Compile Include="Arch\Intel\IntelInstructionTrieTests.cs" />
-    <Compile Include="Arch\Intel\IntelRegisterTests.cs" />
+    <Compile Include="Arch\X86\X86DisassemblerTests.cs" />
+    <Compile Include="Arch\X86\Fragments\Factorial.cs" />
+    <Compile Include="Arch\X86\X86ArchitectureTests.cs" />
+    <Compile Include="Arch\X86\IntelAssemblerTests.cs" />
+    <Compile Include="Arch\X86\IntelInstructionTrieTests.cs" />
+    <Compile Include="Arch\X86\IntelRegisterTests.cs" />
     <Compile Include="Environments\Msdos\MsdosPlatformTests.cs" />
-    <Compile Include="Arch\Intel\OperandRewriterRealModeTests.cs" />
-    <Compile Include="Arch\Intel\OperandRewriterTests.cs" />
-    <Compile Include="Arch\Intel\Rewrite32.cs" />
-    <Compile Include="Arch\Intel\RewriteFpuInstructionTests.cs" />
-    <Compile Include="Arch\Intel\RewriterTests.cs" />
-    <Compile Include="Arch\Intel\RewriterTests2.cs" />
-    <Compile Include="Arch\Intel\X86RewriterTests.cs" />
+    <Compile Include="Arch\X86\OperandRewriterRealModeTests.cs" />
+    <Compile Include="Arch\X86\OperandRewriterTests.cs" />
+    <Compile Include="Arch\X86\Rewrite32.cs" />
+    <Compile Include="Arch\X86\RewriteFpuInstructionTests.cs" />
+    <Compile Include="Arch\X86\RewriterTests.cs" />
+    <Compile Include="Arch\X86\RewriterTests2.cs" />
+    <Compile Include="Arch\X86\X86RewriterTests.cs" />
     <Compile Include="Arch\M68k\M68kDisassemblerTests.cs" />
     <Compile Include="Arch\PowerPC\PowerPcArchitectureTests.cs" />
     <Compile Include="Arch\PowerPC\PowerPcDisassemblerTests.cs" />
-    <Compile Include="Assemblers\x86\AssembleFragmentTests.cs" />
-    <Compile Include="Assemblers\x86\AssemblerAdvanced.cs" />
-    <Compile Include="Assemblers\x86\AssemblerBasic.cs" />
-    <Compile Include="Assemblers\x86\AssemblerData.cs" />
-    <Compile Include="Assemblers\x86\AssemblerOverrides.cs" />
-    <Compile Include="Assemblers\x86\IntelCodeAssemblerTests.cs" />
-    <Compile Include="Assemblers\x86\OperandParserTests.cs" />
     <Compile Include="Core\AddressTests.cs" />
     <Compile Include="Core\ApplicationBuilderTests.cs" />
     <Compile Include="Core\Assemblers\SymbolTableTests.cs" />
@@ -595,7 +615,7 @@
     <Compile Include="Core\Serialization\SerializedServiceTests.cs" />
     <Compile Include="Core\Serialization\SerializedSignatureTests.cs" />
     <Compile Include="Core\Serialization\SerializedTypeTests.cs" />
-    <Compile Include="Arch\Intel\X86CallingConventionTests.cs" />
+    <Compile Include="Arch\X86\X86CallingConventionTests.cs" />
     <Compile Include="Core\SignatureLibraryTests.cs" />
     <Compile Include="Core\StructureTypeTests.cs" />
     <Compile Include="Core\TypeComparerTests.cs" />
@@ -838,6 +858,10 @@
       <Project>{47B16677-2BFC-4A5C-A830-E1683C574AEC}</Project>
       <Name>Cray</Name>
     </ProjectReference>
+    <ProjectReference Include="..\Arch\H8\H8.csproj">
+      <Project>{BA8B271C-4A48-4E32-B55B-26B54297833F}</Project>
+      <Name>H8</Name>
+    </ProjectReference>
     <ProjectReference Include="..\Arch\i8051\i8051.csproj">
       <Project>{AB5DDEB2-87C0-42C7-8CD3-72CB2B1282FB}</Project>
       <Name>i8051</Name>
@@ -942,18 +966,6 @@
       <Project>{33CE0D6A-8762-4505-975F-EE61C355FD04}</Project>
       <Name>zSeries</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Assemblers\M68k\M68kAssembler.csproj">
-      <Project>{FD6AD906-BED1-4AC1-A7C5-0A04CCA2D7DC}</Project>
-      <Name>M68kAssembler</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Assemblers\Pdp11\Pdp11Assembler.csproj">
-      <Project>{3BB6B0FB-6686-428B-9DC9-A32F349E50E6}</Project>
-      <Name>Pdp11Assembler</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Assemblers\x86\X86Assembler.csproj">
-      <Project>{3805DE2C-659A-442D-8C34-E88822A4D27C}</Project>
-      <Name>X86Assembler</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Core\Core.csproj">
       <Project>{5C315C78-1F97-4B16-81AA-917284969DFE}</Project>
       <Name>Core</Name>
@@ -1046,9 +1058,9 @@
       <Project>{4A298321-9855-43DE-AA9C-79E4EFA0AE56}</Project>
       <Name>Windows</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Environments\Xbox360\Xbox360.csproj">
+    <ProjectReference Include="..\Environments\Xbox\Xbox.csproj">
       <Project>{e45b5b79-17ed-4b74-a68b-ce9119c51677}</Project>
-      <Name>Xbox360</Name>
+      <Name>Xbox</Name>
     </ProjectReference>
     <ProjectReference Include="..\Environments\ZX81\ZX81.csproj">
       <Project>{2b4e0f2e-b458-4bc2-96ac-6a4d9324f974}</Project>
@@ -1110,6 +1122,10 @@
       <Project>{0e00ed86-372c-4497-85bb-428bdd1c5ccf}</Project>
       <Name>Omf</Name>
     </ProjectReference>
+    <ProjectReference Include="..\ImageLoaders\Srec\Srec.csproj">
+      <Project>{6feaf3bb-48d3-4301-9ce5-a1a274db97f5}</Project>
+      <Name>Srec</Name>
+    </ProjectReference>
     <ProjectReference Include="..\ImageLoaders\TypeLib\TypeLib.csproj">
       <Project>{a4def935-217c-4107-998c-c7845893cfa0}</Project>
       <Name>TypeLib</Name>
@@ -1152,7 +1168,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Arch\Intel\X86StateTests.cs" />
+    <Compile Include="Arch\X86\X86StateTests.cs" />
     <Compile Include="Evaluation\Add_id_c_id_Rule.cs" />
     <Compile Include="Evaluation\Add_id_c_id_RuleTest.cs" />
     <Compile Include="Evaluation\ExpressionMatcherTests.cs" />
@@ -1199,20 +1215,6 @@
   <ItemGroup>
     <ExternalComponents Include="$(SolutionDir)..\external\Capstone.NET\*.dll" />
     <ExternalComponents Include="$(SolutionDir)..\external\Capstone.NET\*.pdb" />
-  </ItemGroup>
-  <!-- TODO: Duplicated in Common.items -->
-  <ItemGroup Condition=" '$(OS)|$(Platform)' == 'Windows_NT|x86'">
-    <Architectures Include="$(SolutionDir)Native\build\$(Platform)\$(Configuration)\ArmNative\ArmNative.dll" />
-    <Architectures Include="$(SolutionDir)Native\build\$(Platform)\$(Configuration)\ArmNative\ArmNative.pdb" />
-    <ExternalComponents Include="$(SolutionDir)..\external\Capstone\X86\capstone*.dll" />
-  </ItemGroup>
-  <ItemGroup Condition=" '$(OS)|$(Platform)' == 'Windows_NT|x64'">
-    <Architectures Include="$(SolutionDir)Native\build\$(Platform)\$(Configuration)\ArmNative\ArmNative.dll" />
-    <Architectures Include="$(SolutionDir)Native\build\$(Platform)\$(Configuration)\ArmNative\ArmNative.pdb" />
-    <ExternalComponents Include="$(SolutionDir)..\external\Capstone\X64\capstone.dll" />
-  </ItemGroup>
-  <ItemGroup Condition=" '$(OS)' == 'Unix'">
-    <Architectures Include="$(SolutionDir)Native\build\$(Platform)\$(Configuration)\ArmNative\libArmNative.so" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config">

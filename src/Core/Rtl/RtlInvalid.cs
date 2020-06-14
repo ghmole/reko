@@ -28,6 +28,11 @@ namespace Reko.Core.Rtl
 {
     public sealed class RtlInvalid : RtlInstruction
     {
+        public RtlInvalid()
+        {
+            this.Class = InstrClass.Invalid;
+        }
+
         public override T Accept<T>(RtlInstructionVisitor<T> visitor)
         {
             return visitor.VisitInvalid(this);

@@ -33,7 +33,7 @@ namespace Reko.Arch.M68k
     {
         private void RewriteBkpt()
         {
-            rtlc = InstrClass.Invalid;
+            iclass = InstrClass.Invalid;
             var src = this.orw.RewriteSrc(instr.Operands[0], instr.Address);
             m.SideEffect(host.PseudoProcedure("__bkpt", VoidType.Instance, src));
         }
@@ -41,7 +41,7 @@ namespace Reko.Arch.M68k
         private void RewriteMoves()
         {
             var src = this.orw.RewriteSrc(instr.Operands[0], instr.Address);
-            var dst = orw.RewriteDst(instr.Operands[1], instr.Address, instr.dataWidth, src, (s, d) =>
+            var dst = orw.RewriteDst(instr.Operands[1], instr.Address, instr.DataWidth, src, (s, d) =>
                 host.PseudoProcedure("__moves", VoidType.Instance, s));
         }
 

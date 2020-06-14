@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core;
+using Reko.Core.Expressions;
 using Reko.Core.Rtl;
 using Reko.Core.Types;
 using System;
@@ -76,9 +77,16 @@ namespace Reko.Arch.PowerPC
         {
             var spr = RewriteOperand(instr.Operands[0]);
             var reg = RewriteOperand(instr.Operands[1]);
-            m.Assign(
-                reg, 
-                host.PseudoProcedure("__read_spr", PrimitiveType.Word32, spr));
+            if (spr is Identifier id)
+            {
+                m.Assign(reg, id);
+            }
+            else
+            {
+                m.Assign(
+                    reg,
+                    host.PseudoProcedure("__read_spr", PrimitiveType.Word32, spr));
+            }
         }
 
         private void RewriteMtmsr(PrimitiveType dt)
@@ -91,7 +99,14 @@ namespace Reko.Arch.PowerPC
         {
             var spr = RewriteOperand(instr.Operands[0]);
             var reg = RewriteOperand(instr.Operands[1]);
-            m.SideEffect(host.PseudoProcedure("__write_spr", PrimitiveType.Word32, spr, reg));
+            if (spr is Identifier id)
+            {
+                m.Assign(id, reg);
+            }
+            else
+            {
+                m.SideEffect(host.PseudoProcedure("__write_spr", PrimitiveType.Word32, spr, reg));
+            }
         }
 
         private void RewriteRfi()
@@ -100,6 +115,17 @@ namespace Reko.Arch.PowerPC
             var srr1 = binder.EnsureRegister(arch.SpRegisters[27]);
             m.SideEffect(host.PseudoProcedure("__write_msr", PrimitiveType.Word32, srr1));
             m.Goto(srr0);
+        }
+
+        private void RewriteTlbie()
+        {
+            var src = RewriteOperand(instr.Operands[0]);
+            m.SideEffect(host.PseudoProcedure("__tlbie", VoidType.Instance, src));
+        }
+
+        private void RewriteTlbsync()
+        {
+            m.SideEffect(host.PseudoProcedure("__tlbie", VoidType.Instance));
         }
     }
 }

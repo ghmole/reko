@@ -23,6 +23,7 @@ using Reko.Arch.Blackfin;
 using Reko.Core;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -36,17 +37,12 @@ namespace Reko.UnitTests.Arch.Blackfin
 
         public BlackfinDisassemblerTests()
         {
-            this.arch = new BlackfinArchitecture("blackfin");
+            this.arch = new BlackfinArchitecture(new ServiceContainer(), "blackfin");
         }
 
         public override IProcessorArchitecture Architecture => arch;
 
         public override Address LoadAddress { get; } = Address.Ptr32(0x00100000);
-
-        protected override ImageWriter CreateImageWriter(byte[] bytes)
-        {
-            return arch.CreateImageWriter(new MemoryArea(LoadAddress, bytes), LoadAddress);
-        }
 
         [Test]
         public void BlackfinDasm_Jump_indirect()
