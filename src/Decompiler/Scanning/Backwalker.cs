@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -219,9 +219,9 @@ namespace Reko.Scanning
                 //$BUG: this is rubbish, the simplifier should _just_
                 // perform simplification, no substitutions.
                 var src = assSrc == Constant.Invalid ? ass.Item2 : assSrc;
-                var castSrc = src as Cast;
-                if (castSrc != null)
-                    src = castSrc.Expression;
+                var cvtSrc = src as Conversion;
+                if (cvtSrc != null)
+                    src = cvtSrc.Expression;
                 var regDst = RegisterOf(assDst);
                 if (src is MemoryAccess memSrc &&
                     (regDst == Index ||
@@ -230,7 +230,7 @@ namespace Reko.Scanning
                     // R = Mem[xxx]
                     var rIdx = Index;
                     var rDst = RegisterOf(assDst);
-                    if ((rDst != host.GetSubregister(rIdx, 0, 8) && castSrc == null) &&
+                    if ((rDst != host.GetSubregister(rIdx, 0, 8) && cvtSrc == null) &&
                         rDst != rIdx)
                     {
                         Index = RegisterStorage.None;
@@ -238,8 +238,7 @@ namespace Reko.Scanning
                         return true;
                     }
 
-                    var binEa = memSrc.EffectiveAddress as BinaryExpression;
-                    if (binEa == null)
+                    if (!(memSrc.EffectiveAddress is BinaryExpression binEa))
                     {
                         Index = RegisterStorage.None;
                         IndexExpression = null;
@@ -341,7 +340,7 @@ namespace Reko.Scanning
 
         private RegisterStorage RegisterOf(Expression? e)
         {
-            if (e is Cast c)
+            if (e is Conversion c)
                 e = c.Expression;
             if (e is Identifier id && id.Storage is RegisterStorage reg)
                 return reg;
@@ -370,7 +369,7 @@ namespace Reko.Scanning
         [Conditional("DEBUG")]
         public void DumpBlock(RegisterStorage regIdx, Block block)
         {
-            Debug.Print("Backwalking register {0} through block: {1}", regIdx, block.Name);
+            Debug.Print("Backwalking register {0} through block: {1}", regIdx, block.DisplayName);
             foreach (var stm in block.Statements  )
             {
                 Debug.Print("    {0}", stm.Instruction);
@@ -446,8 +445,7 @@ namespace Reko.Scanning
                 Stride = 1;
                 return RegisterOf(id);
             }
-            var bin = mem.EffectiveAddress as BinaryExpression;
-            if (bin == null)
+            if (!(mem.EffectiveAddress is BinaryExpression bin))
                 return null;
 
             var idLeft = bin.Left as Identifier;
@@ -505,8 +503,7 @@ namespace Reko.Scanning
 
         private void DetermineVector(MemoryAccess mem, Expression possibleVector)
         {
-            var vector = possibleVector as Constant;
-            if (vector == null)
+            if (!(possibleVector is Constant vector))
                 return;
             if (vector.DataType is PrimitiveType pt && pt.Domain == Domain.SignedInt)
                 return;

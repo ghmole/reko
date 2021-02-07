@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -100,6 +100,7 @@ namespace Reko.Core.Serialization
                     ShowBytesInDisassembly = program.User.ShowBytesInDisassembly,
                     ExtractResources = program.User.ExtractResources,
                     OutputFilePolicy = program.User.OutputFilePolicy,
+                    AggressiveBranchRemoval = program.User.AggressiveBranchRemoval,
                 },
                 DisassemblyDirectory =  ConvertToProjectRelativePath(projectAbsPath, program.DisassemblyDirectory),
                 SourceDirectory =       ConvertToProjectRelativePath(projectAbsPath, program.SourceDirectory),
@@ -120,11 +121,14 @@ namespace Reko.Core.Serialization
                     var regValue = rv.Value;
                     if (reg is null || regValue is null)
                         continue;
+                    var value = regValue.IsValid
+                        ? string.Format($"{{0:X{reg.DataType.Size * 2}}}", regValue.ToUInt64())
+                        : "*";
                     sRegValues.Add(new RegisterValue_v2
                     {
                         Address = sAddr,
                         Register = reg.Name,
-                        Value = string.Format($"{{0:X{reg.DataType.Size * 2}}}", regValue.ToUInt64()),
+                        Value = value,
                     });
                 }
             }

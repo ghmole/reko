@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ namespace Reko.UnitTests.Arch.Tlcs
     {
         public SuperHDisassemblerTests()
         {
-            this.Architecture = new SuperHLeArchitecture(new ServiceContainer(), "superH");
+            this.Architecture = new SuperHLeArchitecture(new ServiceContainer(), "superH", new Dictionary<string, object>());
             this.LoadAddress = Address.Ptr32(0x00010000);
         }
 

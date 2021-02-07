@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Moq;
 using NUnit.Framework;
 using Reko.Arch.LatticeMico;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -35,7 +36,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
     [TestFixture]
     public class LatticeMico32RewriterTests : RewriterTestBase
     {
-        private readonly LatticeMico32Architecture arch = new LatticeMico32Architecture(CreateServiceContainer(), "latticeMico32");
+        private readonly LatticeMico32Architecture arch = new LatticeMico32Architecture(CreateServiceContainer(), "latticeMico32", new Dictionary<string, object>());
         private readonly Address addrLoad = Address.Ptr32(0x00100000);
 
         public override IProcessorArchitecture Architecture => arch;
@@ -324,7 +325,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("122DFFFF"); // lb	r13,(r17-1)
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r13 = (int32) Mem0[r17 - 1<i32>:int8]");
+                "1|L--|r13 = CONVERT(Mem0[r17 - 1<i32>:int8], int8, int32)");
         }
 
         [Test]
@@ -333,7 +334,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("4025FFFF"); // lbu	r5,(r1-1)
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r5 = (word32) Mem0[r1 - 1<i32>:byte]");
+                "1|L--|r5 = CONVERT(Mem0[r1 - 1<i32>:byte], byte, word32)");
         }
 
         [Test]
@@ -342,7 +343,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("1D92FFFE"); // lh	r18,(r12-2)
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r18 = (int32) Mem0[r12 - 2<i32>:int16]");
+                "1|L--|r18 = CONVERT(Mem0[r12 - 2<i32>:int16], int16, int32)");
         }
 
         [Test]
@@ -351,7 +352,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("2EC9FFFE"); // lhu	r9,(r22-2)
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r9 = (word32) Mem0[r22 - 2<i32>:word16]");
+                "1|L--|r9 = CONVERT(Mem0[r22 - 2<i32>:word16], word16, word32)");
         }
 
         [Test]
@@ -459,7 +460,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("B396D800"); // sextb	fp,sp
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|fp = (int32) (int8) sp");
+                "1|L--|fp = CONVERT(SLICE(sp, int8, 0), int8, int32)");
         }
 
         [Test]
@@ -468,7 +469,7 @@ namespace Reko.UnitTests.Arch.LatticeMico
             Given_HexString("DCC84000"); // sexth	r8,r6
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r8 = (int32) (int16) r6");
+                "1|L--|r8 = CONVERT(SLICE(r6, int16, 0), int16, int32)");
         }
 
         [Test]

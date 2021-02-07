@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -303,7 +303,7 @@ namespace Reko.Core.CLanguage
 
         private void ApplyCallConvention(CTokenType convention)
         {
-            if (callingConvention != CTokenType.None)
+            if (callingConvention != CTokenType.None && callingConvention != convention)
                 throw new FormatException(string.Format("Unexpected extra calling convention specifier '{0}'.", callingConvention));
             callingConvention = convention;
         }
@@ -399,7 +399,9 @@ namespace Reko.Core.CLanguage
         {
             if (domain != Domain.None && basicType == CBasicType.None)
                 basicType = CBasicType.Int;
-            byteSize = platform.GetByteSizeFromCBasicType(basicType);
+            var bitSize = platform.GetBitSizeFromCBasicType(basicType);
+            var memoryUnitBitSize = platform.Architecture.MemoryGranularity;
+            this.byteSize = (bitSize + (memoryUnitBitSize - 1)) / memoryUnitBitSize;
             var d = domain;
             if (d == Domain.None)
                 d = Domain.SignedInt;
@@ -420,7 +422,7 @@ namespace Reko.Core.CLanguage
             if (!symbolTable.NamedTypes.TryGetValue(typeDefName.Name, out var type))
             {
                 throw new ApplicationException(string.Format(
-                        "error: type name {0} not defined.",
+                        "Type name {0} not defined.",
                         typeDefName.Name ?? "(null)"));
             }
             byteSize = type.Accept(symbolTable.Sizer);

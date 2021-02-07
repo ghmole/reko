@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ namespace Reko.Typing
         private readonly Dictionary<ushort, Identifier> mpSelectorToSegId;
         private readonly DecompilerEventListener eventListener;
         private Constant? c;
+        private Expression? basePtr;
 		private PrimitiveType? pOrig;
 		private bool dereferenced;
 
@@ -67,13 +68,14 @@ namespace Reko.Typing
         /// <param name="c"></param>
         /// <param name="dereferenced"></param>
         /// <returns></returns>
-        public Expression Rewrite(Constant c, bool dereferenced)
+        public Expression Rewrite(Constant c, Expression? basePtr, bool dereferenced)
         {
             this.c = c;
+            this.basePtr = basePtr;
             DataType dtInferred = c.DataType;
             if (dtInferred == null)
             {
-                eventListener.Warn(new NullCodeLocation(""),
+                eventListener.Warn(
                     $"The equivalence class {c.TypeVariable!.Name} has a null data type");
                 dtInferred = c.TypeVariable.DataType;
             }
@@ -91,14 +93,13 @@ namespace Reko.Typing
             return dt.Accept(this);
         }
 
-        public Expression Rewrite(Address addr, bool dereferenced)
+        public Expression Rewrite(Address addr, Expression? basePtr, bool dereferenced)
         {
             if (addr.Selector.HasValue)
             {
                 if (!mpSelectorToSegId.TryGetValue(addr.Selector.Value, out Identifier segId))
                 {
                     eventListener.Warn(
-                        new NullCodeLocation(""),
                         "Selector {0:X4} has no known segment.",
                         addr.Selector.Value);
                     return addr;
@@ -123,7 +124,7 @@ namespace Reko.Typing
                     addr.Offset);
 
                 var f = EnsureFieldAtOffset(baseType, dt.Pointee, c.ToInt32());
-                Expression ex = new FieldAccess(dt, new Dereference(ptrSeg, segId), f);
+                Expression ex = new FieldAccess(f.DataType, new Dereference(ptrSeg, segId), f);
                 if (dereferenced || dt.Pointee is ArrayType)
                 {
                     return ex;
@@ -215,7 +216,9 @@ namespace Reko.Typing
 			Pointer p = (Pointer) memptr.BasePointer;
 			EquivalenceClass eq = (EquivalenceClass) p.Pointee;
 			StructureType baseType = (StructureType) eq.DataType;
-			Expression baseExpr = new ScopeResolution(baseType);
+			Expression baseExpr = this.basePtr != null
+				? new Dereference(this.basePtr.DataType, this.basePtr)
+                : (Expression) new ScopeResolution(baseType);
 
             var dt = memptr.Pointee.ResolveAs<DataType>()!;
             var f = EnsureFieldAtOffset(baseType, dt, c!.ToInt32());
@@ -228,7 +231,7 @@ namespace Reko.Typing
 			{
                 if (f.DataType is ArrayType array)
                 {
-                    ex.DataType = new MemberPointer(p, array.ElementType, platform.PointerType.Size);
+                    ex.DataType = new MemberPointer(p, array.ElementType, platform.PointerType.BitSize);
                 }
                 else
                 {

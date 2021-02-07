@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,12 +30,7 @@ namespace Reko.Core.Types
     /// </summary>
 	public class StructureField : Field
 	{
-        public StructureField(int offset, DataType type) : base(type)
-		{
-            this.Offset = offset;
-		}
-
-		public StructureField(int offset, DataType type, string? name) : base(type)
+		public StructureField(int offset, DataType type, string? name = null) : base(type)
 		{
             this.Offset = offset;
             this.name = name;
@@ -63,13 +58,17 @@ namespace Reko.Core.Types
             return NamingPolicy.Instance.Types.StructureFieldName(this, this.name);
         }
 
-        public static int ToOffset(Constant? offset)
+        public static int? ToOffset(Constant? offset)
         {
             if (offset == null)
                 return 0;
-            PrimitiveType pt = (PrimitiveType) offset.DataType;
+            PrimitiveType? pt = offset.DataType.ResolveAs<PrimitiveType>();
+            if (pt is null)
+                return null;
             if (pt.Domain == Domain.SignedInt)
                 return (int) offset.ToInt32();
+            else if (pt.Domain == Domain.Real)
+                return null;
             else
                 return (int) offset.ToUInt32();
         }
@@ -82,7 +81,9 @@ namespace Reko.Core.Types
 
 	public class StructureFieldCollection : ICollection<StructureField>
 	{
-        private List<StructureField> innerList = new List<StructureField>();
+        private const int BinarySearchLimit = 0;
+
+        private readonly List<StructureField> innerList = new List<StructureField>();
 
         public StructureField this[int i]
         {
@@ -94,7 +95,7 @@ namespace Reko.Core.Types
 			return Add(new StructureField(offset, dt));
 		}
 
-		public StructureField Add(int offset, DataType dt, string name)
+		public StructureField Add(int offset, DataType dt, string? name)
 		{
 			return Add(new StructureField(offset, dt, name));
 		}
@@ -103,20 +104,74 @@ namespace Reko.Core.Types
 		public StructureField Add(StructureField f)
 		{
 			int i;
-			for (i = 0; i < innerList.Count; ++i)
-			{
-				var ff = innerList[i];
-				if (f.Offset == ff.Offset)
-				{
-					if (f.DataType == ff.DataType)
-						return ff;
-				}
-				if (f.Offset <= ff.Offset)
-					break;
-			}
-			innerList.Insert(i, f);
-            return f;
+            int c = innerList.Count;
+            if (c >= BinarySearchLimit)
+            {
+                for (i = 0; i < innerList.Count; ++i)
+                {
+                    var ff = innerList[i];
+                    if (f.Offset == ff.Offset)
+                    {
+                        if (f.DataType == ff.DataType)
+                            return ff;
+                    }
+                    if (f.Offset <= ff.Offset)
+                        break;
+                }
+                innerList.Insert(i, f);
+                return f;
+            }
+            else
+            {
+                i = 0;
+                {
+                    int iMax = c;
+                    int iMin = 0;
+                    while (iMin < iMax)
+                    {
+                        i = iMin + (iMax - iMin) / 2;
+                        var ff = innerList[i];
+                        if (ff.Offset > f.Offset)
+                        {
+                            iMax = i;
+                        }
+                        else
+                        {
+                            iMin = i + 1;
+                        }
+                    }
+                    if (i < c)
+                    {
+                        var fff = innerList[i];
+                        if (f.Offset == fff.Offset)
+                        {
+                            if (f.DataType == fff.DataType)
+                                return fff;
+                            i = i + 1;
+                        }
+                        else
+                        {
+                            i = iMax;
+                        }
+                    }
+                }
+                innerList.Insert(i, f); //$PERF: slow...
+                return f;
+            }
 		}
+
+        private void Dump(int iFail)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("== Order violated ==");
+            for (int i = 0; i < innerList.Count; ++i)
+            {
+                var f = innerList[i];
+                sb.AppendFormat("{0} {1:X8} {2}", i == iFail ? "*" : " ", f.Offset, f.Name);
+                sb.AppendLine();
+            }
+            throw new Exception(sb.ToString());
+        }
 
         void ICollection<StructureField>.Add(StructureField f)
         {
@@ -138,12 +193,37 @@ namespace Reko.Core.Types
         /// <returns>The requested StructureField if it exists at <paramref>offset</paramref>, otherwise null.</returns>
         public StructureField? AtOffset(int offset)
         {
+            if (innerList.Count >= BinarySearchLimit)
+            {
             foreach (StructureField f in innerList)
             {
                 if (f.Offset == offset)
                     return f;
             }
             return null;
+        }
+            else
+            {
+                int iMin = 0;
+                int iMax = innerList.Count - 1;
+                while (iMin <= iMax)
+                {
+                    int iMid = iMin + (iMax - iMin) / 2;
+                    var f = innerList[iMid];
+                    int cmp = f.Offset - offset;
+                    if (f.Offset == offset)
+                        return f;
+                    else if (f.Offset < offset)
+                    {
+                        iMin = iMid + 1;
+                    }
+                    else
+                    {
+                        iMax = iMid - 1;
+                    }
+                }
+                return null;
+            }
         }
 
         /// <summary>

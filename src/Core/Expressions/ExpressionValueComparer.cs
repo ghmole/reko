@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,6 +88,17 @@ namespace Reko.Core.Expressions
                 {
                     Cast c = (Cast)obj;
                     return GetHashCodeImpl(c.Expression) * 43;
+                });
+            Add(typeof(Conversion),
+                (ea, eb) =>
+                {
+                    Conversion a = (Conversion) ea, b = (Conversion) eb;
+                    return EqualsImpl(a.Expression, b.Expression);
+                },
+                obj =>
+                {
+                    Conversion c = (Conversion) obj;
+                    return GetHashCodeImpl(c.Expression) * 47;
                 });
             Add(typeof(ConditionOf),
                 (ea, eb) =>
@@ -411,7 +422,7 @@ namespace Reko.Core.Expressions
 
         #region IEqualityComparer Members
 
-        public bool Equals(Expression x, Expression y)
+        public bool Equals(Expression? x, Expression? y)
         {
             if (x == null && y == null)
                 return true;

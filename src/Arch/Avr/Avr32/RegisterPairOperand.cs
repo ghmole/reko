@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,11 +36,11 @@ namespace Reko.Arch.Avr.Avr32
         public RegisterStorage HiRegister { get; }
         public RegisterStorage LoRegister { get; }
 
-        public override void Write(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        protected override void DoRender(MachineInstructionRenderer renderer, MachineInstructionRendererOptions options)
         {
-            writer.WriteString(HiRegister.Name);
-            writer.WriteString(":");
-            writer.WriteString(LoRegister.Name);
+            renderer.WriteString(HiRegister.Name);
+            renderer.WriteString(":");
+            renderer.WriteString(LoRegister.Name);
         }
     }
 }

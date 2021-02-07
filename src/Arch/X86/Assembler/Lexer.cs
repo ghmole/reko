@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,8 +38,7 @@ namespace Reko.Arch.X86.Assembler
 		private Token tok;
 		private int lineNumber;
 		private StringBuilder sb;
-		private RegisterStorage reg;
-		private int integer;
+        private int integer;
 
         private static SortedList<string, Token> keywords = new SortedList<string, Token>(StringComparer.InvariantCultureIgnoreCase);
 		private const string IdentifierCharacters = "._$@?";
@@ -225,13 +224,12 @@ namespace Reko.Arch.X86.Assembler
 		private Token ClassifySymbol()
 		{
 			string s = sb.ToString();
-            Token tok;
-            if (keywords.TryGetValue(s, out tok))
+            if (keywords.TryGetValue(s, out Token tok))
                 return tok;
-			RegisterStorage reg = Registers.GetRegister(s);
+            RegisterStorage reg = Registers.GetRegister(s);
 			if (reg != RegisterStorage.None)
 			{
-				this.reg = reg;
+				this.Register = reg;
 				return Token.REGISTER;
 			}
 			return Token.ID;
@@ -307,24 +305,41 @@ namespace Reko.Arch.X86.Assembler
 							return Token.INTEGER;
 
 						if (ch == 'x' || ch == 'X')
-						{
-							rdr.Read();
-							ch = rdr.Peek();
-							while ("0123456789abcdefABCDEF".IndexOf((char) ch) >= 0)
-							{
-								sb.Append((char) ch);
-								rdr.Read();
-								ch = rdr.Peek();
-							}
-							integer = Convert.ToInt32(sb.ToString(), 16);
-							return Token.INTEGER;
-						}
-						else if (Char.IsDigit((char)ch))
+                        {
+                            rdr.Read();
+                            ch = rdr.Peek();
+                            while (IsHexDigit(ch))
+                            {
+                                sb.Append((char) ch);
+                                rdr.Read();
+                                ch = rdr.Peek();
+                            }
+                            integer = Convert.ToInt32(sb.ToString(), 16);
+                            return Token.INTEGER;
+                        }
+                        else if (Char.IsDigit((char)ch))
 						{
 							sb.Append((char)ch);
 							rdr.Read();
 						}
-						else
+                        else if (IsHexDigit(ch))
+                        {
+                            sb.Append((char) ch);
+                            rdr.Read();
+                            ch = rdr.Peek();
+                            while (IsHexDigit(ch))
+                            {
+                                sb.Append((char) ch);
+                                rdr.Read();
+                                ch = rdr.Peek();
+                            }
+                            if (ch != 'h' && ch != 'H')
+                                return Token.ERR;
+                            rdr.Read();
+                            integer = Convert.ToInt32(sb.ToString(), 16);
+                            return Token.INTEGER;
+                        }
+                        else
 						{
 							integer = Convert.ToInt32(sb.ToString(), 16);
 							return Token.INTEGER;
@@ -338,7 +353,33 @@ namespace Reko.Arch.X86.Assembler
 						rdr.Read();
 						ch = rdr.Peek();
 					}
-					integer = Convert.ToInt32(sb.ToString(), 10);
+                    if (IsHexDigit(ch))
+                    {
+                        // Expect an 'h' after this hex number.
+                        sb.Append((char) ch);
+                        rdr.Read();
+                        ch = rdr.Peek();
+                        while (IsHexDigit((char) ch))
+                        {
+                            sb.Append((char) ch);
+                            rdr.Read();
+                            ch = rdr.Peek();
+                        }
+                        if (ch != 'h' && ch != 'H')
+                        {
+                            return Token.ERR;
+                        }
+                        rdr.Read();
+                        integer = Convert.ToInt32(sb.ToString(), 16);
+                        return Token.INTEGER;
+                    }
+                    else if (ch == 'h' || ch == 'H')
+                    {
+                        rdr.Read();
+                        integer = Convert.ToInt32(sb.ToString(), 16);
+                        return Token.INTEGER;
+                    }
+                    integer = Convert.ToInt32(sb.ToString(), 10);
 					return Token.INTEGER;
 				}
 				if (Char.IsLetter((char)ch) || IdentifierCharacters.IndexOf((char)ch) >= 0)
@@ -361,7 +402,12 @@ namespace Reko.Arch.X86.Assembler
 			}
 		}
 
-		public Token GetToken()
+        private static bool IsHexDigit(int ch)
+        {
+            return "0123456789abcdefABCDEF".IndexOf((char) ch) >= 0;
+        }
+
+        public Token GetToken()
 		{
 			if (tok != Token.EOFile)
 			{
@@ -391,12 +437,9 @@ namespace Reko.Arch.X86.Assembler
 			return tok;
 		}
 
-		public RegisterStorage Register
-		{
-			get { return reg; }
-		}
+        public RegisterStorage? Register { get; private set; }
 
-		public void SkipUntil(Token t)
+        public void SkipUntil(Token t)
 		{
 			Token tok = PeekToken();
 			while (tok != t && tok != Token.EOFile)

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -160,20 +160,21 @@ namespace Reko.Environments.Windows
             return host.GetInterceptedCall(this.Architecture, addrTarget);
         }
 
-        public override int GetByteSizeFromCBasicType(CBasicType cb)
+        public override int GetBitSizeFromCBasicType(CBasicType cb)
         {
             switch (cb)
             {
-            case CBasicType.Bool: return 1;
-            case CBasicType.Char: return 1;
-            case CBasicType.Short: return 2;
-            case CBasicType.Int: return 4;
-            case CBasicType.Long: return 4;
-            case CBasicType.LongLong: return 8;
-            case CBasicType.Float: return 4;
-            case CBasicType.Double: return 8;
-            case CBasicType.LongDouble: return 8;
-            case CBasicType.Int64: return 8;
+            case CBasicType.Bool: return 8;
+            case CBasicType.Char: return 8;
+            case CBasicType.WChar_t: return 16;
+            case CBasicType.Short: return 16;
+            case CBasicType.Int: return 32;
+            case CBasicType.Long: return 32;
+            case CBasicType.LongLong: return 64;
+            case CBasicType.Float: return 32;
+            case CBasicType.Double: return 64;
+            case CBasicType.LongDouble: return 64;
+            case CBasicType.Int64: return 64;
             default: throw new NotImplementedException(string.Format("C basic type {0} not supported.", cb));
             }
         }
@@ -181,11 +182,9 @@ namespace Reko.Environments.Windows
         public override ExternalProcedure LookupProcedureByOrdinal(string moduleName, int ordinal)
         {
             EnsureTypeLibraries(PlatformIdentifier);
-            ModuleDescriptor mod;
-            if (!Metadata.Modules.TryGetValue(moduleName.ToUpper(), out mod))
+            if (!Metadata.Modules.TryGetValue(moduleName.ToUpper(), out ModuleDescriptor mod))
                 return null;
-            SystemService svc;
-            if (mod.ServicesByOrdinal.TryGetValue(ordinal, out svc))
+            if (mod.ServicesByOrdinal.TryGetValue(ordinal, out SystemService svc))
             {
                 return new ExternalProcedure(svc.Name, svc.Signature);
             }
@@ -196,16 +195,14 @@ namespace Reko.Environments.Windows
         public override ExternalProcedure LookupProcedureByName(string moduleName, string procName)
         {
             EnsureTypeLibraries(PlatformIdentifier);
-            ModuleDescriptor mod;
-            if (!Metadata.Modules.TryGetValue(moduleName.ToUpper(), out mod))
+            if (!Metadata.Modules.TryGetValue(moduleName.ToUpper(), out ModuleDescriptor mod))
                 return null;
-            SystemService svc;
-            if (mod.ServicesByName.TryGetValue(moduleName, out svc))
+            if (mod.ServicesByName.TryGetValue(moduleName, out SystemService svc))
             {
                 return new ExternalProcedure(svc.Name, svc.Signature);
             }
             else
-                throw new NotImplementedException();
+                return null;
         }
     }
 }

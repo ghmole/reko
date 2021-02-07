@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -144,6 +144,8 @@ namespace Reko.Scanning
         public Block AddBlock(Address addr, Procedure proc, string blockName)
         {
             Block b = new Block(proc, addr, blockName);
+            if (Program.User.BlockLabels.TryGetValue(blockName, out var userLabel))
+                b.UserLabel = userLabel;
             if (!blocks.TryGetUpperBound(addr, out var br))
             {
                 var lastMem = segmentMap.Segments.Values.Last().MemoryArea;
@@ -194,6 +196,16 @@ namespace Reko.Scanning
             {
                 TerminateBlock(block, addr);
             }
+        }
+
+        public bool TryRead(IProcessorArchitecture arch, Address addr, PrimitiveType dt, out Constant value)
+        {
+            if (!this.Program.SegmentMap.TryFindSegment(addr, out var segment))
+            {
+                value = null!;
+                return false;
+            }
+            return arch.TryRead(segment.MemoryArea, addr, dt, out value);
         }
 
         /// <summary>
@@ -404,7 +416,7 @@ namespace Reko.Scanning
 
         private Block? CloneBlockIntoOtherProcedure(Block block, Procedure proc)
         {
-            trace.Verbose("Cloning {0} to {1}", block.Name, proc);
+            trace.Verbose("Cloning {0} to {1}", block.Id, proc);
             var clonedBlock = new BlockCloner(block, proc, Program.CallGraph).Execute();
             return clonedBlock;
         }
@@ -432,6 +444,8 @@ namespace Reko.Scanning
             var callRetThunkBlock = procOld.AddSyntheticBlock(
                 addrFrom,
                 blockName);
+            if (Program.User.BlockLabels.TryGetValue(blockName, out var userLabel))
+                callRetThunkBlock.UserLabel = userLabel;
 
             var linFrom = addrFrom.ToLinear();
             callRetThunkBlock.Statements.Add(
@@ -471,6 +485,8 @@ namespace Reko.Scanning
 
         public void ScanImageSymbol(ImageSymbol sym, bool isEntryPoint)
         {
+            if (sym.Name != null && sym.Name == "")
+                sym.ToString();
             try
             {
                 Address addr = sym.Address!;
@@ -485,9 +501,9 @@ namespace Reko.Scanning
                     var sser = Program.CreateProcedureSerializer();
                     proc.Signature = sser.Deserialize(sym.Signature, proc.Frame)!;
                 }
-                else if (sym.Name != null)
+                else if (!string.IsNullOrEmpty(sym.Name))
                 {
-                    var sProc = Program.Platform.SignatureFromName(sym.Name);
+                    var sProc = Program.Platform.SignatureFromName(sym.Name!);
                     if (sProc != null)
                     {
                         var loader = Program.CreateTypeLibraryDeserializer();
@@ -501,7 +517,7 @@ namespace Reko.Scanning
                     }
                     else
                     {
-                        proc.Name = sym.Name;
+                        proc.Name = sym.Name!;
                     }
                 }
 
@@ -605,8 +621,8 @@ namespace Reko.Scanning
             {
                 if (b.Block.Succ.Count == 0)
                     return b.Block;
-                string succName = b.Block.Succ[0].Name;
-                if (succName != b.Block.Name && succName.StartsWith(b.Block.Name) &&
+                string succName = b.Block.Succ[0].Id;
+                if (succName != b.Block.Id && succName.StartsWith(b.Block.Id) &&
                     !b.Block.Succ[0].IsSynthesized)
                     return b.Block.Succ[0];
                 return b.Block;
@@ -772,9 +788,9 @@ namespace Reko.Scanning
         private void Dump(string title, IEnumerable<Block> blocks)
         {
             Debug.WriteLine(title);
-            foreach (var block in blocks.OrderBy(b => b.Name))
+            foreach (var block in blocks.OrderBy(b => b.Id))
             {
-                Debug.Print("    {0}", block.Name);
+                Debug.Print("    {0}", block.Id);
             }
         }
 
@@ -804,38 +820,38 @@ namespace Reko.Scanning
             }
         }
 
-        public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, int arity)
+        public IntrinsicProcedure EnsureIntrinsic(string name, bool isIdempotent, DataType returnType, int arity)
         {
             var args = Enumerable.Range(0, arity).Select(i => Constant.Create(Program.Architecture.WordWidth, 0)).ToArray();
-            var ppp = Program.EnsurePseudoProcedure(name, returnType, args);
-            return ppp;
+            var intrinsic = Program.EnsureIntrinsicProcedure(name, isIdempotent, returnType, args);
+            return intrinsic;
         }
 
-        public Expression CallIntrinsic(string name, FunctionType fnType, params Expression[] args)
+        public Expression CallIntrinsic(string name, bool isIdempotent, FunctionType fnType, params Expression[] args)
         {
-            var intrinsic = Program.EnsurePseudoProcedure(name, fnType);
+            var intrinsic = Program.EnsureIntrinsicProcedure(name, isIdempotent, fnType);
             return new Application(
                 new ProcedureConstant(Program.Architecture.PointerType, intrinsic),
                 fnType.ReturnValue.DataType,
                 args);
         }
 
-        public Expression PseudoProcedure(string name, DataType returnType, params Expression[] args)
+        public Expression Intrinsic(string name, bool isIdempotent, DataType returnType, params Expression[] args)
         {
-            var ppp = Program.EnsurePseudoProcedure(name, returnType, args);
+            var intrinsic = Program.EnsureIntrinsicProcedure(name, isIdempotent, returnType, args);
             return new Application(
-                new ProcedureConstant(Program.Architecture.PointerType, ppp),
+                new ProcedureConstant(Program.Architecture.PointerType, intrinsic),
                 returnType,
                 args);
         }
 
 
-        public Expression PseudoProcedure(string name, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
+        public Expression Intrinsic(string name, bool isIdempotent, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
         {
-            var ppp = Program.EnsurePseudoProcedure(name, returnType, args);
-            ppp.Characteristics = c;
+            var intrinsic = Program.EnsureIntrinsicProcedure(name, isIdempotent, returnType, args);
+            intrinsic.Characteristics = c;
             return new Application(
-                new ProcedureConstant(Program.Architecture.PointerType, ppp),
+                new ProcedureConstant(Program.Architecture.PointerType, intrinsic),
                 returnType,
                 args);
         }
@@ -952,6 +968,10 @@ namespace Reko.Scanning
                 dataScanner.EnqueueUserGlobalData(sym.Address!, sym.DataType!, sym.Name!);
             }
             dataScanner.ProcessQueue();
+            foreach (var sym in dataScanner.Procedures.Values)
+            {
+                this.EnqueueImageSymbol(sym, false);
+            }
             return sr;
         }
 

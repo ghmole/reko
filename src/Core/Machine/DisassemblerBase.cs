@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,10 +39,11 @@ namespace Reko.Core.Machine
     /// </remarks>
     public abstract class DisassemblerBase<TInstr, TMnemonic> : DisassemblerBase, IEnumerable<TInstr>
         where TInstr : MachineInstruction
+        where TMnemonic : struct
     {
-        public IEnumerator<TInstr> GetEnumerator()
+        public virtual IEnumerator<TInstr> GetEnumerator()
         {
-            for (;;)
+            for (; ; )
             {
                 TInstr? instr = DisassembleInstruction();
                 if (instr == null)
@@ -68,7 +69,7 @@ namespace Reko.Core.Machine
         /// if the end of the reader has been reached</returns>
         public abstract TInstr? DisassembleInstruction();
 
-        public abstract TInstr NotYetImplemented(uint wInstr, string message);
+        public abstract TInstr NotYetImplemented(string message);
 
         public virtual TInstr MakeInstruction(InstrClass iclass, TMnemonic mnemonic)
         {
@@ -79,51 +80,51 @@ namespace Reko.Core.Machine
 
         // Utility functions 
 
-        protected static Decoder<TDasm, TMnemonic, TInstr> Instr<TDasm>(TMnemonic mnemonic, params Mutator<TDasm> [] mutators)
+        public static Decoder<TDasm, TMnemonic, TInstr> Instr<TDasm>(TMnemonic mnemonic, params Mutator<TDasm>[] mutators)
             where TDasm : DisassemblerBase<TInstr, TMnemonic>
         {
             return new InstrDecoder<TDasm, TMnemonic, TInstr>(InstrClass.Linear, mnemonic, mutators);
         }
 
-        protected static Decoder<TDasm, TMnemonic, TInstr> Instr<TDasm>(TMnemonic mnemonic, InstrClass iclass, params Mutator<TDasm>[] mutators)
+        public static Decoder<TDasm, TMnemonic, TInstr> Instr<TDasm>(TMnemonic mnemonic, InstrClass iclass, params Mutator<TDasm>[] mutators)
             where TDasm : DisassemblerBase<TInstr, TMnemonic>
         {
             return new InstrDecoder<TDasm, TMnemonic, TInstr>(iclass, mnemonic, mutators);
         }
 
-        protected static MaskDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int bitPos, int bitLength, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
+        public static MaskDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int bitPos, int bitLength, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
             where TDasm : DisassemblerBase<TInstr, TMnemonic>
         {
             return new MaskDecoder<TDasm, TMnemonic, TInstr>(bitPos, bitLength, "", decoders);
         }
 
-        protected static MaskDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int bitPos, int bitLength, string tag, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
+        public static MaskDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int bitPos, int bitLength, string tag, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
             where TDasm : DisassemblerBase<TInstr, TMnemonic>
         {
             return new MaskDecoder<TDasm, TMnemonic, TInstr>(bitPos, bitLength, tag, decoders);
         }
 
-        protected static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int p1, int l1, int p2, int l2, string tag, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
+        public static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(int p1, int l1, int p2, int l2, string tag, params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
         {
             return new BitfieldDecoder<TDasm, TMnemonic, TInstr>(Bf((p1, l1), (p2, l2)), tag, decoders);
         }
 
-        protected static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(
+        public static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(
             Bitfield[] bitfields,
-            string tag, 
+            string tag,
             params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
         {
             return new BitfieldDecoder<TDasm, TMnemonic, TInstr>(bitfields, tag, decoders);
         }
 
-        protected static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(
+        public static BitfieldDecoder<TDasm, TMnemonic, TInstr> Mask<TDasm>(
             Bitfield[] bitfields,
             params Decoder<TDasm, TMnemonic, TInstr>[] decoders)
         {
             return new BitfieldDecoder<TDasm, TMnemonic, TInstr>(bitfields, "", decoders);
         }
 
-        protected static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
+        public static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
             Predicate<uint> predicate,
             Decoder<TDasm, TMnemonic, TInstr> decoderTrue,
             Decoder<TDasm, TMnemonic, TInstr> decoderFalse)
@@ -135,11 +136,11 @@ namespace Reko.Core.Machine
             return new ConditionalDecoder<TDasm, TMnemonic, TInstr>(fields, predicate, "", decoderTrue, decoderFalse);
         }
 
-        protected static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
-            (int, int) fieldSpecifier, 
-            Predicate<uint> predicate, 
-            string tag, 
-            Decoder<TDasm, TMnemonic, TInstr> decoderTrue, 
+        public static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
+            (int, int) fieldSpecifier,
+            Predicate<uint> predicate,
+            string tag,
+            Decoder<TDasm, TMnemonic, TInstr> decoderTrue,
             Decoder<TDasm, TMnemonic, TInstr> decoderFalse)
         {
             var fields = new[]
@@ -149,8 +150,8 @@ namespace Reko.Core.Machine
             return new ConditionalDecoder<TDasm, TMnemonic, TInstr>(fields, predicate, tag, decoderTrue, decoderFalse);
         }
 
-        protected static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
-            (int, int) fieldSpecifier, 
+        public static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
+            (int, int) fieldSpecifier,
             Predicate<uint> predicate,
             Decoder<TDasm, TMnemonic, TInstr> decoderTrue,
             Decoder<TDasm, TMnemonic, TInstr> decoderFalse)
@@ -162,7 +163,7 @@ namespace Reko.Core.Machine
             return new ConditionalDecoder<TDasm, TMnemonic, TInstr>(fields, predicate, "", decoderTrue, decoderFalse);
         }
 
-        protected static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
+        public static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
             Bitfield[] fields,
             Predicate<uint> predicate,
             Decoder<TDasm, TMnemonic, TInstr> decoderTrue,
@@ -171,7 +172,7 @@ namespace Reko.Core.Machine
             return new ConditionalDecoder<TDasm, TMnemonic, TInstr>(fields, predicate, "", decoderTrue, decoderFalse);
         }
 
-        protected static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
+        public static ConditionalDecoder<TDasm, TMnemonic, TInstr> Select<TDasm>(
              Bitfield[] fields,
              Predicate<uint> predicate,
              string tag,
@@ -185,9 +186,9 @@ namespace Reko.Core.Machine
         /// Creates a sparsely populated <see cref="MaskDecoder{TDasm, TMnemonic, TInstr}"/> where 
         /// most of the decoders are <paramref name="defaultDecoder"/>.
         /// </summary>
-        protected static MaskDecoder<TDasm, TMnemonic, TInstr> Sparse<TDasm>(
+        public static MaskDecoder<TDasm, TMnemonic, TInstr> Sparse<TDasm>(
             int bitPosition, int bits, string tag,
-            Decoder<TDasm, TMnemonic, TInstr> defaultDecoder,  
+            Decoder<TDasm, TMnemonic, TInstr> defaultDecoder,
             params (uint, Decoder<TDasm, TMnemonic, TInstr>)[] sparseDecoders)
             where TDasm : DisassemblerBase<TInstr, TMnemonic>
         {
@@ -206,7 +207,32 @@ namespace Reko.Core.Machine
             return new MaskDecoder<TDasm, TMnemonic, TInstr>(bitPosition, bits, tag, decoders);
         }
 
-        protected static MaskDecoder<TDasm, TMnemonic, TInstr> Sparse<TDasm>(
+        /// <summary>
+        /// Creates a sparsely populated <see cref="WideMaskDecoder{TDasm, TMnemonic, TInstr}"/> where 
+        /// most of the wide decoders are <paramref name="defaultDecoder"/>.
+        /// </summary>
+        protected static WideMaskDecoder<TDasm, TMnemonic, TInstr> WideSparse<TDasm>(
+            int bitPosition, int bits, string tag,
+            WideDecoder<TDasm, TMnemonic, TInstr> defaultDecoder,
+            params (uint, WideDecoder<TDasm, TMnemonic, TInstr>)[] sparseDecoders)
+            where TDasm : DisassemblerBase<TInstr, TMnemonic>
+        {
+            var decoders = new WideDecoder<TDasm, TMnemonic, TInstr>[1 << bits];
+            foreach (var (code, decoder) in sparseDecoders)
+            {
+                Debug.Assert(0 <= code && code < decoders.Length);
+                Debug.Assert(decoders[code] == null, $"Decoder {code:X} has already a value!");
+                decoders[code] = decoder;
+            }
+            for (int i = 0; i < decoders.Length; ++i)
+            {
+                if (decoders[i] == null)
+                    decoders[i] = defaultDecoder;
+            }
+            return new WideMaskDecoder<TDasm, TMnemonic, TInstr>(bitPosition, bits, tag, decoders);
+        }
+
+        public static MaskDecoder<TDasm, TMnemonic, TInstr> Sparse<TDasm>(
             int bitPosition, int bits,
             Decoder<TDasm, TMnemonic, TInstr> defaultDecoder,
             params (uint, Decoder<TDasm, TMnemonic, TInstr>)[] sparseDecoders)
@@ -214,20 +240,10 @@ namespace Reko.Core.Machine
         {
             return Sparse(bitPosition, bits, "", defaultDecoder, sparseDecoders);
         }
-
-        /// <summary>
-        /// Compact way of creating an array of <see cref="Bitfield"/>.
-        /// </summary>
-        /// <param name="fields"></param>
-        /// <returns></returns>
-        protected static Bitfield[] Bf(params (int pos, int len)[] fields)
-        {
-            return fields.Select(f => new Bitfield(f.pos, f.len)).ToArray();
-        }
     }
 
     /// <summary>
-    /// Base class that implementes <see cref="IDisposable"/> and the  type-agnostic <see cref="EmitUnitTest(string, string, string, string, Address, Action{TextWriter})"/>
+    /// Base class that implements <see cref="IDisposable"/> and the  type-agnostic <see cref="EmitUnitTest(string, string, string, string, Address, Action{TextWriter})"/>
     /// method.
     /// </summary>
     public class DisassemblerBase : IDisposable
@@ -243,8 +259,18 @@ namespace Reko.Core.Machine
             Dispose(false);
         }
 
+        /// <summary>
+        /// Compact way of creating an array of <see cref="Bitfield"/>.
+        /// </summary>
+        /// <param name="fields"></param>
+        /// <returns></returns>
+        public static Bitfield[] Bf(params (int pos, int len)[] fields)
+        {
+            return fields.Select(f => new Bitfield(f.pos, f.len)).ToArray();
+        }
+
         protected virtual void Dispose(bool disposing)
         {
         }
-            }
+    }
 }

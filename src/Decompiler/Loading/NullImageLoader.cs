@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core;
+using Reko.Core.Memory;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -77,15 +78,10 @@ namespace Reko.Loading
 
         public SegmentMap CreatePlatformSegmentMap(IPlatform platform, Address loadAddr, byte[] rawBytes)
         {
-            var segmentMap = platform.CreateAbsoluteMemoryMap();
-            if (segmentMap == null)
-            {
-                segmentMap = new SegmentMap(loadAddr);
-            }
-            var mem = new MemoryArea(loadAddr, rawBytes);
+            var segmentMap = platform.CreateAbsoluteMemoryMap() ?? new SegmentMap(loadAddr);
+            var mem = new ByteMemoryArea(loadAddr, rawBytes);
             segmentMap.AddSegment(mem, "code", AccessMode.ReadWriteExecute);
             return segmentMap;
         }
-
     }
 }

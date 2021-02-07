@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,13 @@ namespace Reko.Typing
     public class ExpressionTypeDescender : ExpressionVisitor<bool, TypeVariable>
     {
         // Matches the effective address of Mem[p + c] where c is a constant.
-        private ExpressionMatcher fieldAccessPattern = new ExpressionMatcher(
+        private static readonly ExpressionMatcher fieldAccessPattern = new ExpressionMatcher(
             new BinaryExpression(
                 Operator.IAdd,
                 ExpressionMatcher.AnyDataType(null),
                 ExpressionMatcher.AnyExpression("p"),
                 ExpressionMatcher.AnyConstant("c")));
-        private ExpressionMatcher segFieldAccessPattern = new ExpressionMatcher(
+        private static readonly ExpressionMatcher segFieldAccessPattern = new ExpressionMatcher(
             new MkSequence(
                 ExpressionMatcher.AnyDataType(null),
                 ExpressionMatcher.AnyExpression("p"),
@@ -232,7 +232,7 @@ namespace Reko.Typing
             s.Fields.Add(field);
 
             var pointer = eBase != null && eBase != globals
-                ? (DataType)factory.CreateMemberPointer(eBase.TypeVariable!, s, structPtrBitSize / DataType.BitsPerByte)
+                ? (DataType)factory.CreateMemberPointer(eBase.TypeVariable!, s, structPtrBitSize)
                 : (DataType)factory.CreatePointer(s, structPtrBitSize);
             return MeetDataType(eStructPtr, pointer);
         }
@@ -376,7 +376,7 @@ namespace Reko.Typing
                     return PrimitiveType.Create(Domain.SignedInt, dtOther.BitSize);
                 if (ptOther != null && (ptOther.Domain & Domain.Integer) != 0)
                 {
-                    return factory.CreateMemberPointer(mpSum.BasePointer, factory.CreateUnknown(), mpSum.Size);
+                    return factory.CreateMemberPointer(mpSum.BasePointer, factory.CreateUnknown(), mpSum.BitSize);
                 }
             }
             if (ptSum != null && ptSum.IsIntegral)
@@ -432,6 +432,8 @@ namespace Reko.Typing
 
         public DataType MeetDataType(Expression exp, DataType dt)
         {
+            if (exp is Conversion || exp is Cast)
+                return exp.TypeVariable!.DataType;
             return MeetDataType(exp.TypeVariable!, dt);
         }
 
@@ -490,6 +492,14 @@ namespace Reko.Typing
             return false;
         }
 
+        public bool VisitConversion(Conversion conversion, TypeVariable tv)
+        {
+     //       MeetDataType(conversion, conversion.DataType);
+            MeetDataType(conversion.Expression, conversion.SourceDataType);
+            conversion.Expression.Accept(this, conversion.Expression.TypeVariable!);
+            return false;
+        }
+
         public bool VisitDereference(Dereference deref, TypeVariable tv)
         {
             //$BUG: push (ptr (typeof(deref)
@@ -527,13 +537,39 @@ namespace Reko.Typing
             {
                 // Mem[p + c]
                 p = fieldAccessPattern.CapturedExpression("p")!;
-                offset = OffsetOf((Constant) fieldAccessPattern.CapturedExpression("c")!);
-                var iv = GetInductionVariable(p);
-                if (iv != null)
+                var c = ToConstant(fieldAccessPattern.CapturedExpression("c")!)!;
+                offset = OffsetOf(c);
+                if (p is Conversion cvt && cvt.SourceDataType.BitSize < cvt.DataType.BitSize)
                 {
-                    VisitInductionVariable(globals, (Identifier) p, iv, offset, tvAccess);
+                    // p some convert-extended thing and cannot be a pointer; c therefore must be treated as a
+                    // pointer and p is the index.
+                    // First do the array index.
+                    p.Accept(this, p.TypeVariable!);
+
+                    // Now treat c as an array pointer.
+                    var cbElement = tvAccess.DataType.Size;
+                    var tvElement = ArrayField(basePointer, c, c.DataType.BitSize, 0, cbElement, 0, tvAccess);
+                    StructField(basePointer, c, 0, tvElement, eaBitSize);
+                    return false;
                 }
-                StructField(basePointer, p, offset, tvAccess, eaBitSize);
+                else if (p is Cast cast && cast.Expression.DataType.BitSize < cast.DataType.BitSize)
+                {
+                    p.Accept(this, p.TypeVariable!);
+
+                    var cbElement = tvAccess.DataType.Size;
+                    var tvElement = ArrayField(basePointer, c, c.DataType.BitSize, 0, cbElement, 0, tvAccess);
+                    StructField(basePointer, c, 0, tvElement, eaBitSize);
+                    return false;
+                }
+                else
+                {
+                    var iv = GetInductionVariable(p);
+                    if (iv != null)
+                    {
+                        VisitInductionVariable(globals, (Identifier) p, iv, offset, tvAccess);
+                    }
+                    StructField(basePointer, p, offset, tvAccess, eaBitSize);
+                }
             }
             else if (effectiveAddress is Constant c)
             {
@@ -555,25 +591,8 @@ namespace Reko.Typing
             else if (IsArrayAccess(effectiveAddress))
             {
                 // Mem[p + i] where i is integer type.
-                var binEa = (BinaryExpression)effectiveAddress;
-
-                // First do the array index.
-                binEa.Right.Accept(this, binEa.Right.TypeVariable!);
-
-                var cbElement = tvAccess.DataType.Size;
-                var tvElement = ArrayField(basePointer, binEa.Left, binEa.DataType.BitSize, 0, cbElement, 0, tvAccess);
-                var dtArray = factory.CreateArrayType(tvElement, 0);
-
-                var tvArray = store.CreateTypeVariable(factory);
-                tvArray.DataType = dtArray;
-                tvArray.OriginalDataType = dtArray;
-
-                StructField(basePointer, binEa.Left, 0, dtArray, eaBitSize);
-
-                if (!(binEa.Left is Identifier))
-                {
-                    VisitMemoryAccess(basePointer, tvArray, binEa.Left, globals);
-                }
+                var binEa = (BinaryExpression) effectiveAddress;
+                VisitPossibleArrayAccess(basePointer, tvAccess, binEa.Left, binEa.Right, globals, eaBitSize);
                 StructField(basePointer, effectiveAddress, 0, tvAccess, eaBitSize);
                 effectiveAddress.Accept(this, effectiveAddress.TypeVariable!);
                 return false;
@@ -587,6 +606,37 @@ namespace Reko.Typing
             StructField(basePointer, p, offset, tvAccess, eaBitSize);
             p.Accept(this, p.TypeVariable!);
             return false;
+        }
+
+        private Constant? ToConstant(Expression expression)
+        {
+            if (expression is Constant c)
+                return c;
+            if (expression is Address addr)
+                return addr.ToConstant();
+            return null;
+        }
+
+        private void VisitPossibleArrayAccess(Expression? basePointer, TypeVariable tvAccess, Expression left, Expression right, Expression globals, int eaBitSize)
+        {
+
+            // First do the array index.
+            right.Accept(this, right.TypeVariable!);
+
+            var cbElement = tvAccess.DataType.Size;
+            var tvElement = ArrayField(basePointer, left, left.DataType.BitSize, 0, cbElement, 0, tvAccess);
+            var dtArray = factory.CreateArrayType(tvElement, 0);
+
+            var tvArray = store.CreateTypeVariable(factory);
+            tvArray.DataType = dtArray;
+            tvArray.OriginalDataType = dtArray;
+
+            StructField(basePointer, left, 0, dtArray, eaBitSize);
+
+            if (!(left is Identifier))
+            {
+                VisitMemoryAccess(basePointer, tvArray, left, globals);
+            }
         }
 
         /// <summary>
@@ -676,7 +726,7 @@ namespace Reko.Typing
                 throw new ArgumentOutOfRangeException("size must be positive");
             var s = factory.CreateStructureType(null, size);
             var ptr = eBase != null && eBase != globals
-                ? (DataType) factory.CreateMemberPointer(eBase.TypeVariable!, s, platform.FramePointerType.Size)
+                ? (DataType) factory.CreateMemberPointer(eBase.TypeVariable!, s, platform.FramePointerType.BitSize)
                 : (DataType) factory.CreatePointer(s, platform.PointerType.BitSize);
             return MeetDataType(tStruct, ptr);
         }
@@ -695,9 +745,9 @@ namespace Reko.Typing
             return new Pointer(dt, platform.PointerType.BitSize);
         }
 
-        private MemberPointer MemberPointerTo(DataType baseType, DataType fieldType, int size)
+        private MemberPointer MemberPointerTo(DataType baseType, DataType fieldType, int bitSize)
         {
-            return new MemberPointer(baseType, fieldType, size);
+            return new MemberPointer(baseType, fieldType, bitSize);
         }
 
         private DataType DataTypeOf(Expression e)
@@ -724,7 +774,7 @@ namespace Reko.Typing
                     MeetDataType(seg, new Pointer(new StructureType { IsSegment = true }, DataTypeOf(seg).BitSize));
                     if (DataTypeOf(seq) is Pointer ptr)
                     {
-                        MeetDataType(off, MemberPointerTo(seg.TypeVariable!, ptr.Pointee, DataTypeOf(off).Size));
+                        MeetDataType(off, MemberPointerTo(seg.TypeVariable!, ptr.Pointee, DataTypeOf(off).BitSize));
                     }
                     seg.Accept(this, seg.TypeVariable!);
                     off.Accept(this, off.TypeVariable!);

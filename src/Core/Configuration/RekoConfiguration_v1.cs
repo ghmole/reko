@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -90,9 +90,23 @@ namespace Reko.Core.Configuration
         [XmlAttribute("Type")]
         public string? Type;
 
+        [XmlArray("Models")]
+        [XmlArrayItem("Model")]
+        public ModelDefinition_v1[]? Models;
+
         [XmlArray("Options")]
         [XmlArrayItem("Option")]
         public PropertyOption_v1[]? Options;
+    }
+
+    [Serializable]
+    public partial class ModelDefinition_v1
+    {
+        [XmlAttribute("Name")]
+        public string? Name;
+
+        [XmlElement("Option")]
+        public ListOption_v1[]? Options;
     }
 
     [Serializable]

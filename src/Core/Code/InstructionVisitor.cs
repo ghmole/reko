@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -187,6 +187,11 @@ namespace Reko.Core.Code
 		public virtual void VisitConstant(Constant c)
 		{
 		}
+
+        public virtual void VisitConversion(Conversion conversion)
+        {
+            conversion.Expression.Accept(this);
+        }
 
 		public virtual void VisitDereference(Dereference deref)
 		{

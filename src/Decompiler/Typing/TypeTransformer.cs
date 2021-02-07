@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ namespace Reko.Typing
         private DecompilerEventListener eventListener;
 
 		private static TraceSwitch trace = new TraceSwitch("TypeTransformer", "Traces the transformation of types") { Level = TraceLevel.Verbose };
-        private HashSet<DataType> visitedTypes;
+        private readonly Dictionary<DataType, DataType> visitedTypes;
 
         public TypeTransformer(TypeFactory factory, TypeStore store, Program program)
             : this(factory, store, program, new NullDecompilerEventListener())
@@ -57,7 +57,7 @@ namespace Reko.Typing
             this.program = program;
 			this.eventListener = eventListener;
 			this.unifier = new Unifier(factory, trace);
-            this.visitedTypes = new HashSet<DataType>();
+            this.visitedTypes = new Dictionary<DataType, DataType>();
         }
 
 		public bool Changed
@@ -165,12 +165,14 @@ namespace Reko.Typing
             strNew.IsSegment = str.IsSegment;
 			UnionType ut = new UnionType(null, null);
 			int offset = 0;
+            string? name = null;
 			foreach (StructureField f in str.Fields)
 			{
 				//$REVIEW: what if multiple fields have differing names?
 				if (ut.Alternatives.Count == 0)
 				{
 					offset = f.Offset;
+                    name = f.IsNameSet ? f.Name : null;
 					ut.Alternatives.Add(f.DataType);
 				}
 				else
@@ -188,8 +190,9 @@ namespace Reko.Typing
                     }
 					else
 					{
-						strNew.Fields.Add(offset, ut.Simplify());
+						strNew.Fields.Add(offset, ut.Simplify(), name);
 						offset = f.Offset;
+                        name = f.IsNameSet ? f.Name : null;
 						ut = new UnionType(null, null);
 						ut.Alternatives.Add(f.DataType);
 					}
@@ -197,7 +200,7 @@ namespace Reko.Typing
 			}
 			if (ut.Alternatives.Count > 0)
 			{
-				strNew.Fields.Add(offset, ut.Simplify());
+				strNew.Fields.Add(offset, ut.Simplify(), name);
 			}
 
             var sfm = new StructureFieldMerger(strNew);
@@ -228,13 +231,13 @@ namespace Reko.Typing
 				++iteration;
                 if (iteration > 50)
                 {
-                    eventListener.Warn(new NullCodeLocation(""),
+                    eventListener.Warn(
                         string.Format("Type transformer has looped {0} times, quitting prematurely.", iteration));
                     return;
                 }
 				Changed = false;
-                this.visitedTypes = new HashSet<DataType>();
-				foreach (TypeVariable tv in store.TypeVariables)
+                visitedTypes.Clear();
+                foreach (TypeVariable tv in store.TypeVariables)
 				{
                     if (eventListener.IsCanceled())
                         return;
@@ -246,7 +249,7 @@ namespace Reko.Typing
                         DateTime end = DateTime.Now;
                         if (eq.DataType is UnionType ut)
                         {
-                            //DebugEx.Verbose(trace, "= TT: took {2,4} msec to simplify {0} ({1})", tv.DataType, eq.DataType, (end - start).Milliseconds);
+                            //trace.Verbose("= TT: took {2,4} msec to simplify {0} ({1})", tv.DataType, eq.DataType, (end - start).Milliseconds);
                         }
                     }
                     if (tv.DataType != null)
@@ -306,9 +309,12 @@ namespace Reko.Typing
             {
                 fn.ReturnValue.DataType = fn.ReturnValue.DataType.Accept(this);
             }
-            for (int i = 0; i < fn.Parameters!.Length; ++i)
+            if (fn.Parameters != null)
             {
-                fn.Parameters[i].DataType = fn.Parameters[i].DataType.Accept(this);
+                for (int i = 0; i < fn.Parameters.Length; ++i)
+                {
+                    fn.Parameters[i].DataType = fn.Parameters[i].DataType.Accept(this);
+                }
             }
             return fn;
         }
@@ -317,14 +323,13 @@ namespace Reko.Typing
         {
             mptr.BasePointer = mptr.BasePointer.Accept(this);
             mptr.Pointee = mptr.Pointee.Accept(this);
-            var array = mptr.Pointee as ArrayType;
-            if (array != null)
+            if (mptr.Pointee is ArrayType array)
             {
                 Changed = true;
                 return factory.CreateMemberPointer(
                     mptr.BasePointer,
                     array.ElementType,
-                    mptr.Size);
+                    mptr.BitSize);
             }
             return mptr;
         }
@@ -356,9 +361,9 @@ namespace Reko.Typing
             // Do not transform user-defined types
             if (str.UserDefined)
                 return str;
-            if (visitedTypes.Contains(str))
-                return str;
-            visitedTypes.Add(str);
+            if (visitedTypes.TryGetValue(str, out var visitedResult))
+                return visitedResult;
+            visitedTypes[str] = str;
             foreach (var field in str.Fields)
             {
                 field.DataType = field.DataType.Accept(this);
@@ -372,8 +377,10 @@ namespace Reko.Typing
                 DataType dt = strNew.Simplify();
                 if (dt != strNew)
                     Changed = true;
+                visitedTypes[str] = dt;
                 return dt;
             }
+            visitedTypes[str] = strNew;
             return strNew;
 		}
 
@@ -406,6 +413,9 @@ namespace Reko.Typing
             // Do not transform user-defined types
             if (ut.UserDefined)
                 return ut;
+            if (visitedTypes.TryGetValue(ut, out var visitedResult))
+                return visitedResult;
+            visitedTypes[ut] = ut;
             foreach (var alt in ut.Alternatives.Values)
             {
                 alt.DataType = alt.DataType.Accept(this);
@@ -417,13 +427,16 @@ namespace Reko.Typing
 				StructureMerger sm = new StructureMerger(upsm.Structures, upsm.EquivalenceClasses);
 				sm.Merge();
 				Changed = true;
-				return new Pointer(sm.MergedClass, upsm.PointerBitSize);
+                var ptr = new Pointer(sm.MergedClass, upsm.PointerBitSize);
+                visitedTypes[ut] = ptr;
+                return ptr;
 			}
 
 			UnionType utNew = FactorDuplicateAlternatives(ut);
             var dt = utNew.Simplify();
             Changed |= (!(dt is UnionType utNew2) ||
                         utNew2.Alternatives.Count != ut.Alternatives.Count);
+            visitedTypes[ut] = dt;
             return dt;
 		}
 

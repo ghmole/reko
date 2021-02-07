@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Arch.X86.Assembler;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using System;
@@ -48,9 +49,9 @@ namespace Reko.UnitTests.Arch.X86
         public X86RewriterTests()
         {
             var sc = CreateServiceContainer();
-            arch16 = new X86ArchitectureReal(sc, "x86-real-16");
-            arch32 = new X86ArchitectureFlat32(sc, "x86-protected-32");
-            arch64 = new X86ArchitectureFlat64(sc, "x86-protected-64");
+            arch16 = new X86ArchitectureReal(sc, "x86-real-16", new Dictionary<string, object>());
+            arch32 = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
+            arch64 = new X86ArchitectureFlat64(sc, "x86-protected-64", new Dictionary<string, object>());
             baseAddr16 = Address.SegPtr(0x0C00, 0x0000);
             baseAddr32 = Address.Ptr32(0x10000000);
             baseAddr64 = Address.Ptr64(0x140000000ul);
@@ -63,7 +64,7 @@ namespace Reko.UnitTests.Arch.X86
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
             return arch.CreateRewriter(
-                new LeImageReader(mem, 0),
+                mem.CreateLeReader(0),
                 arch.CreateProcessorState(),
                 binder,
                 this.host);
@@ -111,35 +112,35 @@ namespace Reko.UnitTests.Arch.X86
         private void Run16bitTest(params byte[] bytes)
         {
             arch = arch16;
-            Given_MemoryArea(new MemoryArea(baseAddr16, bytes));
+            Given_MemoryArea(new ByteMemoryArea(baseAddr16, bytes));
             host = new RewriterHost(null);
         }
 
         private void Run32bitTest(params byte[] bytes)
         {
             arch = arch32;
-            Given_MemoryArea(new MemoryArea(baseAddr32, bytes));
+            Given_MemoryArea(new ByteMemoryArea(baseAddr32, bytes));
             host = new RewriterHost(null);
         }
 
         private void Run32bitTest(string hexBytes)
         {
             arch = arch32;
-            Given_MemoryArea(new MemoryArea(baseAddr32, BytePattern.FromHexBytes(hexBytes).ToArray()));
+            Given_MemoryArea(new ByteMemoryArea(baseAddr32, BytePattern.FromHexBytes(hexBytes).ToArray()));
             host = new RewriterHost(null);
         }
 
         private void Run64bitTest(params byte[] bytes)
         {
             arch = arch64;
-            Given_MemoryArea(new MemoryArea(baseAddr64, bytes));
+            Given_MemoryArea(new ByteMemoryArea(baseAddr64, bytes));
             host = new RewriterHost(null);
         }
 
         private void Run64bitTest(string hexBytes)
         {
             arch = arch64;
-            Given_MemoryArea(new MemoryArea(baseAddr64, BytePattern.FromHexBytes(hexBytes).ToArray()));
+            Given_MemoryArea(new ByteMemoryArea(baseAddr64, BytePattern.FromHexBytes(hexBytes).ToArray()));
             host = new RewriterHost(null);
         }
 
@@ -236,6 +237,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_andnpd()
+        {
+            Run64bitTest("660F55D9");
+            AssertCode(     // andnpd	xmm3,xmm1
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|xmm3 = __andnpd(xmm3, xmm1)");
+        }
+
+        [Test]
         public void X86rw_Xor()
         {
             Run16bitTest(m =>
@@ -272,6 +282,15 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|0C00:0000(4): 1 instructions",
                 "1|L--|SCZO = cond(ebx - 3<32>)");
+        }
+
+        [Test]
+        public void X86Rw_cmpss()
+        {
+            Run64bitTest("F30FC2C805");
+            AssertCode(     // cmpss	xmm1,xmm0,5h
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|xmm1 = SLICE(xmm1, real32, 0) >= SLICE(xmm0, real32, 0) ? 0xFFFFFFFFFFFFFFFF<128> : 0<128>");
         }
 
         [Test]
@@ -600,6 +619,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_shlx()
+        {
+            Run64bitTest("C44289F7C6");
+            AssertCode(     // shlx	r8,r14,r14
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|r8 = r14 << r14");
+        }
+
+        [Test]
         public void X86rw_Shrd()
         {
             Run16bitTest(m =>
@@ -612,6 +640,16 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_shrx()
+        {
+            Run64bitTest("C4C23BF7ED");
+            AssertCode(     // shrx	ebp,r13d,r8d
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|ebp = r13d >>u r8d",
+                "2|L--|rbp = CONVERT(ebp, word32, uint64)");
+        }
+
+        [Test]
         public void X86rw_Fild()
         {
             Run32bitTest(m =>
@@ -621,7 +659,7 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
                 "1|L--|Top = Top - 1<i8>",
-                "2|L--|ST[Top:real64] = (real64) Mem0[ebx + 4<32>:int32]");
+                "2|L--|ST[Top:real64] = CONVERT(Mem0[ebx + 4<32>:int32], int32, real64)");
         }
 
         [Test]
@@ -633,7 +671,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
-                "1|L--|Mem0[ebx + 4<32>:real32] = (real32) ST[Top:real64]",
+                "1|L--|Mem0[ebx + 4<32>:real32] = CONVERT(ST[Top:real64], real64, real32)",
                 "2|L--|Top = Top + 1<i8>");
         }
 
@@ -690,7 +728,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|0C00:0000(3): 1 instructions",
-                "1|L--|ST[Top:real64] = ST[Top:real64] + (real64) Mem0[ds:bx + 0<16>:word16]");
+                "1|L--|ST[Top:real64] = ST[Top:real64] + CONVERT(Mem0[ds:bx + 0<16>:int16], int16, real64)");
         }
 
         /// <summary>
@@ -708,6 +746,18 @@ namespace Reko.UnitTests.Arch.X86
                 "1|L--|ax = ax & 8<16>",
                 "2|L--|SZO = cond(ax)",
                 "3|L--|C = false");
+        }
+
+        [Test]
+        public void X86rw_andn()
+        {
+            Run64bitTest("C4E278F2CB"); //andn\tecx,eax,ebx
+            AssertCode(
+                "0|L--|0000000140000000(5): 4 instructions",
+                "1|L--|ecx = ebx & ~eax",
+                "2|L--|rcx = CONVERT(ecx, word32, uint64)",
+                "3|L--|SZO = cond(ecx)",
+                "4|L--|C = false");
         }
 
         [Test(Description = "Captures the side effect of setting CF = 0")]
@@ -732,7 +782,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|0C00:0000(2): 2 instructions",
-                "1|L--|dx_ax = cx *s ax",
+                "1|L--|dx_ax = cx *s32 ax",
                 "2|L--|SCZO = cond(dx_ax)");
         }
 
@@ -745,7 +795,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|0C00:0000(2): 2 instructions",
-                "1|L--|dx_ax = cx *u ax",
+                "1|L--|dx_ax = cx *u32 ax",
                 "2|L--|SCZO = cond(dx_ax)");
         }
 
@@ -771,8 +821,8 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|0C00:0000(2): 4 instructions",
                 "1|L--|v5 = dx_ax",
-                "2|L--|dx = (uint16) (v5 % cx)",
-                "3|L--|ax = (uint16) (v5 /u cx)",
+                "2|L--|dx = CONVERT(v5 % cx, word32, uint16)",
+                "3|L--|ax = CONVERT(v5 /u cx, word16, uint16)",
                 "4|L--|SCZO = cond(ax)");
         }
 
@@ -786,8 +836,8 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                     "0|L--|0C00:0000(2): 4 instructions",
                     "1|L--|v5 = dx_ax",
-                    "2|L--|dx = (int16) (v5 % cx)",
-                    "3|L--|ax = (int16) (v5 / cx)",
+                    "2|L--|dx = CONVERT(v5 % cx, word32, int16)",
+                    "3|L--|ax = CONVERT(v5 /16 cx, word16, int16)",
                     "4|L--|SCZO = cond(ax)");
         }
 
@@ -893,7 +943,7 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
-        public void X86rw_Sar()
+        public void X86rw_sar()
         {
             Run16bitTest(m =>
             {
@@ -914,6 +964,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_sarx()
+        {
+            Run64bitTest("C462D2F7C1");
+            AssertCode(     // sarx	r8,rcx,rbp
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|r8 = rcx >> rbp");
+        }
+
+        [Test]
         public void X86rw_Xlat16()
         {
             Run16bitTest(m =>
@@ -922,7 +981,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|0C00:0000(1): 1 instructions",
-                "1|L--|al = Mem0[ds:bx + (uint16) al:byte]");
+                "1|L--|al = Mem0[ds:bx + CONVERT(al, uint8, uint16):byte]");
         }
 
         [Test]
@@ -934,7 +993,7 @@ namespace Reko.UnitTests.Arch.X86
             });
             AssertCode(
                 "0|L--|10000000(1): 1 instructions",
-                "1|L--|al = Mem0[ebx + (uint32) al:byte]");
+                "1|L--|al = Mem0[ebx + CONVERT(al, uint8, uint32):byte]");
         }
 
         [Test]
@@ -985,6 +1044,27 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|H--|10000000(1): 1 instructions",
                 "1|H--|__hlt()");
+        }
+
+        [Test]
+        public void X86Rw_popcnt()
+        {
+            Run64bitTest("F3480FB8C7");
+            AssertCode(     // popcnt	rax,rdi
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|rax = __popcnt(rdi)",
+                "2|L--|Z = rdi == 0<64>");
+        }
+
+        [Test]
+        public void X86Rw_popcnt_mem()
+        {
+            Run64bitTest("F3480FB800");
+            AssertCode(     // popcnt	rax,rdi
+                "0|L--|0000000140000000(5): 3 instructions",
+                "1|L--|v3 = Mem0[rax:word64]",
+                "2|L--|rax = __popcnt(v3)",
+                "3|L--|Z = v3 == 0<64>");
         }
 
         [Test]
@@ -1070,6 +1150,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_rorx()
+        {
+            Run64bitTest("C443FBF0D602");
+            AssertCode(     // rorx	r10,r14,2h
+                "0|L--|0000000140000000(6): 1 instructions",
+                "1|L--|r10 = __ror(r14, 2<8>)");
+        }
+
+        [Test]
         public void X86rw_pause()
         {
             Run32bitTest(0xF3, 0x90);
@@ -1106,6 +1195,16 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86rw_xabort()
+        {
+            Run64bitTest("44C6F842");
+            AssertCode(     // xabort
+                "0|H--|0000000140000000(4): 1 instructions",
+                "1|H--|__xabort(0x42<8>)");
+        }
+
+
+        [Test]
         public void X86rw_Xadd()
         {
             Run32bitTest(0x0f, 0xC1, 0xC2);
@@ -1121,7 +1220,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xF2, 0x0F, 0x2C, 0xC3);
             AssertCode(
               "0|L--|10000000(4): 1 instructions",
-              "1|L--|eax = (int32) xmm3");
+              "1|L--|eax = CONVERT(SLICE(xmm3, real64, 0), real64, int32)");
         }
 
 
@@ -1150,16 +1249,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0x0f, 0x90, 0xc1);
             AssertCode(
                 "0|L--|10000000(3): 1 instructions",
-                "1|L--|cl = Test(OV,O)");
-        }
-
-        [Test]
-        public void X86rw_bts()
-        {
-            Run32bitTest(0x0F, 0xAB, 0x04, 0x24);
-            AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|C = __bts(Mem0[esp:word32], eax, out Mem0[esp:word32])");
+                "1|L--|cl = CONVERT(Test(OV,O), bool, int8)");
         }
 
         [Test]
@@ -1180,37 +1270,32 @@ namespace Reko.UnitTests.Arch.X86
                 "1|L--|edx_eax = __xgetbv(ecx)");
         }
 
-
-
         [Test]
         public void X86rw_setc()
         {
             Run32bitTest(0x0F, 0x92, 0xC1);
             AssertCode(
                 "0|L--|10000000(3): 1 instructions",
-                "1|L--|cl = Test(ULT,C)");
+                "1|L--|cl = CONVERT(Test(ULT,C), bool, int8)");
         }
 
         [Test]
-        public void X86rw_btr()
+        public void X86rw_movd_xmm()
         {
-            Run32bitTest(0x0F, 0xBA, 0xF3, 0x00);
-            AssertCode(
+            Run32bitTest(0x66, 0x0f, 0x6e, 0xc0);
+            AssertCode(  // movd
                 "0|L--|10000000(4): 1 instructions",
-                "1|L--|C = __btr(ebx, 0<8>, out ebx)");
+                "1|L--|xmm0 = CONVERT(eax, word32, word128)");
         }
 
         [Test]
         public void X86rw_more_xmm()
         {
-            Run32bitTest(0x66, 0x0f, 0x6e, 0xc0);
-            AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|xmm0 = (word128) eax");
             Run32bitTest(0x66, 0x0f, 0x7e, 0x01);
             AssertCode(
-                "0|L--|10000000(4): 1 instructions",
-                "1|L--|Mem0[ecx:word32] = (word32) xmm0");
+                "0|L--|10000000(4): 2 instructions",
+                "1|L--|v4 = CONVERT(xmm0, word128, word32)",
+                "2|L--|Mem0[ecx:word32] = v4");
             Run32bitTest(0x66, 0x0f, 0x60, 0xc0);
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
@@ -1231,7 +1316,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0x48, 0x63, 0x48, 0x3c); // "movsxd\trcx,dword ptr [rax+3C]", 
             AssertCode(
                 "0|L--|0000000140000000(4): 1 instructions",
-                "1|L--|rcx = (int64) Mem0[rax + 0x3C<64>:word32]");
+                "1|L--|rcx = CONVERT(Mem0[rax + 0x3C<64>:word32], word32, int64)");
         }
 
         [Test]
@@ -1301,9 +1386,8 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run16bitTest(0x0E, 0xE8, 0x42, 0x32);
             AssertCode(
-                "0|T--|0C00:0000(4): 2 instructions",
-                "1|L--|sp = sp - 2<i16>",
-                "2|T--|call 0C00:3246 (2)");
+                "0|T--|0C00:0000(4): 1 instructions",
+                "1|T--|call 0C00:3246 (4)");
         }
 
         [Test]
@@ -1312,7 +1396,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xd9, 0x1c, 0x24);
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
-                "1|L--|Mem0[esp:real32] = (real32) ST[Top:real64]",
+                "1|L--|Mem0[esp:real32] = CONVERT(ST[Top:real64], real64, real32)",
                 "2|L--|Top = Top + 1<i8>");
         }
 
@@ -1334,7 +1418,7 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|0C00:0000(3): 2 instructions",
                 "1|L--|Top = Top - 1<i8>",
-                "2|L--|ST[Top:real64] = (real64) Mem0[ds:si + 0x40<16>:real32]");
+                "2|L--|ST[Top:real64] = CONVERT(Mem0[ds:si + 0x40<16>:real32], real32, real64)");
         }
 
         [Test]
@@ -1353,8 +1437,8 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                   "0|L--|10000000(4): 4 instructions",
                   "1|L--|v5 = edx_eax",
-                  "2|L--|edx = (int32) (v5 % Mem0[esp + 4<32>:word32])",
-                  "3|L--|eax = (int32) (v5 / Mem0[esp + 4<32>:word32])",
+                  "2|L--|edx = CONVERT(v5 % Mem0[esp + 4<32>:word32], word64, int32)",
+                  "3|L--|eax = CONVERT(v5 /32 Mem0[esp + 4<32>:word32], word32, int32)",
                   "4|L--|SCZO = cond(eax)");
         }
 
@@ -1438,11 +1522,11 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x0F, 0x11, 0x45, 0xE0);   // movss dword PTR[rbp - 0x20], xmm0,
             AssertCode(
                "0|L--|0000000140000000(5): 1 instructions",
-               "1|L--|Mem0[rbp - 0x20<64>:real32] = (real32) xmm0");
+               "1|L--|Mem0[rbp - 0x20<64>:real32] = SLICE(xmm0, real32, 0)");
             Run64bitTest(0xF3, 0x0F, 0x10, 0xC3);         // movss xmm0, xmm3,
             AssertCode(
                "0|L--|0000000140000000(4): 1 instructions",
-               "1|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), (real32) xmm3)");
+               "1|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), SLICE(xmm3, real32, 0))");
         }
 
         [Test(Description = "Regression reported by @mewmew")]
@@ -1451,7 +1535,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xDB, 0x7C, 0x47, 0x83);       // fstp [esi-0x7D + eax*2]
             AssertCode(
                 "0|L--|10000000(4): 2 instructions",
-                "1|L--|Mem0[edi - 0x7D<32> + eax * 2<32>:real80] = (real80) ST[Top:real64]",
+                "1|L--|Mem0[edi - 0x7D<32> + eax * 2<32>:real80] = CONVERT(ST[Top:real64], real64, real80)",
                 "2|L--|Top = Top + 1<i8>");
         }
 
@@ -1474,11 +1558,11 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF2, 0x0F, 0x11, 0x45, 0xE0);   // movsd dword PTR[rbp - 0x20], xmm0,
             AssertCode(
                "0|L--|0000000140000000(5): 1 instructions",
-               "1|L--|Mem0[rbp - 0x20<64>:real64] = (real64) xmm0");
+               "1|L--|Mem0[rbp - 0x20<64>:real64] = SLICE(xmm0, real64, 0)");
             Run64bitTest(0xF2, 0x0F, 0x10, 0xC3);   // movsd xmm0, xmm3,
             AssertCode(
                "0|L--|0000000140000000(4): 1 instructions",
-               "1|L--|xmm0 = SEQ(SLICE(xmm0, word64, 64), (real64) xmm3)");
+               "1|L--|xmm0 = SEQ(SLICE(xmm0, word64, 64), SLICE(xmm3, real64, 0))");
         }
 
         [Test(Description = "Intel and AMD state that if you set the low 32-bits of a register in 64-bit mode, they are zero extended.")]
@@ -1486,10 +1570,20 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run64bitTest(0x33, 0xC0);
             AssertCode(
-               "0|L--|0000000140000000(2): 3 instructions",
-               "1|L--|rax = (uint64) (eax ^ eax)",
-               "2|L--|SZO = cond(eax)",
-               "3|L--|C = false");
+               "0|L--|0000000140000000(2): 4 instructions",
+               "1|L--|eax = eax ^ eax",
+               "2|L--|rax = CONVERT(eax, word32, uint64)",
+               "3|L--|SZO = cond(eax)",
+               "4|L--|C = false");
+        }
+
+        [Test]
+        public void X86Rw_tzcnt()
+        {
+            Run64bitTest("F30FBCCA");
+            AssertCode(     // tzcnt	ecx,edx
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|ecx = __tzcnt(edx)");
         }
 
         [Test]
@@ -1498,10 +1592,9 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0x0F, 0x2E, 0x05, 0x2D, 0xB1, 0x00, 0x00);
             AssertCode( // ucomiss\txmm0,dword ptr [rip+0000B12D]
                "0|L--|0000000140000000(7): 3 instructions",
-               "1|L--|CZP = cond((real32) xmm0 - Mem0[0x000000014000B134<p64>:real32])",
+               "1|L--|CZP = cond(SLICE(xmm0, real32, 0) - Mem0[0x000000014000B134<p64>:real32])",
                "2|L--|O = false",
                "3|L--|S = false");
-
         }
 
         [Test]
@@ -1510,7 +1603,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0x66, 0x0F, 0x2E, 0x05, 0x2D, 0xB1, 0x00, 0x00);
             AssertCode( // ucomisd\txmm0,qword ptr [rip+0000B12D]
                "0|L--|0000000140000000(8): 3 instructions",
-               "1|L--|CZP = cond((real64) xmm0 - Mem0[0x000000014000B135<p64>:real64])",
+               "1|L--|CZP = cond(SLICE(xmm0, real64, 0) - Mem0[0x000000014000B135<p64>:real64])",
                "2|L--|O = false",
                "3|L--|S = false");
         }
@@ -1521,7 +1614,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x0F, 0x58, 0x0D, 0xFB, 0xB0, 0x00, 0x00);
             AssertCode( //addss\txmm1,dword ptr [rip+0000B0FB]
                "0|L--|0000000140000000(8): 3 instructions",
-               "1|L--|v3 = (real32) xmm1 + Mem0[0x000000014000B103<p64>:real32]",
+               "1|L--|v3 = SLICE(xmm1, real32, 0) + Mem0[0x000000014000B103<p64>:real32]",
                "2|L--|v4 = SLICE(xmm1, word96, 32)",
                "3|L--|xmm1 = SEQ(v4, v3)");
         }
@@ -1532,7 +1625,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x0F, 0x5C, 0xCD);
             AssertCode(     // subss\txmm1,dword ptr [rip+0000B0FB]
                "0|L--|0000000140000000(4): 3 instructions",
-               "1|L--|v3 = (real32) xmm1 - (real32) xmm5",
+               "1|L--|v3 = SLICE(xmm1, real32, 0) - SLICE(xmm5, real32, 0)",
                "2|L--|v5 = SLICE(xmm1, word96, 32)",
                "3|L--|xmm1 = SEQ(v5, v3)");
         }
@@ -1543,7 +1636,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("C5BE5CCD");
             AssertCode(     // vsubss xmm1,xmm8,xmm5
                "0|L--|0000000140000000(4): 2 instructions",
-               "1|L--|v3 = (real32) xmm8 - (real32) xmm5",
+               "1|L--|v3 = SLICE(xmm8, real32, 0) - SLICE(xmm5, real32, 0)",
                "2|L--|xmm1 = SEQ(0<96>, v3)");
         }
 
@@ -1553,7 +1646,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x48, 0x0F, 0x2A, 0xC0);
             AssertCode(     // "cvtsi2ss\txmm0,rax", 
                "0|L--|0000000140000000(5): 2 instructions",
-               "1|L--|v4 = (real32) rax",
+               "1|L--|v4 = CONVERT(rax, int64, real32)",
                "2|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), v4)");
         }
 
@@ -1563,8 +1656,8 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("49 0F 2A C5");
             AssertCode( // cvtpi2ps xmm0, mm5
                "0|L--|0000000140000000(4): 3 instructions",
-               "1|L--|v3 = (real32) SLICE(mm5, int32, 0)",
-               "2|L--|v4 = (real32) SLICE(mm5, int32, 32)",
+               "1|L--|v3 = CONVERT(SLICE(mm5, int32, 0), int32, real32)",
+               "2|L--|v4 = CONVERT(SLICE(mm5, int32, 32), int32, real32)",
                "3|L--|xmm0 = SEQ(v4, v3)");
         }
 
@@ -1580,12 +1673,23 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_divpd()
+        {
+            Run64bitTest("660F5EF1");
+            AssertCode(     // divpd	xmm6,xmm1
+                "0|L--|0000000140000000(4): 3 instructions",
+                "1|L--|v4 = xmm6",
+                "2|L--|v5 = xmm1",
+                "3|L--|xmm6 = __divpd(v4, v5)");
+        }
+
+        [Test]
         public void X86rw_divsd()
         {
             Run64bitTest("F2 0F 5E C1");
             AssertCode( // divsd xmm0,xmm1
                "0|L--|0000000140000000(4): 3 instructions",
-               "1|L--|v3 = (real64) xmm0 / (real64) xmm1",
+               "1|L--|v3 = SLICE(xmm0, real64, 0) / SLICE(xmm1, real64, 0)",
                "2|L--|v5 = SLICE(xmm0, word64, 64)",
                "3|L--|xmm0 = SEQ(v5, v3)");
         }
@@ -1596,7 +1700,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("F2 0F 59 05 92 AD 00 00 ");
             AssertCode(     // mulsd xmm0,qword ptr[rip + ad92]
                "0|L--|0000000140000000(8): 3 instructions",
-               "1|L--|v3 = (real64) xmm0 * Mem0[0x000000014000AD9A<p64>:real64]",
+               "1|L--|v3 = SLICE(xmm0, real64, 0) * Mem0[0x000000014000AD9A<p64>:real64]",
                "2|L--|v4 = SLICE(xmm0, word64, 64)",
                "3|L--|xmm0 = SEQ(v4, v3)");
         }
@@ -1618,7 +1722,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("F3 4C 0F 2C F8");
             AssertCode(     // cvttss2si r15d, xmm0
                "0|L--|0000000140000000(5): 1 instructions",
-               "1|L--|r15d = (int32) xmm0");
+               "1|L--|r15d = CONVERT(SLICE(xmm0, real32, 0), real32, int32)");
         }
 
         [Test]
@@ -1638,7 +1742,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("F3 0F 59 D8");
             AssertCode(     // mulss xmm3, xmm0
                 "0|L--|0000000140000000(4): 3 instructions",
-                "1|L--|v3 = (real32) xmm3 * (real32) xmm0",
+                "1|L--|v3 = SLICE(xmm3, real32, 0) * SLICE(xmm0, real32, 0)",
                 "2|L--|v5 = SLICE(xmm3, word96, 32)",
                 "3|L--|xmm3 = SEQ(v5, v3)");
         }
@@ -1649,8 +1753,17 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("C5 BE 59 D8");
             AssertCode(     // mulss xmm3, xmm8, xmm0
                 "0|L--|0000000140000000(4): 2 instructions",
-                "1|L--|v3 = (real32) xmm8 * (real32) xmm0",
+                "1|L--|v3 = SLICE(xmm8, real32, 0) * SLICE(xmm0, real32, 0)",
                 "2|L--|xmm3 = SEQ(0<96>, v3)");
+        }
+
+        [Test]
+        public void X86Rw_mulx()
+        {
+            Run64bitTest("C442FBF6E2");
+            AssertCode(     // mulx	r12,rax,rdx,r10
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|r12_rax = rdx *u128 r10");
         }
 
         [Test]
@@ -1659,7 +1772,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("F3 0F 5E C1");
             AssertCode(     // divss xmm0, xmm1
                 "0|L--|0000000140000000(4): 3 instructions",
-                "1|L--|v3 = (real32) xmm0 / (real32) xmm1",
+                "1|L--|v3 = SLICE(xmm0, real32, 0) / SLICE(xmm1, real32, 0)",
                 "2|L--|v5 = SLICE(xmm0, word96, 32)",
                 "3|L--|xmm0 = SEQ(v5, v3)");
         }
@@ -1699,7 +1812,16 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xD8, 0x0D, 0x89, 0x9F, 0x00, 0x00);
             AssertCode(     // fmul
               "0|L--|0000000140000000(6): 1 instructions",
-              "1|L--|ST[Top:real64] = ST[Top:real64] * Mem0[0x0000000140009F8F<p64>:real32]");
+              "1|L--|ST[Top:real64] = ST[Top:real64] * CONVERT(Mem0[0x0000000140009F8F<p64>:real32], real32, real64)");
+        }
+
+        [Test]
+        public void X86Rw_fneni()
+        {
+            Given_HexString("DBE0");
+            AssertCode(     // fneni
+                "0|L--|10000000(2): 1 instructions",
+                "1|L--|nop");
         }
 
         [Test]
@@ -1712,11 +1834,21 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
-        public void X86rw_x64_push_immediate()
+        public void X86rw_x64_push_immediate_32bit()
         {
             Run64bitTest(0x6A, 0xC2);
             AssertCode(     // "push 0xC2", 
                 "0|L--|0000000140000000(2): 2 instructions",
+                "1|L--|rsp = rsp - 4<i64>",
+                "2|L--|Mem0[rsp:word32] = 0xFFFFFFC2<32>");
+        }
+
+        [Test]
+        public void X86rw_x64_push_immediate_64bit()
+        {
+            Run64bitTest(0x48, 0x6A, 0xC2);
+            AssertCode(     // "push 0xC2", 
+                "0|L--|0000000140000000(3): 2 instructions",
                 "1|L--|rsp = rsp - 8<i64>",
                 "2|L--|Mem0[rsp:word64] = 0xFFFFFFFFFFFFFFC2<64>");
         }
@@ -1814,7 +1946,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xC5, 0xFA, 0x11, 0x85, 0x2C, 0xFF, 0xFF, 0xFF); // vmovss dword ptr [rbp-0xd4], xmm0
             AssertCode(
                 "0|L--|0000000140000000(8): 1 instructions",
-                "1|L--|Mem0[rbp - 0xD4<64>:real32] = (real32) xmm0");
+                "1|L--|Mem0[rbp - 0xD4<64>:real32] = SLICE(xmm0, real32, 0)");
         }
 
         [Test]
@@ -1823,7 +1955,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xC4, 0xE1, 0xFA, 0x2A, 0xC0);     // vcvtsi2ss\txmm0,xmm0,rax
             AssertCode(
              "0|L--|0000000140000000(5): 2 instructions",
-             "1|L--|v4 = (real32) rax",
+             "1|L--|v4 = CONVERT(rax, int64, real32)",
              "2|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), v4)");
         }
 
@@ -1833,7 +1965,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xC4, 0xE1, 0xFB, 0x2A, 0xC2); // vcvtsi2sd\txmm0,xmm0,rdx
             AssertCode(
                 "0|L--|0000000140000000(5): 2 instructions",
-                "1|L--|v4 = (real64) rdx",
+                "1|L--|v4 = CONVERT(rdx, int64, real64)",
                 "2|L--|xmm0 = SEQ(SLICE(xmm0, word64, 64), v4)");
         }
 
@@ -1843,8 +1975,73 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xC5, 0xFB, 0x11, 0x01); // vmovsd double ptr[rcx], xmm0
             AssertCode(
                 "0|L--|0000000140000000(4): 1 instructions",
-                "1|L--|Mem0[rcx:real64] = (real64) xmm0");
+                "1|L--|Mem0[rcx:real64] = SLICE(xmm0, real64, 0)");
         }
+
+
+        [Test]
+        public void X86Rw_vminpd()
+        {
+            Run64bitTest("C401E95DFB");
+            AssertCode(     // vminpd	xmm15,xmm2,xmm11
+                "0|L--|0000000140000000(5): 3 instructions",
+                "1|L--|v5 = xmm2",
+                "2|L--|v6 = xmm11",
+                "3|L--|xmm15 = __minpd(v5, v6)");
+        }
+
+        [Test]
+        public void X86Rw_vpbroadcastb()
+        {
+            Run64bitTest("C4E27D78C0");
+            AssertCode(     // vpbroadcastb	ymm0,al
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|ymm0 = __pbroadcastb(al)");
+        }
+
+        [Test]
+        public void X86Rw_vpcmpeqb()
+        {
+            Run64bitTest("C5ED74D8");
+            AssertCode(     // vpcmpeqb	ymm3,ymm0
+                "0|L--|0000000140000000(4): 3 instructions",
+                "1|L--|v4 = ymm3",
+                "2|L--|v5 = ymm0",
+                "3|L--|ymm3 = __pcmpeqb(v4, v5)");
+        }
+
+        [Test]
+        public void X86Rw_vpmaddubsw()
+        {
+            Run64bitTest("660F3804D6");
+            AssertCode(     // vpmaddubsw	xmm2,xmm6
+                "0|L--|0000000140000000(5): 3 instructions",
+                "1|L--|v4 = xmm2",
+                "2|L--|v5 = xmm6",
+                "3|L--|xmm2 = __pmaddubsw(v4, v5)");
+        }
+
+        [Test]
+        public void X86Rw_vpmovmskb()
+        {
+            Run64bitTest("C5FDD7CA");
+            AssertCode(     // vpmovmskb	ecx,ymm2
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v4 = __pmovmskb(ymm2)",
+                "2|L--|ecx = SEQ(SLICE(ecx, word24, 8), v4)");
+        }
+
+        [Test]
+        public void X86Rw_vpsubsw()
+        {
+            Run64bitTest("C501E92F");
+            AssertCode(     // vpsubsw	xmm13,xmm15,[rdi]
+                "0|L--|0000000140000000(4): 3 instructions",
+                "1|L--|v5 = xmm15",
+                "2|L--|v6 = Mem0[rdi:word128]",
+                "3|L--|xmm13 = __psubsw(v5, v6)");
+        }
+
 
         [Test]
         public void X86rw_vmovaps_xmm()
@@ -1870,7 +2067,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xC5, 0xFB, 0x58, 0xC0);   // vaddsd xmm0,xmm0,xmm0
             AssertCode(
                 "0|L--|0000000140000000(4): 2 instructions",
-                "1|L--|v3 = (real64) xmm0 + (real64) xmm0",
+                "1|L--|v3 = SLICE(xmm0, real64, 0) + SLICE(xmm0, real64, 0)",
                 "2|L--|xmm0 = SEQ(0<64>, v3)");
         }
 
@@ -1919,6 +2116,53 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_bextr()
+        {
+            Run64bitTest("C4C228F7F9");
+            AssertCode(     // bextr	edi,r9d,r10d
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|edi = __bextr(r9d, r10d)",
+                "2|L--|Z = edi == 0<32>");
+        }
+
+        [Test]
+        public void X86Rw_blsi()
+        {
+            Run64bitTest("C4C298F3DB");
+            AssertCode(     // blsi	r12,r11
+                "0|L--|0000000140000000(5): 4 instructions",
+                "1|L--|r12 = __blsi(r11)",
+                "2|L--|Z = r12 == 0<64>",
+                "3|L--|S = r12 <= 0<64>",
+                "4|L--|C = r11 == 0<64>");
+        }
+
+        [Test]
+        public void X86Rw_blsmsk()
+        {
+            Run64bitTest("C4C290F3D2");
+            AssertCode(     // blsmsk	r13,r10
+                "0|L--|0000000140000000(5): 4 instructions",
+                "1|L--|r13 = __blsmsk(r10)",
+                "2|L--|Z = r13 == 0<64>",
+                "3|L--|S = r13 <= 0<64>",
+                "4|L--|C = r10 == 0<64>");
+        }
+
+        [Test]
+        public void X86Rw_blsr()
+        {
+            Run64bitTest("C4E2A8F3CA");
+            AssertCode(     // blsr r10,rdx
+                "0|L--|0000000140000000(5): 4 instructions",
+                "1|L--|r10 = __blsr(rdx)",
+                "2|L--|Z = r10 == 0<64>",
+                "3|L--|S = r10 <= 0<64>",
+                "4|L--|C = rdx == 0<64>");
+        }
+
+
+        [Test]
         public void X86rw_bsf()
         {
             Run32bitTest(0x0F, 0xBC, 0x42, 0x42);    // bsf\teax,[edx+42]
@@ -1935,6 +2179,34 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
                 "1|L--|C = __btc(eax, Mem0[edx + 0x42<32>:word32], out eax)");
+        }
+
+        [Test]
+        public void X86rw_btr()
+        {
+            Run32bitTest(0x0F, 0xBA, 0xF3, 0x00);
+            AssertCode(
+                "0|L--|10000000(4): 1 instructions",
+                "1|L--|C = __btr(ebx, 0<8>, out ebx)");
+        }
+
+
+        [Test]
+        public void X86rw_bts()
+        {
+            Run32bitTest(0x0F, 0xAB, 0x04, 0x24);
+            AssertCode(
+                "0|L--|10000000(4): 1 instructions",
+                "1|L--|C = __bts(Mem0[esp:word32], eax, out Mem0[esp:word32])");
+        }
+
+        [Test]
+        public void X86Rw_bzhi()
+        {
+            Run64bitTest("C46290F5EB");
+            AssertCode(     // bzhi	r13,rbx,r13
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|r13 = __bzhi(rbx, r13)");
         }
 
         [Test]
@@ -1963,7 +2235,18 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0x0F, 0x2F, 0x42, 0x42);    // comiss\txmm0,dword ptr [edx+42]
             AssertCode(
                 "0|L--|10000000(4): 3 instructions",
-                "1|L--|CZP = cond((real32) xmm0 - Mem0[edx + 0x42<32>:real32])",
+                "1|L--|CZP = cond(SLICE(xmm0, real32, 0) - Mem0[edx + 0x42<32>:real32])",
+                "2|L--|O = false",
+                "3|L--|S = false");
+        }
+
+        [Test]
+        public void X86rw_comiss_reg()
+        {
+            Run32bitTest(0x0F, 0x2F, 0xCF);
+            AssertCode(
+                "0|L--|10000000(3): 3 instructions",
+                "1|L--|CZP = cond(SLICE(xmm1, real32, 0) - SLICE(xmm7, real32, 0))",
                 "2|L--|O = false",
                 "3|L--|S = false");
         }
@@ -2113,7 +2396,7 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
                 "1|L--|Top = Top - 1<i8>",
-                "2|L--|ST[Top:real64] = (real64) Mem0[eax + 0x42<32>:int16]");
+                "2|L--|ST[Top:real64] = CONVERT(Mem0[eax + 0x42<32>:int16], int16, real64)");
         }
 
         [Test]
@@ -2122,7 +2405,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xDB, 0x08);    // fisttp\tdword ptr [eax]
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
-                "1|L--|Mem0[eax:int32] = (int32) trunc(ST[Top:real64])",
+                "1|L--|Mem0[eax:int32] = CONVERT(trunc(ST[Top:real64]), real64, int32)",
                 "2|L--|Top = Top + 1<i8>");
         }
 
@@ -2132,7 +2415,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xDF, 0x48, 0x42);    // fisttp\tword ptr [eax+42]
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
-                "1|L--|Mem0[eax + 0x42<32>:int16] = (int16) trunc(ST[Top:real64])",
+                "1|L--|Mem0[eax + 0x42<32>:int16] = CONVERT(trunc(ST[Top:real64]), real64, int16)",
                 "2|L--|Top = Top + 1<i8>");
         }
 
@@ -2142,7 +2425,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xDD, 0x48, 0x42);    // fisttp\tqword ptr [eax+42]
             AssertCode(
                 "0|L--|10000000(3): 2 instructions",
-                "1|L--|Mem0[eax + 0x42<32>:int64] = (int64) trunc(ST[Top:real64])");
+                "1|L--|Mem0[eax + 0x42<32>:int64] = CONVERT(trunc(ST[Top:real64]), real64, int64)");
         }
 
         [Test]
@@ -2152,7 +2435,7 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|10000000(2): 2 instructions",
                 "1|L--|Top = Top - 1<i8>",
-                "2|L--|ST[Top:real64] = (real64) Mem0[eax:real80]");
+                "2|L--|ST[Top:real64] = CONVERT(Mem0[eax:real80], real80, real64)");
         }
 
         [Test]
@@ -2199,6 +2482,15 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|S--|10000000(4): 1 instructions",
                 "1|L--|eax = __lsl(Mem0[edx + 0x42<32>:word16])");
+        }
+
+        [Test]
+        public void X86Rw_maskmovdqu()
+        {
+            Run32bitTest("660FF7E2");
+            AssertCode(     // maskmovdqu	xmm4,xmm2
+                "0|L--|10000000(4): 1 instructions",
+                "1|L--|xmm4 = __maskmovdqu(xmm4, xmm2)");
         }
 
         [Test]
@@ -2511,6 +2803,24 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_pext()
+        {
+            Run64bitTest("C4C282F5D6");
+            AssertCode(     // pext	rdx,r15,r14
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|rdx = __pext(r15, r14)");
+        }
+
+        [Test]
+        public void X86Rw_pdep()
+        {
+            Run64bitTest("C4E2E3F5F2");
+            AssertCode(     // pdep	rsi,rbx,rdx
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|rsi = __pdep(rbx, rdx)");
+        }
+
+        [Test]
         public void X86rw_pextrw()
         {
             Run32bitTest(0x0F, 0xC5, 0x42, 0x42);    // pextrw\teax,mm2,42
@@ -2527,6 +2837,15 @@ namespace Reko.UnitTests.Arch.X86
             AssertCode(
                 "0|L--|10000000(3): 1 instructions",
                 "1|L--|mm0 = __pinsrw(mm0, mm0, edx)");
+        }
+
+        [Test]
+        public void X86Rw_pinsrd()
+        {
+            Run32bitTest("660F3A2244240802");
+            AssertCode(     // pinsrd	xmm0,dword ptr [esp+8h],2h
+                "0|L--|10000000(8): 1 instructions",
+                "1|L--|xmm0 = __pinsrd(xmm0, Mem0[esp + 8<32>:word32], 2<8>)");
         }
 
         [Test]
@@ -2667,6 +2986,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_punpcklqdq()
+        {
+            Run64bitTest("660F6CC0");
+            AssertCode(     // punpcklqdq	xmm0,xmm0
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|xmm0 = __punpcklqdq(xmm0, xmm0)");
+        }
+
+        [Test]
         public void X86rw_pcmpeqd()
         {
             Run32bitTest(0x0F, 0x76, 0x42, 0x42);    // pcmpeqd\tmm0,[edx+42]
@@ -2754,10 +3082,19 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run32bitTest(0x0F, 0xE2, 0x42, 0x42);    // psrad\tmm0,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = mm0",
-                "2|L--|v5 = Mem0[edx + 0x42<32>:word64]",
-                "3|L--|mm0 = __psrad(v4, v5)");
+                "2|L--|mm0 = __psrad(v4, Mem0[edx + 0x42<32>:word64])");
+        }
+
+        [Test]
+        public void X86Rw_psrldq()
+        {
+            Run64bitTest("660F73DA08");
+            AssertCode(     // psrldq	xmm2,8h
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = SLICE(xmm2, word128, 0)",
+                "2|L--|xmm2 = v3");
         }
 
         [Test]
@@ -2808,13 +3145,10 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run32bitTest(0x0F, 0xE1, 0x42, 0x42);    // psraw\tmm0,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = mm0",
-                "2|L--|v5 = Mem0[edx + 0x42<32>:word64]",
-                "3|L--|mm0 = __psraw(v4, v5)");
+                "2|L--|mm0 = __psraw(v4, Mem0[edx + 0x42<32>:word64])");
         }
-
-
 
         [Test]
         public void X86rw_pmulhuw()
@@ -2932,7 +3266,16 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0x0F, 0xEB, 0x42, 0x42);    // por\tmm0,[edx+42]
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
-                "1|L--|mm0 = __por(mm0, Mem0[edx + 0x42<32>:word64])");
+                "1|L--|mm0 = mm0 | Mem0[edx + 0x42<32>:word64]");
+        }
+
+        [Test]
+        public void X86Rw_vpor()
+        {
+            Run64bitTest(0xC5, 0x01, 0xEB, 0x8B, 0xE8, 0x09, 0xE8, 0x00);
+            AssertCode(     // vpor	xmm9,xmm15,[rbx+0E809E8h]
+                "0|L--|0000000140000000(8): 1 instructions",
+                "1|L--|xmm9 = xmm15 | Mem0[rbx + 0xE809E8<64>:word128]");
         }
 
         [Test]
@@ -2940,10 +3283,9 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run32bitTest(0x0F, 0xF2, 0x42, 0x42);    // pslld\tmm0,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = mm0",
-                "2|L--|v5 = Mem0[edx + 0x42<32>:word64]",
-                "3|L--|mm0 = __pslld(v4, v5)");
+                "2|L--|mm0 = __pslld(v4, Mem0[edx + 0x42<32>:word64])");
         }
 
         [Test]
@@ -2951,10 +3293,9 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run32bitTest(0x0F, 0xF3, 0x42, 0x42);    // psllq\tmm0,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = mm0",
-                "2|L--|v5 = Mem0[edx + 0x42<32>:word64]",
-                "3|L--|mm0 = __psllq(v4, v5)");
+                "2|L--|mm0 = __psllq(v4, Mem0[edx + 0x42<32>:word64])");
         }
 
         [Test]
@@ -2962,10 +3303,9 @@ namespace Reko.UnitTests.Arch.X86
         {
             Run32bitTest(0x0F, 0xF1, 0x42, 0x42);    // psllw\tmm0,[edx+42]
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = mm0",
-                "2|L--|v5 = Mem0[edx + 0x42<32>:word64]",
-                "3|L--|mm0 = __psllw(v4, v5)");
+                "2|L--|mm0 = __psllw(v4, Mem0[edx + 0x42<32>:word64])");
         }
 
         [Test]
@@ -3101,6 +3441,15 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_fxsave()
+        {
+            Run32bitTest("0FAE05");
+            AssertCode(     // fxsave
+                "0|L--|10000000(3): 1 instructions",
+                "1|L--|__fxsave()");
+        }
+
+        [Test]
         public void X86Rw_fxtract()
         {
             Run32bitTest(0xD9, 0xF4);	// fxtract
@@ -3113,12 +3462,23 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_fprem()
+        {
+            Run32bitTest(0xD9, 0xF8);	// fprem
+            AssertCode(
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|ST[Top:real64] = __fprem_x87(ST[Top:real64], ST[Top + 1<i8>:real64])",
+                "2|L--|C2 = __fprem_incomplete(ST[Top:real64])");
+        }
+
+        [Test]
         public void X86Rw_fprem1()
         {
             Run32bitTest(0xD9, 0xF5);	// fprem1	st(5),st(0)
             AssertCode(
-                "0|L--|10000000(2): 1 instructions",
-                "1|L--|ST[Top + 5<i8>:real64] = __fprem1(ST[Top + 5<i8>:real64], ST[Top:real64])");
+                "0|L--|10000000(2): 2 instructions",
+                "1|L--|ST[Top:real64] = ST[Top:real64] % ST[Top + 1<i8>:real64]",
+                "2|L--|C2 = __fprem_incomplete(ST[Top:real64])");
         }
 
         [Test]
@@ -3155,14 +3515,35 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
+        public void X86Rw_pshufb()
+        {
+            Run32bitTest("660F38000CDD20220F08");
+            AssertCode(     // pshufb	xmm1,[80F2220h+ebx*8]
+                "0|L--|10000000(10): 3 instructions",
+                "1|L--|v4 = xmm1",
+                "2|L--|v5 = xmm1",
+                "3|L--|xmm1 = __pshufb(v4, v5, Mem0[0x80F2220<32> + ebx * 8<32>:word128])");
+        }
+
+        [Test]
+        public void X86Rw_pshuflw()
+        {
+            Run32bitTest("F20F70C0E0");
+            AssertCode(     // pshuflw	xmm0,xmm0,0E0h
+                "0|L--|10000000(5): 3 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|v4 = xmm0",
+                "3|L--|xmm0 = __pshuflw(v3, v4, 0xE0<8>)");
+        }
+
+        [Test]
         public void X86Rw_vpsllq()
         {
-            Run32bitTest(0x66, 0x0F, 0xF3, 0xCA);	// vpsllq	xmm1,xmm2
+            Run32bitTest(0x66, 0x0F, 0xF3, 0xCA);	// psllq	xmm1,xmm2
             AssertCode(
-                "0|L--|10000000(4): 3 instructions",
+                "0|L--|10000000(4): 2 instructions",
                 "1|L--|v4 = xmm1",
-                "2|L--|v5 = xmm2",
-                "3|L--|xmm1 = __psllq(v4, v5)");
+                "2|L--|xmm1 = __psllq(v4, xmm2)");
         }
 
         [Test]
@@ -3201,7 +3582,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0xF2, 0x0F, 0x2D, 0xD1);	// cvtsd2si	edx,xmm1
             AssertCode(
                 "0|L--|10000000(4): 1 instructions",
-                "1|L--|edx = (int32) xmm1");
+                "1|L--|edx = CONVERT(SLICE(xmm1, real64, 0), real64, int32)");
         }
 
         [Test]
@@ -3305,7 +3686,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x48, 0x0F, 0x5A, 0x0D, 0xB5, 0x47, 0x32, 0x00);	// cvtss2sd	xmm1,dword ptr [rip+003247B5]
             AssertCode(
                 "0|L--|0000000140000000(9): 2 instructions",
-                "1|L--|v3 = (real64) Mem0[0x00000001403247BE<p64>:real32]",
+                "1|L--|v3 = CONVERT(Mem0[0x00000001403247BE<p64>:real32], real32, real64)",
                 "2|L--|xmm1 = SEQ(SLICE(xmm1, word64, 64), v3)");
         }
 
@@ -3316,10 +3697,9 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF2, 0x48, 0x0F, 0x5A, 0xC0);	// cvtsd2ss	xmm0,xmm0
             AssertCode(
                 "0|L--|0000000140000000(5): 2 instructions",
-                "1|L--|v3 = (real32) xmm0",
+                "1|L--|v3 = CONVERT(SLICE(xmm0, real64, 0), real64, real32)",
                 "2|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), v3)");
         }
-
 
         [Test]
         public void X86Rw_cvtss2si()
@@ -3327,7 +3707,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0xF3, 0x48, 0x0F, 0x2D, 0x50, 0x10);	// cvtss2si	rdx,dword ptr [rax+10]
             AssertCode(
                 "0|L--|0000000140000000(6): 1 instructions",
-                "1|L--|rdx = (int64) Mem0[rax + 0x10<64>:real32]");
+                "1|L--|rdx = CONVERT(Mem0[rax + 0x10<64>:real32], real32, int64)");
         }
 
         [Test]
@@ -3591,7 +3971,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest("C5 FB 5E 45 E8");
             AssertCode(
                 "0|L--|0000000140000000(5): 2 instructions",
-                "1|L--|v3 = (real64) xmm0 / Mem0[rbp - 0x18<64>:real64]",
+                "1|L--|v3 = SLICE(xmm0, real64, 0) / Mem0[rbp - 0x18<64>:real64]",
                 "2|L--|xmm0 = SEQ(0<64>, v3)");
         }
 
@@ -3643,7 +4023,7 @@ namespace Reko.UnitTests.Arch.X86
             Run16bitTest(0x99); // cwd
             AssertCode(
                 "0|L--|0C00:0000(1): 1 instructions",
-                "1|L--|dx_ax = (int32) ax");
+                "1|L--|dx_ax = CONVERT(ax, int16, int32)");
         }
 
         [Test]
@@ -3652,7 +4032,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0x99); // cdq
             AssertCode(
                 "0|L--|10000000(1): 1 instructions",
-                "1|L--|edx_eax = (int64) eax");
+                "1|L--|edx_eax = CONVERT(eax, int32, int64)");
         }
 
 
@@ -3662,7 +4042,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0x48, 0x99); // cqo
             AssertCode(
                 "0|L--|0000000140000000(2): 1 instructions",
-                "1|L--|rdx_rax = (int128) rax");
+                "1|L--|rdx_rax = CONVERT(rax, int64, int128)");
         }
 
 
@@ -3672,7 +4052,7 @@ namespace Reko.UnitTests.Arch.X86
             Run16bitTest(0x98); // cbw
             AssertCode(
                 "0|L--|0C00:0000(1): 1 instructions",
-                "1|L--|ax = (int16) al");
+                "1|L--|ax = CONVERT(al, int8, int16)");
         }
 
         [Test]
@@ -3681,7 +4061,7 @@ namespace Reko.UnitTests.Arch.X86
             Run32bitTest(0x98); // cwde
             AssertCode(
                 "0|L--|10000000(1): 1 instructions",
-                "1|L--|eax = (int32) ax");
+                "1|L--|eax = CONVERT(ax, int16, int32)");
         }
 
         [Test]
@@ -3690,7 +4070,7 @@ namespace Reko.UnitTests.Arch.X86
             Run64bitTest(0x48, 0x98); // cdqe
             AssertCode(
                 "0|L--|0000000140000000(2): 1 instructions",
-                "1|L--|rax = (int64) eax");
+                "1|L--|rax = CONVERT(eax, int32, int64)");
         }
 
         [Test]
@@ -3712,5 +4092,450 @@ namespace Reko.UnitTests.Arch.X86
                 "2|L--|Mem0[esi - 2<32>:word32] = v4",
                 "3|L--|SCZO = cond(v4)");
         }
+
+        [Test]
+        public void X86Rw_fstsw_and_cmp_jz__eq()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 FC 40" +    // cmp	ah,40
+                "74 02");       // jz	$+4
+            AssertCode(
+                "0|T--|10000000(10): 1 instructions",
+                "1|T--|if (Test(EQ,FPUF)) branch 1000000C");
+        }
+
+        [Test]
+        public void X86Rw_fstsw_and_xor_40_jz__ne()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 F4 40" +    // xor ah, 40
+                "74 02");       // jz	$+4
+            AssertCode(
+                "0|T--|10000000(10): 1 instructions",
+                "1|T--|if (Test(NE,FPUF)) branch 1000000C");
+        }
+
+        [Test]
+        public void X86Rw_fstsw_test_45_jz__gt()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "F6 C4 45" +    // test	ah,45
+                "74 02");       // jz	0804849B
+            AssertCode(
+                "0|T--|10000000(7): 2 instructions",
+                "1|L--|SCZO = FPUF",
+                "2|T--|if (Test(GT,FPUF)) branch 10000009");
+        }
+
+        [Test]
+        public void X86Rw_fstsw_test_05_jz__ge()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "F6 C4 05" +    // test	ah,05 -- ge
+                "74 02");       // jz	080484BE
+            AssertCode(
+                "0|T--|10000000(7): 2 instructions",
+                "1|L--|SCZO = FPUF",
+                "2|T--|if (Test(GE,FPUF)) branch 10000009");
+        }
+
+        [Test]
+        public void X86rw_short_push()
+        {
+            Run32bitTest(
+                "66 68 34 12"   // push word 1234h
+                );
+            AssertCode(
+                "0|L--|10000000(4): 2 instructions",
+                "1|L--|esp = esp - 2<i32>",
+                "2|L--|Mem0[esp:word16] = 0x1234<16>");
+        }
+
+        [Test]
+        public void X86Rw_fld_st0()
+        {
+            // This is a 'duplicate top of stack' instruction.
+            Run32bitTest("D9 C0"); // fld st(0)");
+            AssertCode(
+              "0|L--|10000000(2): 3 instructions",
+              "1|L--|v3 = ST[Top:real64]",
+              "2|L--|Top = Top - 1<i8>",
+              "3|L--|ST[Top:real64] = v3");
+        }
+
+        [Test]
+        public void X86Rw_fsubr()
+        {
+            Run32bitTest("D8 AD 78 FF FF FF"); // fsubr dword ptr [ebp-00000088]
+            AssertCode(
+                "0|L--|10000000(6): 1 instructions",
+                "1|L--|ST[Top:real64] = CONVERT(Mem0[ebp - 0x88<32>:real32], real32, real64) - ST[Top:real64]");
+        }
+
+        [Test]
+        public void X86Rw_lea_short_dst()
+        {
+            Run64bitTest("8D 4C 09 01"); // lea ecx,[rcx+rcx+01]
+            AssertCode(
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|ecx = SLICE(rcx + 1<64> + rcx, word32, 0)",
+                "2|L--|rcx = CONVERT(ecx, word32, uint64)");
+        }
+
+        [Test]
+        public void X86Rw_lea_16bit_dst()
+        {
+            Run64bitTest("668D03"); // lea\tax,[rbx]
+            AssertCode(
+                "0|L--|0000000140000000(3): 1 instructions",
+                "1|L--|ax = SLICE(rbx, word16, 0)");
+        }
+
+        [Test]
+        public void X86Rw_lea_16bit_dst_32bit_src()
+        {
+            Run64bitTest("67668D03"); // lea\tax,[ebx]
+            AssertCode(
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|ax = SLICE(ebx, word16, 0)");
+        }
+
+        [Test]
+        public void X86Rw_lea_32bit_dst_64bit_src()
+        {
+            Run64bitTest("8D03"); // lea\teax,[rbx]
+            AssertCode(
+                "0|L--|0000000140000000(2): 2 instructions",
+                "1|L--|eax = SLICE(rbx, word32, 0)",
+                "2|L--|rax = CONVERT(eax, word32, uint64)");
+        }
+
+        [Test]
+        public void X86Rw_lea_32bit_dst_32bit_src()
+        {
+            Run64bitTest("678D03"); // lea\teax,[ebx]
+            AssertCode(
+                "0|L--|0000000140000000(3): 2 instructions",
+                "1|L--|eax = ebx",
+                "2|L--|rax = CONVERT(eax, word32, uint64)");
+        }
+
+        [Test]
+        public void X86Rw_lea_64bit_dst_64bit_src()
+        {
+            Run64bitTest("488D03"); // lea\teax,[rbx]
+            AssertCode(
+                "0|L--|0000000140000000(3): 1 instructions",
+                "1|L--|rax = rbx");
+        }
+
+        [Test]
+        public void X86Rw_lea_64bit_dst_32bit_src()
+        {
+            Run64bitTest("67488D03"); // lea\trax,[ebx]
+            AssertCode(
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|rax = CONVERT(ebx, word32, word64)");
+        }
+
+        [Test]
+        public void X86Rw_movdqu()
+        {
+            Run64bitTest("F30F7F01");
+            AssertCode(     // movdqu	[rcx],xmm0
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|Mem0[rcx:word128] = xmm0");
+        }
+
+        [Test]
+        public void X86Rw_cvtdq2pd()
+        {
+            Run64bitTest("F30FE6C9");
+            AssertCode(     // cvtdq2pd	xmm1,xmm1
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm1",
+                "2|L--|xmm1 = __cvtdq2pd(v3)");
+        }
+
+
+        [Test]
+        public void X86Rw_aesenc()
+        {
+            Run64bitTest("660F38DCC0");
+            AssertCode(     // vaesenc	xmm0,xmm0
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|xmm0 = __aesenc(xmm0, xmm0)");
+        }
+
+        // This file contains unit tests automatically generated by Reko decompiler.
+        // Please copy the contents of this file and report it on GitHub, using the 
+        // following URL: https://github.com/uxmal/reko/issues
+
+
+
+
+
+        [Test]
+        public void X86Rw_lzcnt()
+        {
+            Run64bitTest("F30FBDCE");
+            AssertCode(     // lzcnt	ecx,esi
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|ecx = __lzcnt(esi)");
+        }
+
+        [Test]
+        public void X86Rw_maxsd_legacy()
+        {
+            Run64bitTest("F20F5FD0");
+            AssertCode(     // maxsd	xmm2,xmm0
+                "0|L--|0000000140000000(4): 1 instructions",
+                "1|L--|xmm2 = SEQ(SLICE(xmm2, word64, 64), max(SLICE(xmm2, real64, 0), SLICE(xmm0, real64, 0)))");
+        }
+
+        [Test]
+        public void X86Rw_cvtpd2ps()
+        {
+            Run64bitTest("660F5AC0");
+            AssertCode(     // cvtpd2ps	xmm0,xmm0
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|xmm0 = __cvtpd2ps(v3)");
+        }
+
+        [Test]
+        public void X86Rw_cvtpd2dq()
+        {
+            Run64bitTest("F20FE6E7");
+            AssertCode(     // cvtpd2dq	xmm4,xmm7
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm7",
+                "2|L--|xmm4 = __cvtpd2dq(v3)");
+        }
+
+        [Test]
+        public void X86Rw_fxrstor()
+        {
+            Run32bitTest("0FAE0C");
+            AssertCode(     // fxrstor
+                "0|L--|10000000(3): 1 instructions",
+                "1|L--|__fxrstor()");
+        }
+
+        [Test]
+        public void X86Rw_adcx()
+        {
+            Run32bitTest("660F38F6C3");
+            AssertCode(     // adcx eax,ebx
+                "0|L--|10000000(5): 2 instructions",
+                "1|L--|eax = eax + ebx + C",
+                "2|L--|C = cond(eax)");
+        }
+
+        [Test]
+        public void X86Rw_adox()
+        {
+            Run32bitTest("F30F38F6C4");
+            AssertCode(     // adox eax,esp
+                "0|L--|10000000(5): 2 instructions",
+                "1|L--|eax = eax + esp + O",
+                "2|L--|O = cond(eax)");
+        }
+
+        [Test]
+        public void X86Rw_mov_imm_64()
+        {
+            Run64bitTest("48B88A7A6A5A4A3A2A1A");
+            AssertCode( // mov rax,1A2A3A4A5A6A7A8Ah
+                "0|L--|0000000140000000(10): 1 instructions",
+                "1|L--|rax = 0x1A2A3A4A5A6A7A8A<64>");
+        }
+
+        [Test]
+        public void X86Rw_cmpsd()
+        {
+            Run64bitTest("F20FC2E806");
+            AssertCode(     // cmpsd	xmm5,xmm0,6h
+                "0|L--|0000000140000000(5): 1 instructions",
+                "1|L--|xmm5 = SLICE(xmm5, real64, 0) > SLICE(xmm0, real64, 0) ? 0xFFFFFFFFFFFFFFFF<128> : 0<128>");
+        }
+
+        [Test]
+        public void X86Rw_cmpsd_x()
+        {
+            Run64bitTest("F20FC244241800");
+            AssertCode(     // cmpsd	xmm0,[esp+18],00
+                "0|L--|0000000140000000(7): 1 instructions",
+                "1|L--|xmm0 = SLICE(xmm0, real64, 0) == SLICE(Mem0[rsp + 0x18<64>:word128], real64, 0) ? 0xFFFFFFFFFFFFFFFF<128> : 0<128>");
+        }
+
+        [Test]
+        public void X86Rw_cvttpd2dq()
+        {
+            Run64bitTest("66450FE6C9");
+            AssertCode(     // cvttpd2dq	xmm9,xmm9
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = xmm9",
+                "2|L--|xmm9 = __cvttpd2dq(v3)");
+        }
+
+        [Test]
+        public void X86Rw_cvttps2dq()
+        {
+            Run64bitTest("F30F5BC0");
+            AssertCode(     // cvttps2dq	xmm0,xmm0
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|xmm0 = __cvttps2dq(v3)");
+        }
+
+        [Test]
+        public void X86Rw_vpsrad()
+        {
+            Run64bitTest("660F72E203");
+            AssertCode(     // vpsrad	xmm2,3h
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = xmm2",
+                "2|L--|xmm2 = __psrad(v3, 3<8>)");
+        }
+
+        [Test]
+        public void X86Rw_vpsraw()
+        {
+            Run64bitTest("660F71E008");
+            AssertCode(     // vpsraw	xmm0,8h
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|xmm0 = __psraw(v3, 8<8>)");
+        }
+
+        [Test]
+        public void X86Rw_vpsrlw()
+        {
+            Run64bitTest("660F71D008");
+            AssertCode(     // vpsrlw	xmm0,8h
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|xmm0 = __psrlw(v3, 8<8>)");
+        }
+
+        [Test]
+        public void X86Rw_sqrtss()
+        {
+            Run64bitTest("F30F51C8");
+            AssertCode(     // sqrtss	xmm1,xmm0
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v4 = __fsqrt(xmm0)",
+                "2|L--|xmm1 = SEQ(SLICE(xmm1, word96, 32), v4)");
+        }
+
+        [Test]
+        public void X86Rw_vpsllw()
+        {
+            Run64bitTest("660F71F508");
+            AssertCode(     // vpsllw	xmm5,8h
+                "0|L--|0000000140000000(5): 2 instructions",
+                "1|L--|v3 = xmm5",
+                "2|L--|xmm5 = __psllw(v3, 8<8>)");
+        }
+
+        [Test]
+        public void X86Rw_sqrtpd()
+        {
+            Run64bitTest("660F51E4");
+            AssertCode(     // sqrtpd	xmm4,xmm4
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm4",
+                "2|L--|xmm4 = __sqrtpd(v3)");
+        }
+
+        [Test]
+        public void X86Rw_cvtps2dq()
+        {
+            Run64bitTest("660F5BC0");
+            AssertCode(     // cvtps2dq	xmm0,xmm0
+                "0|L--|0000000140000000(4): 2 instructions",
+                "1|L--|v3 = xmm0",
+                "2|L--|xmm0 = __cvtps2dq(v3)");
+        }
+
+        [Test]
+        public void X86Rw_roundss()
+        {
+            Run64bitTest("66 0F 3A 0A C3 03");
+            AssertCode(     // roundss xmm0,xmm3,3h
+                "0|L--|0000000140000000(6): 1 instructions",
+                "1|L--|xmm0 = SEQ(SLICE(xmm0, word96, 32), truncf(SLICE(xmm3, real32, 0)))");
+        }
+
+        [Test]
+        public void X86Rw_packsswb()
+        {
+            Run64bitTest("660F63C1");
+            AssertCode(     // packsswb	xmm0,xmm1
+                "0|L--|0000000140000000(4): 3 instructions",
+                "1|L--|v4 = xmm0",
+                "2|L--|v5 = xmm1",
+                "3|L--|xmm0 = __packsswb(v4, v5)");
+        }
+
+        [Test]
+        public void X86Rw_xsaveopt()
+        {
+            Run32bitTest("0FAE74D8BE");
+            AssertCode(     // xsaveopt dword ptr [eax+ebx*8-42h]
+                "0|L--|10000000(5): 1 instructions",
+                "1|L--|__xsaveopt(&Mem0[eax - 0x42<32> + ebx * 8<32>:word32])");
+        }
+
+        /*
+        [Test]
+        public void X86Rw_fstsw_and_cmp_jz()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 FC 40" +    // cmp	ah,40
+                "74 02");       // jz	$+4
+            AssertCode("@@@");
+        }
+
+        [Test]
+        public void X86Rw_fstsw_and_cmp_jz()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 FC 40" +    // cmp	ah,40
+                "74 02");       // jz	$+4
+            AssertCode("@@@");
+        }
+        [Test]
+        public void X86Rw_fstsw_and_cmp_jz()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 FC 40" +    // cmp	ah,40
+                "74 02");       // jz	$+4
+            AssertCode("@@@");
+        }
+        [Test]
+        public void X86Rw_fstsw_and_cmp_jz()
+        {
+            Run32bitTest(
+                "DF E0" +       // fstsw	ax
+                "80 E4 45" +    // and	ah,45
+                "80 FC 40" +    // cmp	ah,40
+                "74 02");       // jz	$+4
+            AssertCode("@@@");
+        }
+        */
     }
 }

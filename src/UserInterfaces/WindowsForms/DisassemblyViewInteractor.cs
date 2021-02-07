@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,8 @@ using System.Text;
 using System.Windows.Forms;
 using Reko.Core.Output;
 using Reko.Core.Services;
+using Reko.Core.Machine;
+using Reko.Core.Memory;
 
 namespace Reko.UserInterfaces.WindowsForms
 {
@@ -87,17 +89,17 @@ namespace Reko.UserInterfaces.WindowsForms
                     var dumper = new Dumper(program);
                     dumper.ShowAddresses = true;
                     dumper.ShowCodeBytes = true;
-                    ImageSegment segment;
-                    if (program.SegmentMap.TryFindSegment(StartAddress, out segment))
+                    var options = new MachineInstructionRendererOptions(platform: program.Platform);
+                    if (program.SegmentMap.TryFindSegment(StartAddress, out ImageSegment segment))
                     {
-                        var formatter = new Dumper.InstrWriter(program.Platform, StartAddress, new TextFormatter(writer));
+                        var formatter = new Dumper.InstrWriter(new TextFormatter(writer));
                         var dasm = program.CreateDisassembler(program.Architecture, StartAddress).GetEnumerator();
                         while (dasm.MoveNext())
                         {
                             var instr = dasm.Current;
                             if (lines <= 0)
                                 break;
-                            dumper.DumpAssemblerLine(segment.MemoryArea, program.Architecture, instr, formatter);
+                            dumper.DumpAssemblerLine(segment.MemoryArea, program.Architecture, instr, formatter, options);
                             --lines;
                         }
                     }

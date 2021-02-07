@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,10 +19,12 @@
 #endregion
 
 using Reko.Core.Serialization;
+using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -74,8 +76,21 @@ namespace Reko.Core.Configuration
             platform.Name = this.Name!;
             if (!string.IsNullOrEmpty(MemoryMapFile))
             {
-                platform.MemoryMap = MemoryMap_v1.LoadMemoryMapFromFile(services, MemoryMapFile!, platform)!;
+                var cfgSvc = services.RequireService<IConfigurationService>();
+                var fsSvc = services.RequireService<IFileSystemService>();
+                var listener = services.RequireService<DecompilerEventListener>();
+                try
+                {
+                    var filePath = cfgSvc.GetInstallationRelativePath(MemoryMapFile!);
+                    using var stm = fsSvc.CreateFileStream(filePath, FileMode.Open, FileAccess.Read);
+                    platform.MemoryMap = MemoryMap_v1.Deserialize(stm);
+                }
+                catch (Exception ex)
+                {
+                    listener.Error(ex, "Unable to open memory map file '{0}.", MemoryMapFile!);
+                }
             }
+            platform.PlatformProcedures = LoadPlatformProcedures(platform);
             platform.Description = this.Description!;
             platform.Heuristics = LoadHeuristics(this.Heuristics);
         }
@@ -158,12 +173,36 @@ namespace Reko.Core.Configuration
             }
             if (bytes.Count == 0)
                 return null;
+            return new MaskedPattern
+            {
+                Bytes = bytes.ToArray(),
+                Mask = mask.ToArray()
+            };
+        }
+
+        private Dictionary<Address, ExternalProcedure> LoadPlatformProcedures(Platform platform)
+        {
+            if (platform.MemoryMap != null && platform.MemoryMap.Segments != null)
+            {
+                platform.EnsureTypeLibraries(platform.Name);
+                var tser = new TypeLibraryDeserializer(platform, true, platform.Metadata);
+                var sser = new ProcedureSerializer(platform, tser, platform.DefaultCallingConvention);
+                return platform.MemoryMap.Segments.SelectMany(s => s.Procedures)
+                    .OfType<Procedure_v1>()
+                    .Where(p => p.Name != null)
+                    .Select(p =>
+                        (addr: platform.Architecture.TryParseAddress(p.Address, out var addr) ? addr : null,
+                         ext:  new ExternalProcedure(
+                             p.Name!,
+                             sser.Deserialize(p.Signature, platform.Architecture.CreateFrame())
+                                ?? new Types.FunctionType())))
+                    .Where(p => p.addr != null)
+                    .ToDictionary(p => p.addr!, p => p.ext);
+            }
             else
-                return new MaskedPattern
-                {
-                    Bytes = bytes.ToArray(),
-                    Mask = mask.ToArray()
-                };
+            {
+                return new Dictionary<Address, ExternalProcedure>();
+            }
         }
 
         public override string ToString()

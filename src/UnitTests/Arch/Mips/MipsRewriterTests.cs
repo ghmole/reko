@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,13 +30,14 @@ using Reko.Core.Types;
 using Reko.Core.Machine;
 using Reko.Core.Configuration;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.Mips
 {
     [TestFixture]
     public class MipsRewriterTests : RewriterTestBase
     {
-        private MipsProcessorArchitecture arch = new MipsBe32Architecture(CreateServiceContainer(), "mips-be-32");
+        private MipsProcessorArchitecture arch = new MipsBe32Architecture(CreateServiceContainer(), "mips-be-32", new Dictionary<string, object>());
         private Func<EndianImageReader, IEnumerable<MachineInstruction>> mkDasm;
 
         public override IProcessorArchitecture Architecture { get { return arch; } }
@@ -46,7 +47,7 @@ namespace Reko.UnitTests.Arch.Mips
         [SetUp]
         public void Setup()
         {
-            this.arch = new MipsBe32Architecture(new ServiceContainer(), "mips-be-32");
+            this.arch = new MipsBe32Architecture(new ServiceContainer(), "mips-be-32", new Dictionary<string, object>());
             this.mkDasm = rdr => arch.CreateDisassembler(rdr);
         }
 
@@ -58,7 +59,7 @@ namespace Reko.UnitTests.Arch.Mips
 
         private void Given_Mips64_Architecture()
         {
-            arch = new MipsBe64Architecture(new ServiceContainer(), "mips-be-64");
+            arch = new MipsBe64Architecture(new ServiceContainer(), "mips-be-64", new Dictionary<string, object>());
             mkDasm = rdr => arch.CreateDisassembler(rdr);
         }
 
@@ -79,7 +80,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_BitStrings("100001 01001 00011 1111111111001000");
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r3 = (word32) Mem0[r9 - 0x38<32>:int16]");
+                "1|L--|r3 = CONVERT(Mem0[r9 - 0x38<32>:int16], int16, word32)");
         }
 
         [Test]
@@ -88,7 +89,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_BitStrings("100101 01011 01101 1111111111111000");
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r13 = (word32) Mem0[r11 - 8<32>:uint16]");
+                "1|L--|r13 = CONVERT(Mem0[r11 - 8<32>:uint16], uint16, word32)");
         }
 
         [Test]
@@ -247,7 +248,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_Mips64_Architecture();
             AssertCode(0x8fb3FFF0,   // lw s3,16(sp)
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r19 = (word64) Mem0[sp - 0x10<64>:int32]");
+                "1|L--|r19 = CONVERT(Mem0[sp - 0x10<64>:int32], int32, word64)");
         }
 
         [Test]
@@ -265,7 +266,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_Mips64_Architecture();
             AssertCode(0x9fb30010,   // ld s3,16(sp)
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r19 = (word64) Mem0[sp + 0x10<64>:uint32]");
+                "1|L--|r19 = CONVERT(Mem0[sp + 0x10<64>:uint32], uint32, word64)");
         }
 
         [Test]
@@ -313,7 +314,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0x0211402B,  // sltu t0,s0,s1
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r8 = (word32) (r16 <u r17)");
+                "1|L--|r8 = CONVERT(r16 <u r17, bool, word32)");
         }
 
         [Test]
@@ -329,7 +330,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0xA128D958, // sb t0,-9896(t1)
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|Mem0[r9 - 0x26A8<32>:byte] = (byte) r8");
+                "1|L--|Mem0[r9 - 0x26A8<32>:byte] = SLICE(r8, byte, 0)");
         }
 
         [Test]
@@ -354,7 +355,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0x29690070,
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r9 = (word32) (r11 < 112<i32>)");
+                "1|L--|r9 = CONVERT(r11 < 112<i32>, bool, word32)");
         }
 
         [Test]
@@ -434,7 +435,7 @@ namespace Reko.UnitTests.Arch.Mips
 
             AssertCode(0x46206024, // "cvt.w.d\tf0,f12"
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|f0 = (int32) f12_f13");
+                "1|L--|f0 = CONVERT(f12_f13, real64, int32)");
 
             AssertCode(0x45000012, // "bc1f\tcc0,0010004C"
                 "0|TD-|00100000(4): 1 instructions",
@@ -467,7 +468,7 @@ namespace Reko.UnitTests.Arch.Mips
             // Test only the known ones, we'll have to see how this changes things later on with dynamic custom registers
             Given_BitStrings("011111 00000 00110 00000 00000 111011");   // CPU number
             AssertCode("0|L--|00100000(4): 1 instructions",
-                       "1|L--|r6 = __read_hardware_register(0<8>)");
+                       "1|L--|r6 = __read_cpu_number()");
 
             Given_BitStrings("011111 00000 01000 00001 00000 111011");   // SYNCI step size
             AssertCode("0|L--|00100000(4): 1 instructions",
@@ -483,7 +484,7 @@ namespace Reko.UnitTests.Arch.Mips
 
             Given_BitStrings("011111 00000 00111 11101 00000 111011");   // OS-specific, thread local pointer on Linux
             AssertCode("0|L--|00100000(4): 1 instructions",
-                       "1|L--|r7 = __read_hardware_register(0x1D<8>)");
+                       "1|L--|r7 = __read_user_local()");
         }
 
         [Test]
@@ -492,7 +493,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_BitStrings("000000 00011 01001 01010 00000 001010");    // movz
             AssertCode(
                 "0|L--|00100000(4): 2 instructions",
-                "1|T--|if (r9 != 0<32>) branch 00100004", 
+                "1|T--|if (r9 != 0<32>) branch 00100004",
                 "2|L--|r10 = r3");
         }
 
@@ -575,14 +576,22 @@ namespace Reko.UnitTests.Arch.Mips
             AssertCode(0x46200832, // c.eq.d $f1,$f0
                 "0|L--|00100000(4): 1 instructions",
                 "1|L--|cc0 = f1_f2 == f0_f1");
+        }
 
+        [Test]
+        public void MipsRw_cvt_d_l()
+        {
             AssertCode(0x46A008E1, // cvt.d.l $f3,$f1
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|f3 = (real64) f1_f2");
+                "1|L--|f3_f4 = CONVERT(f1, int32, real64)");
+        }
 
+        [Test]
+        public void MipsRw_cvt_s_d()
+        {
             AssertCode(0x46200820, // cvt.s.d $f0,$f1
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|f0 = (real32) f1_f2");
+                "1|L--|f0 = CONVERT(f1_f2, real64, real32)");
         }
 
         [Test]
@@ -608,7 +617,7 @@ namespace Reko.UnitTests.Arch.Mips
             AssertCode(0x46200049, // trunc.l.d $f1,$f0
                 "0|L--|00100000(4): 2 instructions",
                 "1|L--|v2 = f0",
-                "2|L--|f1 = (int64) trunc(v2)");
+                "2|L--|f1 = CONVERT(trunc(v2), real64, int64)");
         }
 
         [Test]
@@ -871,7 +880,7 @@ namespace Reko.UnitTests.Arch.Mips
             AssertCode(0x7C021620, // seh\tr2,r2"
                 "0|L--|00100000(4): 2 instructions",
                 "1|L--|v3 = SLICE(r2, word16, 0)",
-                "2|L--|r2 = (int32) v3");
+                "2|L--|r2 = CONVERT(v3, word16, int32)");
         }
 
         [Test]
@@ -929,7 +938,7 @@ namespace Reko.UnitTests.Arch.Mips
         public void MipsRw_sw_4x4()
         {
             Given_NanoDecoder();
-            Given_HexString("F4C0"); 
+            Given_HexString("F4C0");
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
                 "1|L--|Mem0[r8:word32] = r6");
@@ -966,6 +975,7 @@ namespace Reko.UnitTests.Arch.Mips
         }
 
         [Test]
+
         public void MipsRw_bbeqzc()
         {
             Given_NanoDecoder();
@@ -1062,8 +1072,9 @@ namespace Reko.UnitTests.Arch.Mips
             Given_NanoDecoder();
             Given_HexString("FFFE");   // movep	r22,r23,r7,r8
             AssertCode(
-                "0|L--|00100000(2): 1 instructions",
-                "1|L--|r22_r23 = r7_r8");
+                "0|L--|00100000(2): 2 instructions",
+                "1|L--|r22 = r7",
+                "2|L--|r23 = r8");
         }
 
         [Test]
@@ -1083,18 +1094,9 @@ namespace Reko.UnitTests.Arch.Mips
             Given_HexString("3810");
             AssertCode(   // balc	080485E2
                 "0|T--|00100000(2): 1 instructions",
-                "1|T--|goto 00100012");
+                "1|T--|call 00100012 (0)");
         }
 
-        [Test]
-        public void MipsRw_bltc()
-        {
-            Given_NanoDecoder();
-            Given_HexString("A9AA806C");   // bltc	r10,r13,080485E2
-            AssertCode(
-                "0|T--|00100000(4): 1 instructions",
-                "1|T--|if (r10 < r13) branch 00100070");
-        }
 
         [Test]
         public void MipsRw_bgeiuc()
@@ -1255,7 +1257,7 @@ namespace Reko.UnitTests.Arch.Mips
             Given_HexString("20C73107");  // lbux	r6,r7(r6)
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|r6 = (word32) Mem0[r6 + r7:byte]");
+                "1|L--|r6 = CONVERT(Mem0[r6 + r7:byte], byte, word32)");
         }
 
         [Test]
@@ -1273,7 +1275,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0xBCC80000,   // cache	08,0000(r6)
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|__cache(8<8>, Mem0[r6:word32])");
+                "1|L--|__cache(8<8>, &Mem0[r6:word32])");
         }
 
         [Test]
@@ -1289,7 +1291,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0x71A60000,   // madd	r13,r6
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|hi_lo = hi_lo + r13 * r6");
+                "1|L--|hi_lo = hi_lo + r13 *64 r6");
         }
 
         [Test]
@@ -1297,7 +1299,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0x71670004,   // msub	r11,r7
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|hi_lo = hi_lo - r11 * r7");
+                "1|L--|hi_lo = hi_lo - r11 *64 r7");
         }
 
         [Test]
@@ -1412,7 +1414,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode(0x4E989AF9,   // nmsub_d	f11,f20,f19,f24
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|f11 = -(f20 - f19 * f24)");
+                "1|L--|f11 = -(f20 - f19 *64 f24)");
         }
 
         [Test]

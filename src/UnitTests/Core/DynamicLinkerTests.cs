@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ using System.Text;
 using CommonMockFactory = Reko.UnitTests.Mocks.CommonMockFactory;
 using Reko.Core.Code;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Core
 {
@@ -48,6 +49,20 @@ namespace Reko.UnitTests.Core
             this.mockFactory = new CommonMockFactory();
             this.platform = mockFactory.CreateMockPlatform();
             this.program = mockFactory.CreateProgram();
+        }
+
+        private void AssertExternalProcedure(
+            string expected,
+            ExternalProcedure ep)
+        {
+            var actual = $@"
+{ep}
+VarargsParserClass: {ep.Characteristics.VarargsParserClass}";
+            if (expected != actual)
+            {
+                Console.WriteLine(actual);
+                Assert.AreEqual(expected, actual);
+            }
         }
 
         [Test]
@@ -189,6 +204,33 @@ namespace Reko.UnitTests.Core
         }
 
         [Test]
+        public void DynLink_MangledProcedureCharacteristics()
+        {
+            var chr = new ProcedureCharacteristics
+            {
+                VarargsParserClass = "FakeParser",
+            };
+            program.EnvironmentMetadata.Characteristics.Add("foo@mangled", chr);
+            platform.Setup(p => p.SignatureFromName(
+                It.Is<string>(n => n == "foo@mangled")))
+            .Returns(new Procedure_v1
+            {
+                Name = "foo",
+                Signature = new SerializedSignature(),
+            });
+
+            var eventListener = new FakeDecompilerEventListener();
+            var proj = new Project();
+            var impres = new DynamicLinker(proj, program, eventListener);
+            var ep = impres.ResolveProcedure("", "foo@mangled", platform.Object);
+
+            var expected = @"
+void foo()
+VarargsParserClass: FakeParser";
+            AssertExternalProcedure(expected, ep);
+        }
+
+        [Test]
         public void DynLink_GlobalByName()
         {
             var proj = new Project
@@ -260,8 +302,8 @@ namespace Reko.UnitTests.Core
         [Test]
         public void DynLink_LP32_weirdness()
         {
-            var memText = new MemoryArea(Address.Ptr64(0x00123400), new byte[100]);
-            var memGot = new MemoryArea(Address.Ptr64(0x00200000), new byte[100]);
+            var memText = new ByteMemoryArea(Address.Ptr64(0x00123400), new byte[100]);
+            var memGot = new ByteMemoryArea(Address.Ptr64(0x00200000), new byte[100]);
             var wr = new LeImageWriter(memGot.Bytes);
             wr.WriteLeUInt32(0x00300000);
             wr.WriteLeUInt32(0x00300004);

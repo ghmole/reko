@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,17 +44,23 @@ namespace Reko.Core.Types
 
     public class TypeStore : ITypeStore
     {
-        private SortedList<int, EquivalenceClass> usedClasses;
-        private Dictionary<TypeVariable, Expression> tvSources;
+        private readonly SortedList<int, EquivalenceClass> usedClasses;
+        private readonly Dictionary<TypeVariable, Expression> tvSources;
 
         public TypeStore()
         {
             TypeVariables = new List<TypeVariable>();
             usedClasses = new SortedList<int, EquivalenceClass>();
             tvSources = new Dictionary<TypeVariable, Expression>();
+            SegmentTypes = new Dictionary<ImageSegment, StructureType>();
         }
 
+        /// <summary>
+        /// All the <see cref="TypeVariable"/>s of the program.
+        /// </summary>
         public List<TypeVariable> TypeVariables { get; private set; }
+
+        public Dictionary<ImageSegment, StructureType> SegmentTypes { get; private set; }
 
         public TypeVariable EnsureExpressionTypeVariable(TypeFactory factory, Expression e)
         {
@@ -132,6 +138,14 @@ namespace Reko.Core.Types
             Debug.WriteLine(sw.ToString());
         }
 
+        [Conditional("DEBUG")]
+        public void Dump(string dir, string filename)
+        {
+            using var w = new StreamWriter(Path.Combine(dir, filename));
+            Write(w);
+            Debug.WriteLine(w.ToString());
+        }
+
         public Expression? ExpressionOf(TypeVariable tv)
         {
             if (tvSources.TryGetValue(tv, out Expression e))
@@ -198,8 +212,7 @@ namespace Reko.Core.Types
 
         public void WriteExpressionOf(TypeVariable tvMember, Formatter writer)
         {
-            Expression e;
-            if (tvSources.TryGetValue(tvMember, out e) && e != null)
+            if (tvSources.TryGetValue(tvMember, out Expression e) && e != null)
             {
                 writer.Write(" (in {0}", e);
                 if (e.DataType != null)

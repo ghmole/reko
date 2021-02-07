@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 Pavel Tomin.
+ * Copyright (C) 1999-2021 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ using Reko.Core;
 using Reko.Core.Code;
 using Reko.Core.Configuration;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Serialization;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -68,9 +69,9 @@ namespace Reko.UnitTests.Scanning
             cfg.Setup(c => c.GetEnvironment(It.IsAny<string>())).Returns(env.Object);
             env.Setup(e => e.Architectures).Returns(new List<PlatformArchitectureDefinition>());
             sc.AddService<IConfigurationService>(cfg.Object);
-            this.win32 = new Win32Platform(sc, new X86ArchitectureFlat32(sc, "x86-protected-32"));
-            this.win_x86_64 = new Win_x86_64_Platform(sc, new X86ArchitectureFlat64(sc, "x86-protected-64"));
-            this.sysV_ppc = new SysVPlatform(sc, new PowerPcBe32Architecture(sc, "ppc-be-32"));
+            this.win32 = new Win32Platform(sc, new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>()));
+            this.win_x86_64 = new Win_x86_64_Platform(sc, new X86ArchitectureFlat64(sc, "x86-protected-64", new Dictionary<string, object>()));
+            this.sysV_ppc = new SysVPlatform(sc, new PowerPcBe32Architecture(sc, "ppc-be-32", new Dictionary<string, object>()));
             this.m = new ProcedureBuilder();
             this.printfChr = new ProcedureCharacteristics()
             {
@@ -98,7 +99,7 @@ namespace Reko.UnitTests.Scanning
 
         private SegmentMap CreateSegmentMap(uint uiAddr, uint size)
         {
-            var mem = new MemoryArea(Address.Ptr32(uiAddr), new byte[size]);
+            var mem = new ByteMemoryArea(Address.Ptr32(uiAddr), new byte[size]);
             var seg = new ImageSegment(".data", mem, AccessMode.ReadWrite);
             return new SegmentMap(Address.Ptr32(uiAddr), seg);
         }

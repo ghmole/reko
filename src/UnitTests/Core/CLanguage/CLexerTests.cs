@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -453,6 +453,45 @@ namespace Reko.UnitTests.Core.CLanguage
             AssertToken(CTokenType.NumericLiteral, 0);
             AssertToken(CTokenType.Comma);
             AssertToken(CTokenType.NumericLiteral, 46);
+        }
+
+        [Test]
+        public void CLexer_Hex_with_suffix()
+        {
+            Lex("0x42uL,0x44\r\n,0x48");
+            AssertToken(CTokenType.NumericLiteral, 0x42);
+            AssertToken(CTokenType.Comma);
+            AssertToken(CTokenType.NumericLiteral, 0x44);
+            AssertToken(CTokenType.Comma);
+            AssertToken(CTokenType.NumericLiteral, 0x48);
+        }
+
+        [Test]
+        public void CLexer_decimal_with_suffix()
+        {
+            Lex("42uL,44,\r\n");
+            AssertToken(CTokenType.NumericLiteral, 42);
+            AssertToken(CTokenType.Comma);
+            AssertToken(CTokenType.NumericLiteral, 44);
+            AssertToken(CTokenType.Comma);
+        }
+
+        [Test]
+        public void CLexer_wide_chaar_literal()
+        {
+            Lex("L'a' nix");
+            AssertToken(CTokenType.WideCharLiteral, 'a');
+            AssertToken(CTokenType.Id, "nix");
+        }
+
+
+        [Test]
+        public void CLexer_L()
+        {
+            Lex("L;L");
+            AssertToken(CTokenType.Id, "L");
+            AssertToken(CTokenType.Semicolon);
+            AssertToken(CTokenType.Id, "L");
         }
     }
 }

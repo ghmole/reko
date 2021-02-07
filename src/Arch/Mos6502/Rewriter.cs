@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -44,6 +45,7 @@ namespace Reko.Arch.Mos6502
         private InstrClass iclass;
         private RtlEmitter m;
 
+#nullable disable
         public Rewriter(Mos6502Architecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
             this.arch = arch;
@@ -53,6 +55,7 @@ namespace Reko.Arch.Mos6502
             this.rdr = rdr;
             this.dasm = new Disassembler(arch, rdr).GetEnumerator();
         }
+#nullable enable
 
         private AddressCorrelatedException NYI()
         {
@@ -117,8 +120,8 @@ namespace Reko.Arch.Mos6502
                 case Mnemonic.php: Push(AllFlags()); break;
                 case Mnemonic.pla: Pull(Registers.a); break;
                 case Mnemonic.plp: Plp(); break;
-                case Mnemonic.rol: Rotate(PseudoProcedure.Rol); break;
-                case Mnemonic.ror: Rotate(PseudoProcedure.Ror); break;
+                case Mnemonic.rol: Rotate(IntrinsicProcedure.Rol); break;
+                case Mnemonic.ror: Rotate(IntrinsicProcedure.Ror); break;
                 case Mnemonic.rti: Rti(); break;
                 case Mnemonic.rts: Rts(); break;
                 case Mnemonic.sbc: Sbc(); break;
@@ -168,7 +171,7 @@ namespace Reko.Arch.Mos6502
             var f = FlagGroupStorage(flags);
             m.Branch(
                 m.Test(cc, f),
-                Address.Ptr16(((Operand)instrCur.Operands[0]).Offset.ToUInt16()),
+                Address.Ptr16(((Operand)instrCur.Operands[0]).Offset!.ToUInt16()),
                 iclass);
         }
 
@@ -210,7 +213,7 @@ namespace Reko.Arch.Mos6502
 
         private void Brk()
         {
-            m.SideEffect(host.PseudoProcedure("__brk", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__brk", false, VoidType.Instance));
         }
 
         private void Cmp(RegisterStorage r)
@@ -345,7 +348,7 @@ namespace Reko.Arch.Mos6502
         {
             var c = FlagGroupStorage(FlagM.NF | FlagM.ZF | FlagM.CF);
             var arg = RewriteOperand(instrCur.Operands[0]);
-            m.Assign(arg, host.PseudoProcedure(rot, arg.DataType, arg, Constant.Byte(1)));
+            m.Assign(arg, host.Intrinsic(rot, true, arg.DataType, arg, Constant.Byte(1)));
             m.Assign(c, m.Cond(arg));
         }
 
@@ -414,40 +417,40 @@ namespace Reko.Arch.Mos6502
             case AddressMode.Accumulator:
                 return binder.EnsureRegister(Registers.a);
             case AddressMode.Immediate:
-                return op.Offset;
+                return op.Offset!;
             case AddressMode.IndirectIndexed:
                 var y = binder.EnsureRegister(Registers.y);
-                addrZeroPage = m.Ptr16(op.Offset.ToByte());
+                addrZeroPage = m.Ptr16(op.Offset!.ToByte());
                 return m.Mem8(
                     m.IAdd(
                         m.Mem(PrimitiveType.Ptr16, addrZeroPage),
-                        m.Cast(PrimitiveType.UInt16, y)));
+                        m.Convert(y, y.DataType, PrimitiveType.UInt16)));
             case AddressMode.IndexedIndirect:
                 var x = binder.EnsureRegister(Registers.x);
-                addrZeroPage = m.Ptr16(op.Offset.ToByte());
+                addrZeroPage = m.Ptr16(op.Offset!.ToByte());
                 return m.Mem8(
                     m.Mem(
                         PrimitiveType.Ptr16,
                         m.IAdd(
                             addrZeroPage,
-                            m.Cast(PrimitiveType.UInt16, x))));
+                            m.Convert(x, x.DataType, PrimitiveType.UInt16))));
             case AddressMode.Absolute:
-                return m.Mem8(arch.MakeAddressFromConstant(op.Offset, false));
+                return m.Mem8(arch.MakeAddressFromConstant(op.Offset!, false));
             case AddressMode.AbsoluteX:
             case AddressMode.AbsoluteY:
                 return m.Mem8(m.IAdd(
-                    arch.MakeAddressFromConstant(op.Offset, false),
-                    binder.EnsureRegister(op.Register)));
+                    arch.MakeAddressFromConstant(op.Offset!, false),
+                    binder.EnsureRegister(op.Register!)));
             case AddressMode.ZeroPage:
-                 return m.Mem8(arch.MakeAddressFromConstant(op.Offset, false));
+                 return m.Mem8(arch.MakeAddressFromConstant(op.Offset!, false));
             case AddressMode.ZeroPageX:
             case AddressMode.ZeroPageY:
                 return m.Mem8(
                     m.IAdd(
-                        arch.MakeAddressFromConstant(op.Offset, false),
-                        binder.EnsureRegister(op.Register)));
+                        arch.MakeAddressFromConstant(op.Offset!, false),
+                        binder.EnsureRegister(op.Register!)));
             case AddressMode.Indirect:
-                return m.Mem16(m.Mem16(arch.MakeAddressFromConstant(op.Offset, false)));
+                return m.Mem16(m.Mem16(arch.MakeAddressFromConstant(op.Offset!, false)));
             }
         }
 
@@ -455,7 +458,7 @@ namespace Reko.Arch.Mos6502
         private void EmitUnitTest(Instruction instr)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Rw6502", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Rw6502", instr, instr.Mnemonic.ToString(), rdr, "");
         }
     }
 }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,7 +55,7 @@ namespace Reko.UnitTests.Analysis
             SsaIdentifier i_1 = ssa.Identifiers.Where(s => s.Identifier.Name == "i_1").Single();
             SsaIdentifier i_3 = ssa.Identifiers.Where(s => s.Identifier.Name == "i_3").Single();
 			Assert.IsFalse(sla.IsLiveOut(i.Identifier, i_1.DefStatement));
-            var block1 = proc.ControlGraph.Blocks.Where(b => b.Name =="loop").Single();
+            var block1 = proc.ControlGraph.Blocks.Where(b => b.DisplayName == "loop").Single();
 			Assert.AreEqual("branch Mem0[i_3:byte] != 0<i8> loop", block1.Statements[2].Instruction.ToString());
 			Assert.IsTrue(sla.IsLiveOut(i_1.Identifier, block1.Statements[2]), "i_1 should be live at the end of block 1");
 			Assert.IsTrue(sla.IsLiveOut(i_3.Identifier, block1.Statements[2]),"i_3 should be live at the end of block 1");
@@ -137,7 +137,7 @@ namespace Reko.UnitTests.Analysis
                 new ProgramDataFlow());
             sst.Transform();
 			ssa = sst.SsaState;
-			ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, platform, listener);
+			ConditionCodeEliminator cce = new ConditionCodeEliminator(program, ssa, listener);
 			cce.Transform();
             var segmentMap = new SegmentMap(Address.Ptr32(0x00123400));
             ValuePropagator vp = new ValuePropagator(segmentMap, ssa, program.CallGraph, dynamicLinker, listener);

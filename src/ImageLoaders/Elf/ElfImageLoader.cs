@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
@@ -78,11 +79,10 @@ namespace Reko.ImageLoaders.Elf
             LoadElfIdentification(rdr);
             this.innerLoader = CreateLoader();
             this.innerLoader.LoadArchitectureFromHeader();
-            addrLoad = addrLoad ?? innerLoader.DefaultAddress;
             var platform = innerLoader.LoadPlatform(osAbi, innerLoader.Architecture);
             
             int cHeaders = innerLoader.LoadSegments();
-            innerLoader.LoadSectionHeaders();
+            innerLoader.Sections.AddRange(innerLoader.LoadSectionHeaders());
             innerLoader.LoadSymbolsFromSections();
             //innerLoader.Dump();           // This spews a lot into the unit test output.
             if (cHeaders > 0)
@@ -91,11 +91,20 @@ namespace Reko.ImageLoaders.Elf
             }
             else
             {
+                if (addrLoad != null)
+                {
+                    addrLoad = innerLoader.CreateAddress(addrLoad.ToLinear());
+                }
                 // The file we're loading is an object file, and needs to be 
                 // linked before we can load it.
                 var linker = innerLoader.CreateLinker();
                 return linker.LinkObject(platform, addrLoad, RawImage);
             }
+        }
+
+        private Address ComputeBaseAddressFromSections(List<ElfSection> sections)
+        {
+            throw new NotImplementedException();
         }
 
         public override RelocationResults Relocate(Program program, Address addrLoad)
@@ -125,8 +134,8 @@ namespace Reko.ImageLoaders.Elf
         {
             switch (endianness)
             {
-            case LITTLE_ENDIAN: return new LeImageReader(RawImage, fileOffset);
-            case BIG_ENDIAN: return new BeImageReader(RawImage, fileOffset);
+            case LITTLE_ENDIAN: return new LeImageReader(RawImage, (long)fileOffset);
+            case BIG_ENDIAN: return new BeImageReader(RawImage, (long)fileOffset);
             default: throw new BadImageFormatException("Endianness is incorrectly specified.");
             }
         }
@@ -154,10 +163,13 @@ namespace Reko.ImageLoaders.Elf
         public ElfLoader CreateLoader()
         {
             var rdr = CreateReader(HEADER_OFFSET);
+            var endianness = this.endianness == ElfLoader.ELFDATA2LSB
+                ? EndianServices.Little
+                : EndianServices.Big;
             if (fileClass == ELFCLASS64)
             {
                 var header64 = Elf64_EHdr.Load(rdr);
-                return new ElfLoader64(this, header64, RawImage, osAbi, endianness);
+                return new ElfLoader64(this.Services, header64, osAbi, endianness, RawImage);
             }
             else
             {
@@ -173,7 +185,7 @@ namespace Reko.ImageLoaders.Elf
                 trace.Verbose("  e_shentsize: {0}", header32.e_shentsize);
                 trace.Verbose("  e_shnum: {0}", header32.e_shnum);
                 trace.Verbose("  e_shstrndx: {0}", header32.e_shstrndx);
-                return new ElfLoader32(this, header32, RawImage, endianness);
+                return new ElfLoader32(this.Services, header32, osAbi, endianness, RawImage);
             }
         }
     }

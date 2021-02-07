@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ namespace Reko.Core.Machine
 
     public class InstrDecoder<TDasm, TMnemonic, TInstr> : Decoder<TDasm, TMnemonic, TInstr>
         where TDasm : DisassemblerBase<TInstr, TMnemonic>
+        where TMnemonic : struct
         where TInstr : MachineInstruction
     {
         private readonly InstrClass iclass;
@@ -56,6 +57,7 @@ namespace Reko.Core.Machine
 
     public class WideInstrDecoder<TDasm, TMnemonic, TInstr> : WideDecoder<TDasm, TMnemonic, TInstr>
         where TDasm : DisassemblerBase<TInstr, TMnemonic>
+        where TMnemonic : struct
         where TInstr : MachineInstruction
     {
         private readonly InstrClass iclass;

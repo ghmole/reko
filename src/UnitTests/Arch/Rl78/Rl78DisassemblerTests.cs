@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ namespace Reko.UnitTests.Arch.Rl78
 
         public Rl78DisassemblerTests()
         {
-            this.arch = new Rl78Architecture(new ServiceContainer(), "rl78");
+            this.arch = new Rl78Architecture(new ServiceContainer(), "rl78", new Dictionary<string, object>());
             this.addr = Address.Ptr32(0x1000);
         }
 
@@ -61,7 +61,7 @@ namespace Reko.UnitTests.Arch.Rl78
         [Test]
         public void Rl78Dis_mov_x_imm()
         {
-            AssertCode("mov\tx,42", "50 42");
+            AssertCode("mov\tx,#42", "50 42");
         }
 
         [Test]
@@ -91,13 +91,13 @@ namespace Reko.UnitTests.Arch.Rl78
         [Test]
         public void Rl78Dis_mov_psw_imm()
         {
-            AssertCode("mov\t[0FFFFAh],42", "CE FA 42");
+            AssertCode("mov\t[0FFFFAh],#42", "CE FA 42");
         }
 
         [Test]
         public void Rl78Dis_shr_a_6()
         {
-            AssertCode("shr\ta,6", "31 6A");
+            AssertCode("shr\ta,#6", "31 6A");
         }
 
         [Test]

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.PowerPC
 {
@@ -37,7 +38,7 @@ namespace Reko.UnitTests.Arch.PowerPC
         [SetUp]
         public void Setup()
         {
-            this.arch = new PowerPcBe32Architecture(new ServiceContainer(), "ppc-be-32");
+            this.arch = new PowerPcBe32Architecture(new ServiceContainer(), "ppc-be-32", new Dictionary<string, object>());
         }
 
         public override IProcessorArchitecture Architecture => arch;
@@ -53,9 +54,9 @@ namespace Reko.UnitTests.Arch.PowerPC
                 (rb << 11) |
                 (xo << 1) |
                 rc;
-            MemoryArea img = new MemoryArea(Address.Ptr32(0x00100000), new byte[4]);
-            img.WriteBeUInt32(0, w);
-            return Disassemble(img);
+            ByteMemoryArea mem = new ByteMemoryArea(Address.Ptr32(0x00100000), new byte[4]);
+            mem.WriteBeUInt32(0, w);
+            return Disassemble(mem);
         }
 
         private void RunTest(string expected, string bits)
@@ -72,7 +73,7 @@ namespace Reko.UnitTests.Arch.PowerPC
 
         private void Given_PowerPcBe64()
         {
-            this.arch = new PowerPcBe64Architecture(new ServiceContainer(), "ppc-be-64");
+            this.arch = new PowerPcBe64Architecture(new ServiceContainer(), "ppc-be-64", new Dictionary<string, object>());
         }
 
         private void Given_ProcessorModel_750cl()

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 Pavel Tomin.
+ * Copyright (C) 1999-2021 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Arch.X86;
 using Reko.Core;
 using Reko.Core.Types;
 using Reko.Environments.Windows;
+using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Text;
 
@@ -37,7 +38,7 @@ namespace Reko.UnitTests.Core
         private void CreateTypeLibraryLoader(string filename, string contents)
         {
             var sc = new ServiceContainer();
-            this.platform = new Win32Platform(sc, new X86ArchitectureFlat32(sc, "x86-protected-32"));
+            this.platform = new Win32Platform(sc, new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>()));
             tlldr = new TypeLibraryLoader(null, filename, Encoding.ASCII.GetBytes(contents));
         }
 

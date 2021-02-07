@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -192,12 +192,12 @@ namespace Reko.Core
 
         public abstract Address Align(int alignment);
 
-        public static Address operator - (Address a, int delta)
+        public static Address operator - (Address a, long delta)
 		{
 			return a.Add(-delta);
 		}
 
-		public static long operator - (Address a, Address b)
+        public static long operator - (Address a, Address b)
 		{
 			return (long) a.ToLinear() - (long) b.ToLinear();
 		}

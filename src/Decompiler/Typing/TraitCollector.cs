@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -100,9 +100,9 @@ namespace Reko.Typing
 			atrco.Collect(null, 0, field, effectiveAddress);
 		}
 
-		public void CollectEffectiveAddress(Expression basePtr, int basePtrSize, Expression field, Expression effectiveAddress)
+		public void CollectEffectiveAddress(Expression basePtr, int basePtrBitSize, Expression field, Expression effectiveAddress)
 		{
-			atrco.Collect(basePtr, basePtrSize, field, effectiveAddress);
+			atrco.Collect(basePtr, basePtrBitSize, field, effectiveAddress);
 		}
 
 		public void CollectProgramTraits(Program program)
@@ -464,6 +464,13 @@ namespace Reko.Typing
 			return handler.DataTypeTrait(cof, cof.DataType);
 		}
 
+        public DataType VisitConversion(Conversion conversion)
+        {
+            conversion.Expression.Accept(this);
+            handler.DataTypeTrait(conversion.Expression, conversion.SourceDataType);
+            return handler.DataTypeTrait(conversion, conversion.DataType);
+        }
+
         public DataType VisitAddress(Address addr)
         {
             return handler.DataTypeTrait(addr, addr.DataType);
@@ -478,7 +485,7 @@ namespace Reko.Typing
                 handler.MemAccessTrait(
                     null, 
                     program!.Globals,
-                    program.Platform.PointerType.Size,
+                    program.Platform.PointerType.BitSize,
                     c,
                     c.ToInt32() * 0x10);   //$REVIEW Platform-dependent
             }
@@ -498,7 +505,7 @@ namespace Reko.Typing
 		public DataType VisitDereference(Dereference deref)
 		{
 			deref.Expression.Accept(this);
-            return handler.MemAccessTrait(null, deref.Expression, deref.Expression.DataType.Size, deref, 0);
+            return handler.MemAccessTrait(null, deref.Expression, deref.Expression.DataType.BitSize, deref, 0);
 		}
 
 		public DataType VisitFieldAccess(FieldAccess acc)
@@ -536,7 +543,7 @@ namespace Reko.Typing
             access.EffectiveAddress.Accept(this);
 			TypeVariable tAccess = access.TypeVariable!;
 			var dt = handler.DataTypeTrait(access, access.DataType);
-			CollectEffectiveAddress(access.BasePointer, access.BasePointer.DataType.Size, access, access.EffectiveAddress);
+			CollectEffectiveAddress(access.BasePointer, access.BasePointer.DataType.BitSize, access, access.EffectiveAddress);
             return dt;
 		}
 
@@ -578,9 +585,9 @@ namespace Reko.Typing
 			} 
 			else
 			{
-                if (pc.Procedure is PseudoProcedure ppp)
+                if (pc.Procedure is IntrinsicProcedure intrinsic)
                 {
-                    argTypes = new DataType[ppp.Arity];
+                    argTypes = new DataType[intrinsic.Arity];
                     for (int i = 0; i < argTypes.Length; ++i)
                     {
                         argTypes[i] = factory.CreateUnknown();

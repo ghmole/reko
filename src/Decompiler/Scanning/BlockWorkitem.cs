@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@ using System.Linq;
 using ProcedureCharacteristics = Reko.Core.Serialization.ProcedureCharacteristics;
 using Reko.Analysis;
 using Reko.Core.Services;
+using System.ComponentModel;
 
 namespace Reko.Scanning
 {
@@ -274,6 +275,8 @@ namespace Reko.Scanning
             {
                 var label = program.NamingPolicy.BlockName(ric.Address) + "_then";
                 blockThen = proc.AddBlock((Address)b.Target, label);
+                if (program.User.BlockLabels.TryGetValue(label, out var userLabel))
+                    blockThen.UserLabel = userLabel;
                 var jmpSite = state.OnBeforeCall(stackReg!, arch.PointerType.Size);
                 GenerateCallToOutsideProcedure(jmpSite, (Address)b.Target);
                 Emit(new ReturnInstruction());
@@ -303,7 +306,7 @@ namespace Reko.Scanning
                 {
                     var blockDsF = proc.AddSyntheticBlock(
                         ricDelayed.Address,
-                        branchingBlock.Name + "_ds_f");
+                        branchingBlock.Id + "_ds_f");
                     blockCur = blockDsF;
                     ProcessRtlCluster(ricDelayed);
                     EnsureEdge(proc, blockDsF, blockElse);
@@ -312,7 +315,7 @@ namespace Reko.Scanning
 
                 var blockDsT = proc.AddSyntheticBlock(
                     ricDelayed.Address,
-                    branchingBlock.Name + "_ds_t");
+                    branchingBlock.Id + "_ds_t");
                 blockCur = blockDsT;
                 ProcessRtlCluster(ricDelayed);
                 EnsureEdge(proc, blockDsT, blockThen);
@@ -426,11 +429,21 @@ namespace Reko.Scanning
                     var chr = impProc.Characteristics;
                     if (chr != null && chr.IsAlloca)
                         return ProcessAlloca(site, impProc);
-                    EmitCall(CreateProcedureConstant(impProc), sig, chr!, site);
+                    EmitCall(CreateProcedureConstant(impProc), sig, chr, site);
                     Emit(new ReturnInstruction());
                     blockCur!.Procedure.ControlGraph.AddEdge(blockCur, blockCur.Procedure.ExitBlock);
                     return false;
                 }
+                var platformProc = program.Platform.LookupProcedureByAddress(addrTarget);
+                if (platformProc != null)
+                {
+                    site = state.OnBeforeCall(stackReg!, 0);
+                    EmitCall(CreateProcedureConstant(platformProc), platformProc.Signature, platformProc.Characteristics, site);
+                    Emit(new ReturnInstruction());
+                    blockCur!.Procedure.ControlGraph.AddEdge(blockCur, blockCur.Procedure.ExitBlock);
+                    return false;
+                }
+
                 if (!program.SegmentMap.IsValidAddress(addrTarget))
                 {
                     var jmpSite = state.OnBeforeCall(stackReg!, 0);
@@ -449,7 +462,7 @@ namespace Reko.Scanning
                     }
                     var sig = trampoline.Signature;
                     var chr = trampoline.Characteristics;
-                    EmitCall(CreateProcedureConstant(trampoline), sig, chr!, jmpSite);
+                    EmitCall(CreateProcedureConstant(trampoline), sig, chr, jmpSite);
                     Emit(new ReturnInstruction());
                     blockCur.Procedure.ControlGraph.AddEdge(blockCur, blockCur.Procedure.ExitBlock);
                     return false;
@@ -534,6 +547,12 @@ namespace Reko.Scanning
                     return OnAfterCall(sig, chr);
                 }
 
+                var platformProc = program.Platform.LookupProcedureByAddress(addr);
+                if (platformProc != null)
+                {
+                    EmitCall(CreateProcedureConstant(platformProc), platformProc.Signature, platformProc.Characteristics, site);
+                    return OnAfterCall(platformProc.Signature, chr);
+                }
                 if (!program.SegmentMap.IsValidAddress(addr))
                 {
                     return GenerateCallToOutsideProcedure(site, addr);
@@ -552,7 +571,7 @@ namespace Reko.Scanning
                 }
                 var pcCallee = CreateProcedureConstant(callee);
                 sig = callee.Signature;
-                chr = callee.Characteristics!;
+                chr = callee.Characteristics;
                 EmitCall(pcCallee, sig, chr, site);
                 if (callee is Procedure pCallee)
                 {
@@ -580,12 +599,12 @@ namespace Reko.Scanning
                 //$REVIEW: this is a hack. Were we in SSA form,
                 // we could quickly determine if `id` is assigned
                 // to constant.
-                var ppp = SearchBackForProcedureConstant(id);
-                if (ppp != null)
+                var intrinsic = SearchBackForProcedureConstant(id);
+                if (intrinsic != null)
                 {
-                    var e = CreateProcedureConstant(ppp);
-                    sig = ppp.Signature;
-                    chr = ppp.Characteristics;
+                    var e = CreateProcedureConstant(intrinsic);
+                    sig = intrinsic.Signature;
+                    chr = intrinsic.Characteristics;
                     EmitCall(e, sig, chr, site);
                     return OnAfterCall(sig, chr);
                 }
@@ -857,7 +876,7 @@ namespace Reko.Scanning
                 Emit(new SideEffect(side.Expression));
                 if (side.Expression is Application appl &&
                     appl.Procedure is ProcedureConstant fn &&
-                    fn.Procedure.Characteristics!.Terminates)
+                    fn.Procedure.Characteristics.Terminates)
                 {
                     scanner.TerminateBlock(blockCur!, ric!.Address + ric.Length);
                     return false;
@@ -964,7 +983,9 @@ namespace Reko.Scanning
             else
             {
                 var jumpDests = ScanJumpVectorTargets(vector);
-                var blockSource = scanner.FindContainingBlock(ric!.Address)!;
+                var blockSource = blockCur!.IsSynthesized
+                    ? blockCur
+                    : scanner.FindContainingBlock(ric!.Address)!;
                 blockCur = blockSource;
                 foreach (var dest in jumpDests)
                 {
@@ -1066,7 +1087,7 @@ namespace Reko.Scanning
                 if (!program.SegmentMap.IsValidAddress(addr))
                     break;
                 var st = state.Clone();
-                blocks.Add(BlockFromAddress(ric!.Address, addr, blockCur!.Procedure, state));
+                blocks.Add(BlockFromAddress(ric!.Address, addr, blockCur!.Procedure, st));
             }
             return blocks;
         }
@@ -1101,7 +1122,10 @@ namespace Reko.Scanning
         {
             ++extraLabels;
             var label = program.NamingPolicy.BlockName(ric!.Address);
-            return proc.AddSyntheticBlock(ric.Address, $"{label}_{extraLabels}");
+            var block = proc.AddSyntheticBlock(ric.Address, $"{label}_{extraLabels}");
+            if (program.User.BlockLabels.TryGetValue(label, out var userLabel))
+                block.UserLabel = userLabel;
+            return block;
         }
 
         /// <summary>
@@ -1156,17 +1180,17 @@ namespace Reko.Scanning
         {
             foreach (Block block in blockCur!.Procedure.ControlGraph.Blocks)
             {
-                Console.WriteLine("block: {0}", block.Name);
+                Console.WriteLine("block: {0}", block.Id);
                 Console.Write("\tpred:");
                 foreach (var p in block.Procedure.ControlGraph.Predecessors(block))
                 {
-                    Console.Write(" {0}", p.Name);
+                    Console.Write(" {0}", p.Id);
                 }
                 Console.WriteLine();
                 Console.Write("\tsucc:");
                 foreach (var s in block.Procedure.ControlGraph.Successors(block))
                 {
-                    Console.Write(" {0}", s.Name);
+                    Console.Write(" {0}", s.Id);
                 }
                 Console.WriteLine();
             }
@@ -1182,7 +1206,7 @@ namespace Reko.Scanning
             {
                 if (!(mem.EffectiveAddress is Constant offset))
                     return null;
-                addrTarget = program.Platform.MakeAddressFromConstant(offset, true);
+                addrTarget = program.Platform.MakeAddressFromConstant(offset, true)!;
             }
             var impEp = scanner.GetImportedProcedure(this.arch, addrTarget, ric!.Address);
             //if (impEp != null)
@@ -1246,9 +1270,9 @@ namespace Reko.Scanning
                 return null;
             if (!(fn.Procedure is ProcedureConstant pc))
                 return null;
-            if (!(pc.Procedure is PseudoProcedure ppp))
+            if (!(pc.Procedure is IntrinsicProcedure intrinsic))
                 return null;
-            if (ppp.Name != PseudoProcedure.Syscall || fn.Arguments.Length == 0)
+            if (intrinsic.Name != IntrinsicProcedure.Syscall || fn.Arguments.Length == 0)
                 return null;
 
             if (!(fn.Arguments[0] is Constant vector))

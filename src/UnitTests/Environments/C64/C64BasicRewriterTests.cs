@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ using System.Text;
 using Moq;
 using Reko.Arch.Mos6502;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Environments.C64
 {
@@ -42,6 +43,7 @@ namespace Reko.UnitTests.Environments.C64
         private C64Basic arch;
         private Mos6502Architecture arch6502;
         private SortedList<ushort, C64BasicInstruction> lines;
+        private ServiceContainer sc;
         private Mock<ArchTestBase.RewriterHost> host;
 
         public override IProcessorArchitecture Architecture => arch;
@@ -50,7 +52,8 @@ namespace Reko.UnitTests.Environments.C64
 
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
-            var addr = Address.Ptr16(10);
+            var addr = Address.Ptr16(0x801);
+            arch = new C64Basic(sc, lines);
             return arch.CreateRewriter(
                 arch.CreateImageReader(mem, addr),
                 arch.CreateProcessorState(),
@@ -66,10 +69,12 @@ namespace Reko.UnitTests.Environments.C64
         private class BasicProcessor
         {
             private SortedList<ushort, C64BasicInstruction> lines;
+            private Address addr;
 
             public BasicProcessor(SortedList<ushort, C64BasicInstruction> lines)
             {
                 this.lines = lines;
+                this.addr = Address.Ptr16(0x801);
             }
 
             public void Add(ushort lineNumber, params object[] instrs)
@@ -77,10 +82,12 @@ namespace Reko.UnitTests.Environments.C64
                 var tokens = Tokenize(instrs);
                 var line = new C64BasicInstruction
                 {
-                    Address = Address.Ptr16(lineNumber),
+                    Address = addr,
+                    LineNumber = lineNumber,
                     Line = tokens,
                 };
                 lines.Add(lineNumber, line);
+                addr += 5;
             }
 
             private byte[] Tokenize(object[] instrs)
@@ -88,11 +95,11 @@ namespace Reko.UnitTests.Environments.C64
                 MemoryStream stm = new MemoryStream();
                 foreach (var instr in instrs)
                 {
-                    if (instr is Token)
-                        stm.WriteByte((byte)(Token)instr);
-                    else if (instr is string)
+                    if (instr is Token token)
+                        stm.WriteByte((byte)token);
+                    else if (instr is string str)
                     {
-                        var bytes = Encoding.ASCII.GetBytes((string)instr);
+                        var bytes = Encoding.ASCII.GetBytes(str);
                         stm.Write(bytes, 0, bytes.Length);
                     }
                     else
@@ -104,21 +111,21 @@ namespace Reko.UnitTests.Environments.C64
             public object Clr() { return Token.CLR; }
             public object End() { return Token.END; }
 
-            internal object Sys() { return Token.SYS; }
+            public object Sys() { return Token.SYS; }
         }
 
         [SetUp]
         public void Setup()
         {
             lines = new SortedList<ushort, C64BasicInstruction>();
-            var sc = CreateServiceContainer();
-            arch = new C64Basic(sc, lines);
-            arch6502 = new Mos6502Architecture(sc, "m6502");
+            sc = CreateServiceContainer();
+            arch = new C64Basic(sc, "c64", new Dictionary<string, object>());
+            arch6502 = new Mos6502Architecture(sc, "m6502", new Dictionary<string, object>());
             m = new BasicProcessor(lines);
-            host = new Mock<RewriterTestBase.RewriterHost>(arch) { CallBase = true };
+            host = new Mock<RewriterHost>(arch) { CallBase = true };
             host.Setup(h => h.GetArchitecture("m6502"))
                 .Returns(arch6502);
-            base.Given_MemoryArea(new MemoryArea(Address.Ptr16(0x10), new byte[10]));
+            base.Given_MemoryArea(new ByteMemoryArea(Address.Ptr16(0x800), new byte[10]));
         }
 
         [Test]
@@ -126,7 +133,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, m.End());
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__End()");
         }
 
@@ -135,7 +142,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, m.Sys(), " 2064");
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
+                "0|T--|0801(1): 1 instructions",
                 "1|T--|callx m6502 0810 (2)");
         }
 
@@ -144,7 +151,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, m.Clr());
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__Clr()");
         }
 
@@ -153,7 +160,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "AB", Token.eq, "8");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|AB_r = 8<i16>");
         }
 
@@ -162,7 +169,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.PRINT, " ", Token.CHR_s, "(147)");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__PrintLine(__Chr(147<i16>))");
         }
 
@@ -171,9 +178,9 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.PRINT, " 3:", Token.PRINT);
             AssertCode(
-                "0|L--|000A(1): 2 instructions",
+                "0|L--|0801(1): 2 instructions",
                 "1|L--|__PrintLine(3<i16>)",
-                "2|L--|__PrintEmptyLine()");
+                "2|L--|__PrintLine()");
         }
 
         [Test]
@@ -181,7 +188,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.POKE, " ", "51231,123");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__Poke(-14305<i16>, 123<i16>)");
         }
 
@@ -190,7 +197,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.GET, "A$");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__Get(out A_s)");
         }
 
@@ -199,8 +206,8 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.IF, "A", Token.THEN,"10");
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
-                "1|T--|if (A_r) branch 000A");
+                "0|T--|0801(1): 1 instructions",
+                "1|T--|if (A_r) branch 0801");
         }
 
         [Test]
@@ -208,7 +215,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.IF, "A", Token.THEN, "A ", Token.eq, " 3");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|if (A_r) A_r = 3<i16>");
         }
 
@@ -217,36 +224,45 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.IF, "A", Token.GOTO, "10");
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
-                "1|T--|if (A_r) branch 000A");
+                "0|T--|0801(1): 1 instructions",
+                "1|T--|if (A_r) branch 0801");
         }
 
         [Test]
         public void C64brw_Regression_1()
         {
             m.Add(10, Token.GET, "AN$:", Token.IF, "AN$", Token.eq, "\"\"", Token.GOTO, "370");
+            m.Add(370, Token.END);
             AssertCode(
-                "0|T--|000A(1): 2 instructions",
+                "0|T--|0801(1): 2 instructions",
                 "1|L--|__Get(out AN_s)",
-                "2|T--|if (AN_s == \"\") branch 0172");
+                "2|T--|if (AN_s == \"\") branch 0806",
+                "3|L--|0806(1): 1 instructions",
+                "4|L--|__End()");
         }
 
         [Test]
         public void C64brw_Goto()
         {
             m.Add(10, Token.GOTO, "32");
+            m.Add(32, Token.END);
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
-                "1|T--|goto 0020");
+                "0|T--|0801(1): 1 instructions",
+                "1|T--|goto 0806",
+                "2|L--|0806(1): 1 instructions",
+                "3|L--|__End()");
         }
 
         [Test]
         public void C64brw_Gosub()
         {
             m.Add(10, Token.GOSUB, "32");
+            m.Add(32, Token.END);
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
-                "1|T--|call 0020 (2)");
+                "0|T--|0801(1): 1 instructions",
+                "1|T--|call 0806 (2)",
+                "2|L--|0806(1): 1 instructions",
+                "3|L--|__End()");
         }
 
         [Test]
@@ -254,7 +270,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.RETURN);
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
+                "0|T--|0801(1): 1 instructions",
                 "1|T--|return (2,0)");
         }
 
@@ -263,7 +279,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.PRINT,Token.TAB_lp,"5);\"HELLO\"");
             AssertCode(
-                "0|L--|000A(1): 2 instructions",
+                "0|L--|0801(1): 2 instructions",
                 "1|L--|__PrintTab(5<i16>)",
                 "2|L--|__PrintLine(\"HELLO\")");
         }
@@ -273,7 +289,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.INPUT, "\"FOO?\";A$");
             AssertCode(
-                "0|L--|000A(1): 2 instructions",
+                "0|L--|0801(1): 2 instructions",
                 "1|L--|__Print(\"FOO?\")",
                 "2|L--|__Input(out A_s)");
         }
@@ -283,7 +299,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.OPEN,"8,1,1,\"FOO,SEQ,R\"");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__Open(8<i16>, 1<i16>, 1<i16>, \"FOO,SEQ,R\")");
         }
 
@@ -292,7 +308,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.INPUT_hash, "8,A$,B%");
             AssertCode(
-                "0|L--|000A(1): 2 instructions",
+                "0|L--|0801(1): 2 instructions",
                 "1|L--|__InputStm(8<i16>, out A_s)",
                 "2|L--|__InputStm(8<i16>, out B_i)");
         }
@@ -302,7 +318,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "B", Token.eq, "A(1)");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|B_r = A_r[1<i16>]");
         }
 
@@ -312,7 +328,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.CLOSE, "3");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|__Close(3<i16>)");
         }
 
@@ -321,7 +337,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "A$", Token.eq, "A$", Token.add, "\"+\"");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|A_s = A_s + \"+\"");
         }
 
@@ -330,11 +346,11 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.PRINT,":",Token.PRINT,"\"FOO: \";CM$(MA):",Token.PRINT);
             AssertCode(
-                "0|L--|000A(1): 4 instructions",
-                "1|L--|__PrintEmptyLine()",
+                "0|L--|0801(1): 4 instructions",
+                "1|L--|__PrintLine()",
                 "2|L--|__Print(\"FOO: \")",
                 "3|L--|__PrintLine(CM_s[MA_r])",
-                "4|L--|__PrintEmptyLine()");
+                "4|L--|__PrintLine()");
         }
 
         [Test]
@@ -342,7 +358,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, Token.PRINT_hash, "2,C$,A$");
             AssertCode(
-                "0|L--|000A(1): 2 instructions",
+                "0|L--|0801(1): 2 instructions",
                 "1|L--|__PrintStm(2<i32>, C_s)",
                 "2|L--|__PrintStm(2<i32>, A_s)");
         }
@@ -352,7 +368,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "CA$(3)",Token.eq,"M$(I)");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|CA_s[3<i16>] = M_s[I_r]");
         }
 
@@ -360,9 +376,12 @@ namespace Reko.UnitTests.Environments.C64
         public void C64brw_gt()
         {
             m.Add(10, Token.IF, "S",Token.gt,"3",Token.GOTO, "123");
+            m.Add(123, Token.END);
             AssertCode(
-                "0|T--|000A(1): 1 instructions",
-                "1|T--|if (S_r > 3<i16>) branch 007B");
+                "0|T--|0801(1): 1 instructions",
+                "1|T--|if (S_r > 3<i16>) branch 0806",
+                "2|L--|0806(1): 1 instructions",
+                "3|L--|__End()");
         }
 
         [Test]
@@ -370,8 +389,8 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "S", Token.eq, "S", Token.mul,"3");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
-                "1|L--|S_r = S_r * 3<i16>");
+                "0|L--|0801(1): 1 instructions",
+                "1|L--|S_r = S_r *32 3<i16>");
         }
 
         [Test]
@@ -379,7 +398,7 @@ namespace Reko.UnitTests.Environments.C64
         {
             m.Add(10, "S", Token.eq, Token.sub, "3");
             AssertCode(
-                "0|L--|000A(1): 1 instructions",
+                "0|L--|0801(1): 1 instructions",
                 "1|L--|S_r = -3<i16>");
         }
     }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ namespace Reko.Evaluation
             if (idHi == null || idLo == null)
                 return false;
             var defHi = ctx.GetDefiningExpression(idHi) as Slice;
-            var defLo = ctx.GetDefiningExpression(idLo) as Cast;
+            var defLo = ctx.GetDefiningExpression(idLo) as Slice;
             if (defHi == null || defLo == null)
                 return false;
 

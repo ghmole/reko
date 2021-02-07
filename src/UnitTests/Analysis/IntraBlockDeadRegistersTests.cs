@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -153,11 +153,11 @@ namespace Reko.UnitTests.Analysis
                 var al = m.Frame.EnsureRegister(new RegisterStorage("al", 0, 0, PrimitiveType.Byte));
                 var bx = m.Frame.EnsureRegister(new RegisterStorage("bx", 3, 0, PrimitiveType.Word16));
                 var bl = m.Frame.EnsureRegister(new RegisterStorage("bl", 3, 0, PrimitiveType.Byte));
-                m.Assign(bx, m.Cast(PrimitiveType.Word16, al));
+                m.Assign(bx, m.Convert(al, al.DataType, PrimitiveType.Word16));
                 m.SideEffect(m.Fn("foo", bl));
             });
             string sExp = ToExpectedString(
-                "bx = (word16) al",
+                "bx = CONVERT(al, byte, word16)",
                 "foo(bl)");
             Assert.AreEqual(sExp, testResult);
         }

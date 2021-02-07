@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
@@ -52,6 +53,8 @@ namespace Reko.ImageLoaders.Elf.Relocators
         public override void Relocate(Program program)
         {
             base.Relocate(program);
+            return;
+            /*
             var rela_plt = loader.GetSectionInfoByName(".rela.plt");
             if (rela_plt == null)
                 return;
@@ -87,15 +90,13 @@ namespace Reko.ImageLoaders.Elf.Relocators
                     // changing to use RelocateEntry this will go away.
                     new NamedImportReference(addr, null, symStr, SymbolType.ExternalProcedure));
             }
+            */
         }
 
-        public override ElfSymbol RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
+        public override (Address, ElfSymbol) RelocateEntry(Program program, ElfSymbol sym, ElfSection referringSection, ElfRelocation rela)
         {
             if (loader.Sections.Count <= sym.SectionIndex)
-                return sym;
-            if (sym.SectionIndex == 0)
-                return sym;
-            var symSection = loader.Sections[(int)sym.SectionIndex];
+                return (null, null);
             uint S = (uint)sym.Value;
             uint A = (uint)rela.Addend;
             uint P = (uint)rela.Offset;
@@ -131,7 +132,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 break;
             case PpcRt.R_PPC_ADDR16_LO:
                 if (prevPpcHi16 == null)
-                    return sym;
+                    return (null, null);
                 uint valueHi = prevRelR.ReadUInt16();
                 uint valueLo = relR.ReadUInt16();
 
@@ -154,7 +155,7 @@ namespace Reko.ImageLoaders.Elf.Relocators
                 missedRelocations[rt] = count + 1;
                 break;
             }
-            return sym;
+            return (addr, null);
         }
 
         public override string RelocationTypeToString(uint type)
@@ -170,18 +171,16 @@ namespace Reko.ImageLoaders.Elf.Relocators
             this.loader = loader;
         }
 
-        public override ElfSymbol RelocateEntry(Program program, ElfSymbol symbol, ElfSection referringSection, ElfRelocation rela)
+        public override (Address, ElfSymbol) RelocateEntry(Program program, ElfSymbol symbol, ElfSection referringSection, ElfRelocation rela)
         {
             if (loader.Sections.Count <= symbol.SectionIndex)
-                return symbol;
-            if (symbol.SectionIndex == 0)
             {
-                return symbol;
+                return (null, null);
             }
-            var symSection = loader.Sections[(int) symbol.SectionIndex];
-            ulong S = (uint) symbol.Value;
-            ulong A = (uint) rela.Addend;
-            ulong P = (uint) rela.Offset;
+            ulong S = (ulong) symbol.Value;
+            ulong A = (ulong) rela.Addend;
+            ulong P = (ulong) rela.Offset;
+            ulong B = program.SegmentMap.BaseAddress.ToLinear();
             var addr = Address.Ptr64(P);
             ulong PP = P;
             var arch = program.Architecture;
@@ -191,15 +190,26 @@ namespace Reko.ImageLoaders.Elf.Relocators
             var rt = (Ppc64Rt) (rela.Info & 0xFF);
             switch (rt)
             {
+            case Ppc64Rt.R_PPC64_RELATIVE: // B + A
+                S = 0;
+                P = 0;
+                break;
+            case Ppc64Rt.R_PPC64_ADDR64:    // S + A
+                B = 0;
+                P = 0;
+                break;
             case Ppc64Rt.R_PPC64_JMP_SLOT:
-                return symbol;
+                return (addr, null);
             default:
                 var listener = this.loader.Services.RequireService<DecompilerEventListener>();
                 var loc = listener.CreateAddressNavigator(program, addr);
                 listener.Warn(loc, $"Unimplemented PowerPC64 relocation type {rt}.");
-                return symbol;
+                return (addr, null);
             }
-            return symbol;
+            var w = relR.ReadUInt64();
+            w += (B + A + S + P);
+            relW.WriteUInt64(w);
+            return (addr, null);
         }
 
         public override string RelocationTypeToString(uint type)

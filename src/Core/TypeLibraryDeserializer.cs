@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ namespace Reko.Core
         private readonly TypeLibrary library;
         private string? defaultConvention;
         private string? moduleName;
+        private readonly int bitsPerStorageUnit;
 
         public TypeLibraryDeserializer(IPlatform platform, bool caseInsensitive, TypeLibrary dstLib)
         {
@@ -49,6 +50,7 @@ namespace Reko.Core
             types = dstLib.Types;
             this.unions = new Dictionary<string, UnionType>(cmp);
             this.structures = new Dictionary<string, StructureType>(cmp);
+            this.bitsPerStorageUnit = platform.Architecture.MemoryGranularity;
         }
 
         public TypeLibrary Load(SerializedLibrary sLib)
@@ -115,11 +117,17 @@ namespace Reko.Core
         {
             try
             {
+                if (sp.Name is null)
+                    return;
+                if (sp.Characteristics != null)
+                {
+                    library.Characteristics[sp.Name] = sp.Characteristics;
+                }
                 var sser = new ProcedureSerializer(platform, this, this.defaultConvention ?? "");
                 var signature = sser.Deserialize(sp.Signature, platform.Architecture.CreateFrame());
-                if (sp.Name is null || signature is null)
+                if (signature is null)
                     return;
-                library.Signatures[sp.Name!] = signature;
+                library.Signatures[sp.Name] = signature;
                 var mod = EnsureModule(this.moduleName, this.library);
                 var svc = new SystemService
                 {
@@ -197,17 +205,17 @@ namespace Reko.Core
             return sType.Accept(this);
         }
 
-        public ExternalProcedure? LoadExternalProcedure(ProcedureBase_v1 sProc)
+        public ExternalProcedure? LoadExternalProcedure(
+            ProcedureBase_v1 sProc, ProcedureCharacteristics? chr = null)
         {
-            //$TODO: code below.
-            //if (sProc.Name is null)
-            //    return null;
+            if (sProc.Name is null)
+                return null;
             var sSig = sProc.Signature;
             var sser = new ProcedureSerializer(platform, this, this.defaultConvention ?? "");
             var sig = sser.Deserialize(sSig, platform.Architecture.CreateFrame());    //$BUGBUG: catch dupes?
             if (sig is null)
                 return null;
-            return new ExternalProcedure(sProc.Name!, sig)  //$TODO: remove "!"
+            return new ExternalProcedure(sProc.Name, sig, chr)
             {
                 EnclosingType = sSig?.EnclosingType
             };
@@ -228,7 +236,7 @@ namespace Reko.Core
         public DataType VisitPrimitive(PrimitiveType_v1 primitive)
         {
             var bitSize = primitive.Domain != Domain.Boolean
-                ? DataType.BitsPerByte * primitive.ByteSize
+                ? bitsPerStorageUnit * primitive.ByteSize
                 : 1;
 
             var pt = PrimitiveType.Create(primitive.Domain, bitSize);
@@ -279,7 +287,7 @@ namespace Reko.Core
                 dt = new UnknownType();
             else
                 dt = memptr.MemberType.Accept(this);
-            return new MemberPointer(baseType, dt, platform.PointerType.Size);
+            return new MemberPointer(baseType, dt, platform.PointerType.BitSize);
         }
 
         public DataType VisitReference(ReferenceType_v1 reference)

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,8 +43,7 @@ namespace Reko.UnitTests.Arch.Arc
         [SetUp]
         public void Setup()
         {
-            this.arch = new ARCompactArchitecture(new ServiceContainer(), "arc");
-            arch.LoadUserOptions(new Dictionary<string, object>
+            this.arch = new ARCompactArchitecture(new ServiceContainer(), "arc", new Dictionary<string, object>
             {
                 { "Endianness", "be" }
             });

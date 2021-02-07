@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -174,7 +174,7 @@ namespace Reko.Analysis
             if (BlockTrashesIdentifier(predCond, v))
                 return null;
 
-            DebugEx.Verbose(trace, "ABC: Candidate pred: {0}, block {1}", pred.Name, block.Name);
+            trace.Verbose("ABC: Candidate pred: {0}, block {1}", pred.Id, block.Id);
             return new Candidate
             {
                 Predecessor = pred,

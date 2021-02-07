@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.i8051;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -38,7 +39,7 @@ namespace Reko.UnitTests.Arch.i8051
 
         public i8051RewriterTests()
         {
-            this.arch = new i8051Architecture(CreateServiceContainer(), "8051");
+            this.arch = new i8051Architecture(CreateServiceContainer(), "8051", new Dictionary<string, object>());
         }
 
         public override IProcessorArchitecture Architecture => arch;
@@ -48,7 +49,7 @@ namespace Reko.UnitTests.Arch.i8051
 
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
-            return new i8051Rewriter(arch, new BeImageReader(mem, 0), new i8051State(arch), binder, host);
+            return new i8051Rewriter(arch, mem.CreateBeReader(0), new i8051State(arch), binder, host);
         }
 
         [Test]

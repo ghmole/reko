@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -117,6 +117,18 @@ namespace Reko.Evaluation
         {
             return c;
         }
+
+        public Expression VisitConversion(Conversion conversion)
+        {
+            var exp = conversion.Expression.Accept(this);
+            if (exp == Constant.Invalid)
+                return exp;
+            if (exp is Constant ||
+                exp is Identifier)
+                return new Conversion(exp, conversion.SourceDataType, conversion.DataType);
+            return Constant.Invalid;
+        }
+
 
         public Expression VisitDereference(Dereference deref)
         {

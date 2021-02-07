@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Moq;
 using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
 using Reko.UserInterfaces.WindowsForms.Controls;
@@ -50,10 +51,14 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             this.platform = new Mock<IPlatform>();
             this.platform.Setup(p => p.Architecture).Returns(arch.Object);
             this.arch.Setup(a => a.Name).Returns("FakeArch");
+            this.arch.Setup(a => a.MemoryGranularity).Returns(8);
+            this.arch.Setup(a => a.RenderInstructionOpcode(
+                It.IsAny<MachineInstruction>(), It.IsAny<EndianImageReader>()))
+                .Returns("00 00 ");
             this.arch.Setup(a => a.CreateImageReader(
-                It.IsAny<MemoryArea>(),
+                It.IsAny<ByteMemoryArea>(),
                 It.IsAny<Address>()))
-                .Returns((MemoryArea m, Address a) => new LeImageReader(m, a));
+                .Returns((ByteMemoryArea m, Address a) => new LeImageReader(m, a));
             this.arch.Setup(a => a.CreateDisassembler(
                 It.IsAny<EndianImageReader>()))
                 .Returns((EndianImageReader rdr) => new MachineInstruction[]
@@ -153,8 +158,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[8]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[8]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -162,7 +167,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_Program();
             Given_CodeBlock(memText.BaseAddress, 2);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             var lines = mcdm.GetLineSpans(2);
             Assert.AreEqual(2, lines.Length);
         }
@@ -172,8 +177,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[8]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[8]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -181,7 +186,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_Program();
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             var lines = mcdm.GetLineSpans(2);
             Assert.AreEqual(2, lines.Length);
         }
@@ -191,8 +196,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[8]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[8]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -200,7 +205,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             var program = new Program(segmentMap, arch.Object, platform.Object);
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             var lines = mcdm.GetLineSpans(2);
 
             Assert.AreEqual(2, lines.Length);
@@ -211,8 +216,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[100]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[100]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute) { Size = 4 },
@@ -220,7 +225,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_Program();
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
 
             // Read the first instruction
             var lines = mcdm.GetLineSpans(1);
@@ -246,8 +251,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[100]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[100]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute) { Size = 4 },
@@ -256,7 +261,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_CodeBlock(memText.BaseAddress, 4);
             Given_CodeBlock(Address.Ptr32(0x42004), 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
 
             // Read all lines
             var lines = mcdm.GetLineSpans(5);
@@ -274,15 +279,15 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[8]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[8]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
                 new ImageSegment(".data", memData, AccessMode.ReadWriteExecute));
             var program = new Program(segmentMap, arch.Object, platform.Object);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
 
             // This places the curpos right after the last item in the .text
             // segment.
@@ -326,8 +331,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             // 042000: data <16 bytes>
             // 042010: data <16 bytes>
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[4]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[32]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[4]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[32]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -336,7 +341,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
 
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             // Advance 1 line into another piece of code.
             int delta = mcdm.MoveToLine(mcdm.CurrentPosition, 1);
             Assert.AreEqual(1, delta);
@@ -362,8 +367,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x40FD5), new byte[64]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[32]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x40FD5), new byte[64]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[32]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -372,7 +377,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
 
             Given_CodeBlock(Address.Ptr32(0x40FF9), 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
 
             mcdm.MoveToLine(mcdm.CurrentPosition, 2);
             var curPos = mcdm.CurrentPosition;
@@ -395,8 +400,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[4]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[32]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[4]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[32]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -405,7 +410,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
 
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             Debug.Print("LineCount: {0}", mcdm.LineCount);
             mcdm.SetPositionAsFraction(0, 1);
             Assert.AreSame(mcdm.StartPosition, mcdm.CurrentPosition);
@@ -420,8 +425,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[4]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[32]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[4]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[32]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute),
@@ -429,7 +434,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_Program();
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             var num_lines = 4;
             for (int i = 0; i <= num_lines; i++)
             {
@@ -450,8 +455,8 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         {
             var addrBase = Address.Ptr32(0x40000);
 
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[100]);
-            var memData = new MemoryArea(Address.Ptr32(0x42000), new byte[8]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[100]);
+            var memData = new ByteMemoryArea(Address.Ptr32(0x42000), new byte[8]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute) { Size = 4 },
@@ -459,7 +464,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
             Given_Program();
             Given_CodeBlock(memText.BaseAddress, 4);
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
 
             // Read the two instructions, placing curpos in the 'gap'
             // of invalid addresses between the .text and .data segments
@@ -479,7 +484,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
         public void Mcdm_GetLineSpans_Comments()
         {
             var addrBase = Address.Ptr32(0x40000);
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[100]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[100]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute)
@@ -493,7 +498,7 @@ namespace Reko.UnitTests.Gui.Windows.Controls
 Second line");
             Given_Comment(0x41004, "Single line comment");
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             GetLineSpans(mcdm, 1);
             GetLineSpans(mcdm, 1);
             GetLineSpans(mcdm, 1);
@@ -514,7 +519,7 @@ Second line");
         public void Mcdm_GetLineSpans_TwoComments()
         {
             var addrBase = Address.Ptr32(0x40000);
-            var memText = new MemoryArea(Address.Ptr32(0x41000), new byte[100]);
+            var memText = new ByteMemoryArea(Address.Ptr32(0x41000), new byte[100]);
             this.segmentMap = new SegmentMap(
                 addrBase,
                 new ImageSegment(".text", memText, AccessMode.ReadExecute)
@@ -526,7 +531,7 @@ Second line");
             Given_Comment(0x41000, "First comment");
             Given_Comment(0x41002, "Second comment");
 
-            var mcdm = new MixedCodeDataModel(program);
+            var mcdm = new MixedCodeDataModel(program, program.ImageMap);
             GetLineSpans(mcdm, 1);
             GetLineSpans(mcdm, 1);
             GetLineSpans(mcdm, 1);

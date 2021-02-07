@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core.CLanguage;
 using Reko.Core.Configuration;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Serialization;
 using Reko.Core.Services;
@@ -67,7 +68,7 @@ namespace Reko.Core
         /// </summary>
         /// <param name="segmentMap">Loaded program image.</param>
         /// <param name="importReferences">Imported procedures.</param>
-        /// <returns>The created platform emulators.
+        /// <returns>The created platform emulator.
         /// </returns>
         IPlatformEmulator CreateEmulator(SegmentMap segmentMap, Dictionary<Address, ImportReference> importReferences);
 
@@ -76,7 +77,8 @@ namespace Reko.Core
         /// the caller's responsibility to fill in the MemoryArea properties
         /// of each resulting ImageSegment.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A <see cref="SegmentMap"/> or null if this platform doesn't support 
+        /// memory maps.</returns>
         SegmentMap? CreateAbsoluteMemoryMap();
 
         /// <summary>
@@ -88,8 +90,7 @@ namespace Reko.Core
         /// calling conventions. Others, like many ELF implementations,
         /// will have one and only one calling convention. On such platforms
         /// we will assume that the calling convention is represented by
-        /// the empty string "". //$REVIEW: this probably highlights the 
-        /// need for a CallingConvention abstraction.
+        /// the empty string "". 
         /// </remarks>
         /// <param name="signature"></param>
         /// <returns>The name of the calling convention, or null
@@ -97,13 +98,13 @@ namespace Reko.Core
         string? DetermineCallingConvention(FunctionType signature);
 
         /// <summary>
-        /// Given a C basic type, returns the number of bytes that type is
+        /// Given a C basic type, returns the number of bits that type is
         /// represented with on this platform.
         /// </summary>
         /// <param name="cb">A C Basic type, like int, float etc.</param>
         /// <returns>Number of bytes used by this platform.
         /// </returns>
-        int GetByteSizeFromCBasicType(CBasicType cb);
+        int GetBitSizeFromCBasicType(CBasicType cb);
 
         CallingConvention? GetCallingConvention(string? ccName);
 
@@ -127,7 +128,7 @@ namespace Reko.Core
         /// <param name="addrStart">The entrypoint according to the image.</param>
         /// <returns>null if no known runtime code was found, otherwise the 
         /// an ImageSymbol corresponding to the "real" user main procedure.</returns>
-        ImageSymbol FindMainProcedure(Program program, Address addrStart);
+        ImageSymbol? FindMainProcedure(Program program, Address addrStart);
 
         /// <summary>
         /// Given a vector and the current processor state, finds a system
@@ -140,8 +141,8 @@ namespace Reko.Core
         /// <param name="vector"></param>
         /// <param name="state"></param>
         /// <returns></returns>
-        SystemService? FindService(int vector, ProcessorState state, SegmentMap segmentMap);
-        SystemService? FindService(RtlInstruction call, ProcessorState state, SegmentMap segmentMap);
+        SystemService? FindService(int vector, ProcessorState? state, SegmentMap? segmentMap);
+        SystemService? FindService(RtlInstruction call, ProcessorState? state, SegmentMap? segmentMap);
         DispatchProcedure_v1? FindDispatcherProcedureByAddress(Address addr);
 
         string FormatProcedureName(Program program, Procedure proc);
@@ -154,6 +155,19 @@ namespace Reko.Core
         void InjectProcedureEntryStatements(Procedure proc, Address addr, CodeEmitter emitter);
 
         void LoadUserOptions(Dictionary<string, object> options);
+        
+        /// <summary>
+        /// Returns the platform-defined procedure at the address <paramref name="address"/>.
+        /// </summary>
+        /// <param name="address"></param>
+        /// <returns>If a procedure exists for this platform at the specified address, an instance of
+        /// <see cref="ExternalProcedure"/>. Otherwise, returns null.
+        /// </returns>
+        /// <remarks>
+        /// This is useful for platforms that have ROMs with system procedures att well-defined addresses.
+        /// </remarks>
+        ExternalProcedure? LookupProcedureByAddress(Address address);
+
         ExternalProcedure? LookupProcedureByName(string? moduleName, string procName);
         ExternalProcedure? LookupProcedureByOrdinal(string moduleName, int ordinal);
         Expression? ResolveImportByName(string? moduleName, string globalName);
@@ -202,6 +216,7 @@ namespace Reko.Core
             this.PlatformIdentifier = platformId;
             this.Heuristics = new PlatformHeuristics();
             this.DefaultTextEncoding = Encoding.ASCII;
+            this.PlatformProcedures = new Dictionary<Address, ExternalProcedure>();
         }
         #nullable enable
 
@@ -232,6 +247,15 @@ namespace Reko.Core
         public virtual Encoding DefaultTextEncoding { get; set; }
 
         public abstract string DefaultCallingConvention { get; }
+
+        /// <summary>
+        /// Procedures provided by this platform at well-known addresses.
+        /// </summary>
+        /// <remarks>
+        /// This is typically the case with microcomputer or embedded platforms, where calls to
+        /// well-known addresses in ROMs are made.
+        /// </remarks>
+        public Dictionary<Address, ExternalProcedure> PlatformProcedures { get; set; }
 
         /// <summary>
         /// Some architectures platforms (I'm looking at you ARM Thumb) will use addresses
@@ -308,8 +332,8 @@ namespace Reko.Core
         {
             if (this.MemoryMap == null || this.MemoryMap.Segments == null)
                 return null;
-            var diagSvc = Services.RequireService<IDiagnosticsService>();
-            var segs = MemoryMap.Segments.Select(s => MemoryMap_v1.LoadSegment(s, this, diagSvc))
+            var listener = Services.RequireService<DecompilerEventListener>();
+            var segs = MemoryMap.Segments.Select(s => MemoryMap_v1.LoadSegment(s, this, listener))
                 .Where(s => s != null)
                 .ToSortedList(s => s!.Address, s => s!);
             return new SegmentMap(
@@ -385,28 +409,28 @@ namespace Reko.Core
             return string.Format("{0}!{1}", program.Name, proc.Name);
         }
 
-        public abstract int GetByteSizeFromCBasicType(CBasicType cb);
+        public abstract int GetBitSizeFromCBasicType(CBasicType cb);
 
         public virtual string? GetPrimitiveTypeName(PrimitiveType pt, string language)
         {
             return null;
         }
 
-        public virtual ImageSymbol FindMainProcedure(Program program, Address addrStart)
+        public virtual ImageSymbol? FindMainProcedure(Program program, Address addrStart)
         {
             // By default, we don't provide this service, but individual platforms 
             // may have the knowledge of how to find the "real" main program.
-            throw new NotSupportedException();
+            return null;
         }
 
-        public abstract SystemService? FindService(int vector, ProcessorState state, SegmentMap segmentMap);
+        public abstract SystemService? FindService(int vector, ProcessorState? state, SegmentMap? segmentMap);
 
         public virtual DispatchProcedure_v1? FindDispatcherProcedureByAddress(Address addr)
         {
             return null;
         }
 
-        public virtual SystemService? FindService(RtlInstruction rtl, ProcessorState state, SegmentMap segmentMap)
+        public virtual SystemService? FindService(RtlInstruction rtl, ProcessorState? state, SegmentMap? segmentMap)
         {
             return null;
         }
@@ -458,8 +482,6 @@ namespace Reko.Core
             return Architecture.TryParseAddress(sAddress, out addr);
         }
 
-        public abstract ExternalProcedure? LookupProcedureByName(string? moduleName, string procName);
-
         /// <summary>
         /// If the platform can be customized by user, load those customizations here.
         /// </summary>
@@ -486,6 +508,15 @@ namespace Reko.Core
         {
             return null;
         }
+
+        public virtual ExternalProcedure? LookupProcedureByAddress(Address addr)
+        {
+            return this.PlatformProcedures.TryGetValue(addr, out var extProc)
+                ? extProc
+                : null;
+        }
+
+        public abstract ExternalProcedure? LookupProcedureByName(string? moduleName, string procName);
 
         public virtual ExternalProcedure? LookupProcedureByOrdinal(string moduleName, int ordinal)
         {
@@ -586,26 +617,26 @@ namespace Reko.Core
             return this.Architecture.GetCallingConvention(ccName);
         }
 
-        public override SystemService? FindService(int vector, ProcessorState state, SegmentMap segmentMap)
+        public override SystemService? FindService(int vector, ProcessorState? state, SegmentMap? segmentMap)
         {
             return null;
         }
 
-        public override int GetByteSizeFromCBasicType(CBasicType cb)
+        public override int GetBitSizeFromCBasicType(CBasicType cb)
         {
             switch (cb)
             {
-            case CBasicType.Bool: return 1;
-            case CBasicType.Char: return 1;
-            case CBasicType.WChar_t: return 2;
-            case CBasicType.Short: return 2;
-            case CBasicType.Int: return 4;      // Assume 32-bit int.
-            case CBasicType.Long: return 4;
-            case CBasicType.LongLong: return 8;
-            case CBasicType.Float: return 4;
-            case CBasicType.Double: return 8;
-            case CBasicType.LongDouble: return 8;
-            case CBasicType.Int64: return 8;
+            case CBasicType.Bool: return 8;
+            case CBasicType.Char: return 8;
+            case CBasicType.WChar_t: return 16;
+            case CBasicType.Short: return 16;
+            case CBasicType.Int: return 32;      // Assume 32-bit int.
+            case CBasicType.Long: return 32;
+            case CBasicType.LongLong: return 64;
+            case CBasicType.Float: return 32;
+            case CBasicType.Double: return 64;
+            case CBasicType.LongDouble: return 64;
+            case CBasicType.Int64: return 64;
             default: throw new NotImplementedException(string.Format("C basic type {0} not supported.", cb));
             }
         }

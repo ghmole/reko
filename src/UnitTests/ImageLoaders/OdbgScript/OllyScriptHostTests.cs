@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 using NUnit.Framework;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.ImageLoaders.OdbgScript;
 using System;
 using System.Collections.Generic;
@@ -45,10 +46,10 @@ namespace Reko.UnitTests.ImageLoaders.OdbgScript
 
         private void Given_X86Program()
         {
-            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
             var addrBase = Address.Ptr32(0x00100000);
             var segmentMap = new SegmentMap(addrBase);
-            segmentMap.AddSegment(new MemoryArea(addrBase, new byte[0xFF]), ".text", AccessMode.ReadWrite);
+            segmentMap.AddSegment(new ByteMemoryArea(addrBase, new byte[0xFF]), ".text", AccessMode.ReadWrite);
             this.program = new Program(segmentMap, arch, null);
         }
 

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -357,7 +357,8 @@ namespace Reko.UnitTests.Analysis
 
             var sc = new ServiceContainer();
             var arch = new FakeArchitecture(sc);
-            var cce = new ConditionCodeEliminator(ssa, new DefaultPlatform(sc, arch), listener);
+            var program = new Program { Platform = new DefaultPlatform(sc, arch) };
+            var cce = new ConditionCodeEliminator(program, ssa, listener);
 			cce.Transform();
 
 			DeadCode.Eliminate(ssa);

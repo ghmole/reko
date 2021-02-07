@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,6 +68,17 @@ namespace Reko.Core.Lib
             this.valueCollection = new ValueCollection(this);
         }
 
+        public ConcurrentBTreeDictionary(ConcurrentBTreeDictionary<TKey, TValue> that)
+        {
+            this.Comparer = that.Comparer;
+            this.version = 0;
+            this.InternalNodeChildren = that.InternalNodeChildren;
+            this.LeafNodeChildren = that.LeafNodeChildren;
+            this.keyCollection = new KeyCollection(this);
+            this.valueCollection = new ValueCollection(this);
+            this.root = that.root;  // Snapshot the old tree.
+        }
+
         public ConcurrentBTreeDictionary(IDictionary<TKey, TValue> entries) :
             this()
         {
@@ -132,7 +143,7 @@ namespace Reko.Core.Lib
             {
                 int idx = Array.BinarySearch(keys, 0, count, key, tree.Comparer);
                 if (idx < 0)
-                    return (default(TValue), false);
+                    return (default(TValue)!, false);
                 return (values[idx], true);
             }
 
@@ -530,7 +541,6 @@ namespace Reko.Core.Lib
             for (node = root; node is InternalNode intern; node = intern.nodes[0])
                 stack.Push((intern, 0));
             stack.Push((node, 0));
-            int myVersion = this.version;
             while (stack.Count > 0)
             {
                 // Invariant: the top of the stack is a leaf node.
@@ -539,8 +549,6 @@ namespace Reko.Core.Lib
                 var leaf = (LeafNode)nLeaf;
                 for (int i = 0; i < leaf.count; ++i)
                 {
-                    if (myVersion != this.version)
-                        throw new InvalidOperationException("Collection was modified after the enumerator was instantiated.");
                     yield return new KeyValuePair<TKey, TValue>(leaf.keys[i], leaf.values[i]);
                 }
                 while (stack.Count > 0)

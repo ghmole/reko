@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ using System.Linq;
 using Reko.Core.Machine;
 using Reko.Core.Operators;
 using Reko.Core.Services;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.Vax
 {
@@ -479,7 +480,7 @@ namespace Reko.Arch.Vax
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("VaxRw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("VaxRw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private Expression RewriteSrcOp(int iOp, PrimitiveType width)
@@ -515,7 +516,7 @@ namespace Reko.Arch.Vax
                 }
                 else
                 {
-                    return m.Cast(width, reg);
+                    return m.Slice(width, reg, 0);
                 }
 
             case ImmediateOperand immOp:
@@ -601,7 +602,7 @@ namespace Reko.Arch.Vax
                 {
                     var tmp = binder.CreateTemporary(width);
                     var tmpHi = binder.CreateTemporary(PrimitiveType.CreateWord(32 - width.BitSize));
-                    m.Assign(tmp, fn(m.Cast(width, reg)));
+                    m.Assign(tmp, fn(m.Slice(width, reg, 0)));
                     m.Assign(tmpHi, m.Slice(tmpHi.DataType, reg, width.BitSize));
                     m.Assign(reg, m.Seq(tmpHi, tmp));
                     return tmp;
@@ -681,7 +682,7 @@ namespace Reko.Arch.Vax
 
         private Identifier FlagGroup(FlagM flags)
         {
-            return binder.EnsureFlagGroup( arch.GetFlagGroup(Registers.psw, (uint)flags));
+            return binder.EnsureFlagGroup(arch.GetFlagGroup(Registers.psw, (uint)flags));
         }
 
         private bool AllFlags(Expression dst)

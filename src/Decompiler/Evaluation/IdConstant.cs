@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,6 +72,15 @@ namespace Reko.Evaluation
             {
                 ctx.RemoveIdentifierUse(idDst!);
                 var cNew = src!.CloneExpression();
+                if (src.DataType.IsWord &&
+                    src is Constant cSrc && 
+                    idDst!.DataType is PrimitiveType pt &&
+                    pt.Domain == Domain.Real)
+                {
+                    // Raw bitvector assigned to an real-valued register. We need to interpret the bitvector
+                    // as a floating-point constant.
+                    cNew = Constant.RealFromBitpattern(pt, cSrc.ToInt64());
+                }
                 cNew.DataType = dt!;
                 return cNew;
             }
@@ -93,7 +102,6 @@ namespace Reko.Evaluation
                 }
             }
             listener.Warn(
-                new NullCodeLocation(""),
                 "Constant propagation failed. Resulting type is {0}, which isn't supported yet.", 
                 dt!);
             return idDst!;

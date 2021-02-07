@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,6 +49,11 @@ namespace Reko.Core.CLanguage
         public object VisitApplication(Application application)
         {
             throw new NotImplementedException();
+        }
+
+        public object VisitArrayAccess(CArrayAccess aref)
+        {
+            throw new NotFiniteNumberException();
         }
 
         public object VisitMember(MemberExpression memberExpression)
@@ -124,7 +129,9 @@ namespace Reko.Core.CLanguage
 
         public object VisitSizeof(SizeofExpression sizeOf)
         {
-            return platform.GetByteSizeFromCBasicType(CBasicType.Int);
+            var bits = platform.GetBitSizeFromCBasicType(CBasicType.Int);
+            var granularity = platform.Architecture.MemoryGranularity;
+            return (bits + (granularity - 1)) / granularity;
         }
     }
 }

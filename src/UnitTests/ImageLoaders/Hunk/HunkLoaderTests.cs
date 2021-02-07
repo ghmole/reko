@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ namespace Reko.UnitTests.ImageLoaders.Hunk
             var opEnv = new Mock<PlatformDefinition>();
             var tlSvc = new Mock<ITypeLibraryLoaderService>();
             cfgSvc.Setup(c => c.GetEnvironment("amigaOS")).Returns(opEnv.Object);
-            cfgSvc.Setup(c => c.GetArchitecture("m68k")).Returns(new M68kArchitecture(sc, "m68k"));
+            cfgSvc.Setup(c => c.GetArchitecture("m68k")).Returns(new M68kArchitecture(sc, "m68k", new Dictionary<string, object>()));
             opEnv.Setup(o => o.Load(
                 It.IsAny<IServiceProvider>(),
                 It.IsAny<IProcessorArchitecture>()))

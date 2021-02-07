@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +38,7 @@ namespace Reko.UnitTests.Arch.WE32100
 
         public WE32100DisassemblerTests()
         {
-            this.arch = new WE32100Architecture(new ServiceContainer(), "we32100");
+            this.arch = new WE32100Architecture(new ServiceContainer(), "we32100", new Dictionary<string, object>());
             this.addr = Address.Ptr32(0x00100000);
         }
 

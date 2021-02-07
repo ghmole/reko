@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,16 +18,15 @@
  */
 #endregion
 
+using NUnit.Framework;
 using Reko.Arch.Z80;
 using Reko.Core;
 using Reko.Core.Machine;
-using NUnit.Framework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.ComponentModel.Design;
+using Reko.Core.Memory;
 using Reko.Core.Services;
+using System.Collections.Generic;
+using System.ComponentModel.Design;
+using System.Linq;
 
 namespace Reko.UnitTests.Arch.Z80
 {
@@ -41,12 +40,12 @@ namespace Reko.UnitTests.Arch.Z80
         {
             this.sc = new ServiceContainer();
             sc.AddService<ITestGenerationService>(new UnitTestGenerationService(sc));
-            this.arch = new Z80ProcessorArchitecture(sc, "z80");
+            this.arch = new Z80ProcessorArchitecture(sc, "z80", new Dictionary<string, object>());
         }
 
         private MachineInstruction RunTest(params byte [] bytes)
         {
-            var image = new MemoryArea(Address.Ptr16(0x0100), bytes);
+            var image = new ByteMemoryArea(Address.Ptr16(0x0100), bytes);
             var rdr = new LeImageReader(image, 0);
             var dasm = arch.CreateDisassembler(rdr);
             return dasm.First();

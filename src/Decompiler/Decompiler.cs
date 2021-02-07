@@ -1,5 +1,5 @@
 #region License
-/* Copyright (C) 1999-2020 John Källén.
+/* Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,7 +102,8 @@ namespace Reko
                 if (eventListener.IsCanceled())
                     return;
                 var ir = new DynamicLinker(project, program, eventListener);
-                var dfa = new DataFlowAnalysis(program, ir, eventListener);
+                var dfa = new DataFlowAnalysis(program, ir, services);
+                dfa.ClearTestFiles();
                 if (program.NeedsSsaTransform)
                 {
                     eventListener.ShowStatus("Performing interprocedural analysis.");
@@ -119,41 +120,51 @@ namespace Reko
         {
             if (wr == null || program.Architecture == null)
                 return;
-            Dumper dump = new Dumper(program)
+            try
             {
-                ShowAddresses = program.User.ShowAddressesInDisassembly,
-                ShowCodeBytes = program.User.ShowBytesInDisassembly
-            };
-            dump.Dump(segmentItems, wr);
+                Dumper dump = new Dumper(program)
+                {
+                    ShowAddresses = program.User.ShowAddressesInDisassembly,
+                    ShowCodeBytes = program.User.ShowBytesInDisassembly
+                };
+                dump.Dump(segmentItems, wr);
+            } 
+            catch (Exception ex)
+            {
+                eventListener.Error(ex, "An error occurred while write assembly language output.");
+            }
         }
 
-        private void EmitProgram(Program program, IEnumerable<Procedure> procs, DataFlowAnalysis? dfa, string filename, TextWriter output)
+        private void EmitProgram(Program program, IEnumerable<object> objects, DataFlowAnalysis? dfa, string filename, TextWriter output)
         {
             if (output == null)
                 return;
-            foreach (Procedure proc in procs)
+            foreach (object o in objects)
             {
-                if (program.NeedsSsaTransform && dfa != null)
+                if (o is Procedure proc)
                 {
-                    ProcedureFlow flow = dfa.ProgramDataFlow[proc];
-                    TextFormatter f = new TextFormatter(output);
-                    if (flow.Signature != null)
-                        flow.Signature.Emit(proc.Name, FunctionType.EmitFlags.LowLevelInfo, f);
-                    else
-                        proc.Signature.Emit(proc.Name, FunctionType.EmitFlags.LowLevelInfo, f);
-                    output.WriteLine();
-                    WriteProcedureCallers(program, proc, output);
-                    flow.Emit(program.Architecture, output);
-                    foreach (Block block in new DfsIterator<Block>(proc.ControlGraph).PostOrder().Reverse())
+                    if (program.NeedsSsaTransform && dfa != null)
                     {
-                        if (block == null)
-                            continue;
-                        block.Write(output);
+                        ProcedureFlow flow = dfa.ProgramDataFlow[proc];
+                        TextFormatter f = new TextFormatter(output);
+                        if (flow.Signature != null)
+                            flow.Signature.Emit(proc.Name, FunctionType.EmitFlags.LowLevelInfo, f);
+                        else
+                            proc.Signature.Emit(proc.Name, FunctionType.EmitFlags.LowLevelInfo, f);
+                        output.WriteLine();
+                        WriteProcedureCallers(program, proc, output);
+                        flow.Emit(proc.Architecture, output);
+                        foreach (Block block in new DfsIterator<Block>(proc.ControlGraph).PostOrder().Reverse())
+                        {
+                            if (block == null)
+                                continue;
+                            block.Write(output);
+                        }
                     }
-                }
-                else
-                {
-                    proc.Write(false, output);
+                    else
+                    {
+                        proc.Write(false, output);
+                    }
                 }
                 output.WriteLine();
                 output.WriteLine();
@@ -168,8 +179,10 @@ namespace Reko
         /// <param name="fileName">The filename to load.</param>
         /// <param name="loaderName">Optional .NET class name of a custom
         /// image loader</param>
+        /// <param name="addrLoad">Optional address at which to load the image.
+        /// </param>
         /// <returns>True if the file could be loaded.</returns>
-        public bool Load(string fileName, string? loaderName = null)
+        public bool Load(string fileName, string? loaderName = null, Address? addrLoad = null)
         {
             eventListener.ShowStatus("Loading source program.");
             byte[] image = loader.LoadImageBytes(fileName, 0);
@@ -178,7 +191,7 @@ namespace Reko
             this.Project = projectLoader.LoadProject(fileName, image);
             if (Project == null)
             {
-                var program = loader.LoadExecutable(fileName, image, loaderName, null);
+                var program = loader.LoadExecutable(fileName, image, loaderName, addrLoad);
                 if (program == null)
                     return false;
                 this.Project = AddProgramToProject(fileName, program);
@@ -218,7 +231,7 @@ namespace Reko
             }
             catch (Exception ex)
             {
-                eventListener.Error(new NullCodeLocation(""), ex, "Unable to load OllyLang script interpreter.");
+                eventListener.Error(ex, "Unable to load OllyLang script interpreter.");
                 return;
             }
 
@@ -229,7 +242,7 @@ namespace Reko
             }
             catch (Exception ex)
             {
-                eventListener.Error(new NullCodeLocation(""), ex, "An error occurred while running the script.");
+                eventListener.Error(ex, "An error occurred while running the script.");
             }
         }
 
@@ -319,8 +332,7 @@ namespace Reko
                 }
                 catch (Exception ex)
                 {
-                    var diagSvc = services.RequireService<IDiagnosticsService>();
-                    diagSvc.Error(ex, $"Unable to create directory '{0}'.");
+                    eventListener.Error(ex, $"Unable to create directory '{resourceDir}'.");
                     return;
                 }
                 foreach (ProgramResourceGroup pr in prg.Resources)
@@ -374,8 +386,7 @@ namespace Reko
             }
             catch (Exception ex)
             {
-                var diagSvc = services.RequireService<IDiagnosticsService>();
-                diagSvc.Error(ex, $"Unable to create directory '{dirPath}'.");
+                eventListener.Error(ex, $"Unable to create directory '{dirPath}'.");
                 return false;
             }
             string path = "";
@@ -395,8 +406,7 @@ namespace Reko
             }
             catch (Exception ex)
             {
-                var diagSvc = services.RequireService<IDiagnosticsService>();
-                diagSvc.Error(ex, $"Unable to write file '{path}'");
+                eventListener.Error(ex, $"Unable to write file '{path}'");
                 return false;
             }
             return true;
@@ -420,7 +430,7 @@ namespace Reko
                 }
                 catch (Exception ex)
                 {
-                    eventListener.Error(new NullCodeLocation(""), ex, "Error when reconstructing types.");
+                    eventListener.Error(ex, "Error when reconstructing types.");
                 } 
                 finally
                 {
@@ -429,25 +439,37 @@ namespace Reko
             }
         }
 
-        public void WriteDecompiledProcedures(Program program, string filename, IEnumerable<Procedure> procs, TextWriter w)
+        public void WriteDecompiledObjects(Program program, string filename, IEnumerable<IAddressable> objects, TextWriter w)
         {
-            var headerfile = Path.ChangeExtension(filename, ".h");
             WriteHeaderComment(filename, program, w);
+            //$REFACTOR: common code -- hardwired ".h"
+            var headerfile = Path.ChangeExtension(Path.GetFileName(program.Filename), ".h");
             w.WriteLine("#include \"{0}\"", headerfile);
             w.WriteLine();
             var fmt = new AbsynCodeFormatter(new TextFormatter(w));
-            foreach (var proc in procs)
+            var gdw = new GlobalDataWriter(program, fmt.InnerFormatter, false, true, this.services);
+            IAddressable? prev = null;
+            foreach (var o in objects)
             {
-                try
+                if (o is Procedure proc)
                 {
-                    WriteProcedureHeader(program, proc, w);
-                    fmt.Write(proc);
-                    w.WriteLine();
+                    try
+                    {
+                        if (prev is GlobalVariable)
+                            w.WriteLine();
+                        WriteProcedureHeader(program, proc, w);
+                        fmt.Write(proc);
+                        w.WriteLine();
+                    }
+                    catch (Exception ex)
+                    {
+                        w.WriteLine();
+                        w.WriteLine("// Exception {0} when writing procedure.", ex.Message);
+                    }
                 }
-                catch (Exception ex)
+                else if (o is GlobalVariable global)
                 {
-                    w.WriteLine();
-                    w.WriteLine("// Exception {0} when writing procedure.", ex.Message);
+                    gdw.WriteGlobalVariable(global.Address, global.DataType, global.Name);
                 }
             }
         }
@@ -492,7 +514,7 @@ namespace Reko
             WriteHeaderComment(filename, program, w);
             w.WriteLine("#include \"{0}\"", headerfile);
             w.WriteLine();
-            var gdw = new GlobalDataWriter(program, new TextFormatter(w), services);
+            var gdw = new GlobalDataWriter(program, new TextFormatter(w), true, true, services);
             gdw.Write();
             w.WriteLine();
         }
@@ -651,8 +673,7 @@ namespace Reko
             foreach (var program in Project.Programs)
             {
                 host.WriteTypes(program, (n, w) => WriteDecompiledTypes(program, n, w));
-                host.WriteDecompiledCode(program, (n, p, w) => WriteDecompiledProcedures(program, n, p, w));
-                host.WriteGlobals(program, (n, w) => WriteGlobals(program, n, w));
+                host.WriteDecompiledCode(program, (n, p, w) => WriteDecompiledObjects(program, n, p, w));
             }
 		}
 

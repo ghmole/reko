@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,12 +54,18 @@ namespace Reko.Core.Types
         public virtual bool IsIntegral { get { return false; } }
         public virtual string Name { get { return name!; }  set { name = value; } }
         public Qualifier Qualifier { get; set; }
-        public abstract int Size { get; set; }  // Size in bytes of the concrete datatype.
+
+        /// <summary>
+        /// Size of the data type measured in storage units.
+        /// </summary>
+        /// <remarks>
+        /// Storage units are commonly, but not always, eight-bit octets, or "bytes".
+        /// </remarks>
+        public abstract int Size { get; set; }
 
         public abstract void Accept(IDataTypeVisitor v);
         public abstract T Accept<T>(IDataTypeVisitor<T> v);
         public abstract DataType Clone(IDictionary<DataType, DataType>? clonedTypes);
-        //public abstract int GetInferredSize();                  // Computes the size of an item.
         object ICloneable.Clone() { return Clone(); }
 
         public DataType Clone()
@@ -106,14 +112,7 @@ namespace Reko.Core.Types
             return dt as T;
         }
 
-        public bool IsWord()
-        {
-            if (BitSize == 0)
-                return false;
-            //$REFACTOR: CreateWord is inefficient.
-            var wordType = PrimitiveType.CreateWord(BitSize);
-            return wordType == this;
-        }
+        public virtual bool IsWord => false;
 
         protected void ThrowBadSize()
 		{

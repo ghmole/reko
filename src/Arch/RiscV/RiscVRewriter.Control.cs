@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Rtl;
+using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -61,13 +62,17 @@ namespace Reko.Arch.RiscV
 
         private void RewriteCompressedJ()
         {
-            m.Goto(RewriteOp(instr.Operands[0]));
+            m.Goto(RewriteOp(0));
         }
 
+        private void RewriteCompressedJal()
+        {
+            m.Call(RewriteOp(0), 0);
+        }
 
         private void RewriteCompressedJalr()
         {
-            m.Call(RewriteOp(instr.Operands[0]), 0);
+            m.Call(RewriteOp(0), 0);
         }
 
         private void RewriteCompressedJr()
@@ -77,6 +82,32 @@ namespace Reko.Arch.RiscV
                 m.Return(0, 0);
             else 
                 m.Goto(RewriteOp(instr.Operands[0]));
+        }
+
+        private void RewriteCsr(string intrinsicName)
+        {
+            var csr = RewriteOp(1);
+            var arg = RewriteOp(2);
+            var dst = RewriteOp(0);
+            var intrinsic = host.Intrinsic(intrinsicName, false, dst.DataType, csr, arg);
+            if (dst is Constant)
+            {
+                m.SideEffect(intrinsic);
+            }
+            else
+            {
+                m.Assign(dst, intrinsic);
+            }
+        }
+
+        private void RewriteEbreak()
+        {
+            m.SideEffect(host.Intrinsic("__ebreak", false, VoidType.Instance));
+        }
+
+        private void RewriteEcall()
+        {
+            m.SideEffect(host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance));
         }
 
         private void RewriteJal()
@@ -129,6 +160,17 @@ namespace Reko.Arch.RiscV
                     instr.Address + instr.Length);
                 m.Goto(dst, 0);
             }
+        }
+
+        private void RewriteRet(string intrinsicName)
+        {
+            m.SideEffect(host.Intrinsic(intrinsicName, false, VoidType.Instance));
+            m.Return(0, 0);
+        }
+
+        private void RewriteWfi()
+        {
+            m.SideEffect(host.Intrinsic("__wait_for_interrupt", false, VoidType.Instance));
         }
     }
 }

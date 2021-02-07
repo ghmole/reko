@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,9 @@ namespace Reko.UnitTests.Environments.MacOS.Classic
         {
             this.typelib = new TypeLibrary();
             this.platform = new Mock<IPlatform>();
+            var arch = new Mocks.FakeArchitecture(null);
             platform.Setup(p => p.PointerType).Returns(Reko.Core.Types.PrimitiveType.Ptr32);
+            platform.Setup(p => p.Architecture).Returns(arch);
         }
 
         /// <summary>

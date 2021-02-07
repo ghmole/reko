@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ using Reko.Arch.X86;
 using Reko.Arch.X86.Assembler;
 using Reko.Core;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Serialization;
 using Reko.Core.Services;
@@ -53,7 +54,7 @@ namespace Reko.UnitTests.Scanning
         private IDictionary<Address, FunctionType> callSigs;
         private ServiceContainer sc;
         private Project project;
-        private MemoryArea mem;
+        private ByteMemoryArea bmem;
         private DecompilerEventListener eventListener;
 
         public class TestScanner : Scanner
@@ -106,7 +107,7 @@ namespace Reko.UnitTests.Scanning
         private void BuildX86RealTest(Action<X86Assembler> test)
         {
             var addr = Address.SegPtr(0x0C00, 0);
-            var arch = new X86ArchitectureReal(sc, "x86-real-16");
+            var arch = new X86ArchitectureReal(sc, "x86-real-16", new Dictionary<string, object>());
             var m = new X86Assembler(arch, addr, new List<ImageSymbol>());
             test(m);
             this.program = m.GetImage();
@@ -176,11 +177,11 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_Program(Address address, byte[] bytes)
         {
-            var mem = new MemoryArea(address, bytes);
+            var mem = new ByteMemoryArea(address, bytes);
             var segmentMap = new SegmentMap(
                 mem.BaseAddress,
                 new ImageSegment("proggie", mem, AccessMode.ReadExecute));
-            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             var platform = new FakePlatform(sc, arch);
             platform.Test_DefaultCallingConvention = "__cdecl";
             this.program = new Program
@@ -215,11 +216,11 @@ namespace Reko.UnitTests.Scanning
 
         private TestScanner CreateScanner(uint startAddress, int imageSize)
         {
-            mem = new MemoryArea(Address.Ptr32(startAddress), new byte[imageSize]);
+            bmem = new ByteMemoryArea(Address.Ptr32(startAddress), new byte[imageSize]);
             program = new Program
             {
-                SegmentMap = new SegmentMap(mem.BaseAddress,
-                    new ImageSegment("progseg", mem, AccessMode.ReadExecute)),
+                SegmentMap = new SegmentMap(bmem.BaseAddress,
+                    new ImageSegment("progseg", bmem, AccessMode.ReadExecute)),
                 Architecture = arch,
                 Platform = new FakePlatform(null, arch)
             };
@@ -243,10 +244,10 @@ namespace Reko.UnitTests.Scanning
             this.program = program;
             program.Architecture = arch;
             program.Platform = new FakePlatform(null, arch);
-            this.mem = new MemoryArea(Address.Ptr32(startAddress), new byte[imageSize]);
+            this.bmem = new ByteMemoryArea(Address.Ptr32(startAddress), new byte[imageSize]);
             program.SegmentMap = new SegmentMap(
-                mem.BaseAddress,
-                new ImageSegment("progseg", this.mem, AccessMode.ReadExecute));
+                bmem.BaseAddress,
+                new ImageSegment("progseg", this.bmem, AccessMode.ReadExecute));
             return new TestScanner(program, dynamicLinker.Object, sc);
         }
 
@@ -269,9 +270,9 @@ namespace Reko.UnitTests.Scanning
             Enqueue(Address.Ptr32(0x106), proc);
             Enqueue(Address.Ptr32(0x104), proc);
 
-            Assert.AreEqual("l00000101", scan.FindContainingBlock(Address.Ptr32(0x103)).Name);
-            Assert.AreEqual("l00000104", scan.FindContainingBlock(Address.Ptr32(0x105)).Name);
-            Assert.AreEqual("l00000106", scan.FindContainingBlock(Address.Ptr32(0x106)).Name);
+            Assert.AreEqual("l00000101", scan.FindContainingBlock(Address.Ptr32(0x103)).DisplayName);
+            Assert.AreEqual("l00000104", scan.FindContainingBlock(Address.Ptr32(0x105)).DisplayName);
+            Assert.AreEqual("l00000106", scan.FindContainingBlock(Address.Ptr32(0x106)).DisplayName);
         }
 
         private void Enqueue(Address addr, Procedure proc)
@@ -317,7 +318,7 @@ namespace Reko.UnitTests.Scanning
         [Test]
         public void Scanner_CallGraphTree()
         {
-            var arch = new X86ArchitectureReal(sc, "x86-real-16");
+            var arch = new X86ArchitectureReal(sc, "x86-real-16", new Dictionary<string, object>());
             program = new Program();
             program.Architecture = arch;
             var addr = Address.SegPtr(0xC00, 0);
@@ -404,7 +405,7 @@ fn0C00_0000_exit:
 
         private void Given_x86_Flat32()
         {
-            arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
         }
 
         [Test]
@@ -840,7 +841,7 @@ fn00001200_exit:
             var scanner = CreateScanner(0x1000, 0x2000);
             var addrEmulated = Address.Ptr32(0x5000);
             var addrThunk = Address.Ptr32(0x1800);
-            mem.WriteLeUInt32(addrThunk, addrEmulated.ToUInt32());
+            bmem.WriteLeUInt32(addrThunk, addrEmulated.ToUInt32());
             program.InterceptedCalls.Add(
                 addrEmulated,
                 new ExternalProcedure("Foo", new FunctionType()));

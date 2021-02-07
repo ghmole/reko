@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,6 @@ using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.Environments.Windows;
 using Reko.UnitTests.Mocks;
-using Moq;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -52,7 +51,7 @@ namespace Reko.UnitTests.Arch.X86
         {
             mockFactory = new CommonMockFactory();
             var sc = new ServiceContainer();
-            arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             platform = new Win32Platform(sc, arch);
         }
 
@@ -204,7 +203,7 @@ namespace Reko.UnitTests.Arch.X86
         {
             Given_32bit_CallingConvention("__cdecl");
             cc.Generate(ccr, r64, null, new List<DataType> ());
-            Assert.AreEqual("Stk: 4 Fpu: 1 FPU +0 ()", ccr.ToString());
+            Assert.AreEqual("Stk: 4 Fpu: 1 FPU -1 ()", ccr.ToString());
         }
 
         [Test]
@@ -244,7 +243,7 @@ namespace Reko.UnitTests.Arch.X86
         {
             Given_32bit_CallingConvention("__cdecl");
             cc.Generate(ccr, r64, null, new List<DataType>());
-            Assert.AreEqual("Stk: 4 Fpu: 1 FPU +0 ()", ccr.ToString());
+            Assert.AreEqual("Stk: 4 Fpu: 1 FPU -1 ()", ccr.ToString());
         }
     }
 }

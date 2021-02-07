@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
@@ -605,10 +606,14 @@ namespace Reko.ImageLoaders.OdbgScript
                 {
                 case Var.etype.STR: // empty buf + str . buf
                     if (!v.IsBuf)
+                    {
                         v = Var.Create("##") + v.str;
+                        variables[id.Name] = v;
+                    }
                     break;
                 case Var.etype.DW: // empty buf + dw . buf
                     v = Var.Create("##") + v.ToUInt64();
+                    variables[id.Name] = v;
                     break;
                 }
                 return true;
@@ -626,7 +631,7 @@ namespace Reko.ImageLoaders.OdbgScript
             return false;
         }
 
-        static string[] valid_commands =
+        private static readonly string[] valid_commands =
         {
             "SCRIPT", "SCRIPTLOG", "MODULES", "MEMORY",
             "THREADS", "BREAKPOINTS", "REFERENCES", "SOURCELIST",
@@ -877,7 +882,7 @@ rulong hwnd;
                     hFile.Close();
                 }
             }
-	return false;
+            return false;
         }
 
         private bool DoDPE(Expression[] args)
@@ -1161,7 +1166,7 @@ rulong hwnd;
                 if (!Host.SegmentMap.TryFindSegment(ea, out ImageSegment segment))
                     throw new AccessViolationException();
                 byte[] membuf = new byte[memlen];
-                if (segment.MemoryArea.TryReadBytes(ea, memlen, membuf))
+                if (segment.MemoryArea is ByteMemoryArea bmem && bmem.TryReadBytes(ea, memlen, membuf))
                 {
                     int bytecount = finddata.Length / 2;
 
@@ -1525,7 +1530,7 @@ rulong hwnd;
                         if (maxsize != 0 && maxsize < memlen)
                             memlen = maxsize;
 
-                        byte[] membuf = null, mask = null, bytes = null;
+                        byte[] membuf, mask, bytes;
 
                         membuf = new byte[memlen];
                         if (Host.TryReadBytes(addr, (int)memlen, membuf))
@@ -1562,9 +1567,9 @@ rulong hwnd;
 
         private bool DoFINDMEM(Expression[] args)
         {
-            Address addr = null;
             if (args.Length >= 1 && args.Length <= 2)
             {
+                Address addr = null;
                 if (args.Length == 2 && !GetAddress(args[1], out addr))
                     return false;
 
@@ -2259,7 +2264,7 @@ string str;
             string param;
 
             if (args.Length == 3 &&
-                GetAddress(args[0], out Address addr) &&
+                GetAddress(args[0], out Address _) &&
                 GetRulong(args[1], out ulong index) &&
                 args[2] is Identifier cmd)
             {
@@ -2992,10 +2997,6 @@ string filename;
                         else
                             v = Var.Create(0);
                     }
-                    else if (GetAddress(args[1], out Address addrSrc))
-                    {
-                        v = Var.Create(addrSrc);
-                    }
                     else if (maxsize <= sizeof(rulong) && GetRulong(args[1], out dw)) // rulong
                     {
                         // DW to DW/FLT var
@@ -3004,6 +3005,10 @@ string filename;
                         dw = Helper.resize(dw, (int) maxsize);
                         v = Var.Create(dw);
                         v.size = (int) maxsize;
+                    }
+                    else if (GetAddress(args[1], out Address addrSrc))
+                    {
+                        v = Var.Create(addrSrc);
                     }
                     else if (GetString(args[1], (int) maxsize, out str)) // string
                     {
@@ -3331,7 +3336,9 @@ string param;
                     var ea = Address.Ptr32((uint) CSP);
                     if (!Host.SegmentMap.TryFindSegment(ea, out ImageSegment segment))
                         throw new AccessViolationException();
-                    dw = segment.MemoryArea.ReadLeUInt32(ea);
+                    if (!segment.MemoryArea.TryReadLeUInt32(ea, out var value))
+                        throw new AccessViolationException();
+                    dw = value;
                     return SetRulong(args[0], dw);
                 }
                 return true;
@@ -3479,7 +3486,6 @@ string param;
             */
             return false;
         }
-
 
         // Olly only
         private bool DoREF(Expression[] args)
@@ -3897,6 +3903,7 @@ rulong dw1, dw2;
                 case Var.etype.STR:
                     if (v.IsBuf)
                         v = Var.Create(v.to_string());
+                    variables[id.Name] = v;
                     return true;
                 }
             }
@@ -3940,9 +3947,9 @@ rulong dw1, dw2;
                 }
                 if (GetRulong(args[0], out ulong dw1) && GetRulong(args[1], out ulong dw2))
                 {
-                zf = ((dw1 & dw2) == 0);
-                return true;
-            }
+                    zf = ((dw1 & dw2) == 0);
+                    return true;
+                }
             }
             return false;
         }
@@ -4170,7 +4177,20 @@ string filename, data;
                 {
                     Host.AddSegmentReference(addr, (ushort) seg);
                     return true;
-    }
+                }
+            }
+            else if (args.Length == 1)
+            {
+                if (GetRulong(args[0], out ulong uSeg))
+                {
+                    var addrSeg = Address.SegPtr((ushort) uSeg, 0);
+                    if (this.Host.SegmentMap.TryFindSegment(addrSeg, out var seg))
+                    {
+                        var mem = seg.MemoryArea;
+                        this.Host.SegmentMap.AddOverlappingSegment($"seg{uSeg:X4}", mem, addrSeg, AccessMode.ReadWriteExecute);
+                    }
+                    return true;
+                }
             }
             return false;
         }

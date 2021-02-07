@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
@@ -88,7 +89,7 @@ namespace Reko.Arch.Pdp11
             };
         }
 
-        public override Pdp11Instruction NotYetImplemented(uint wInstr, string message)
+        public override Pdp11Instruction NotYetImplemented(string message)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
             testGenSvc?.ReportMissingDecoder("Pdp11dis", this.addr, this.rdr, message);
@@ -407,7 +408,10 @@ namespace Reko.Arch.Pdp11
                     if (!this.rdr.TryReadLeUInt16(out u))
                         return null;
                     return ImmediateOperand.Word16(u);
-                case 3: return new MemoryOperand(this.rdr.ReadLeUInt16(), this.dataWidth);
+                case 3:
+                    if (!this.rdr.TryReadLeUInt16(out u))
+                        return null;
+                    return new MemoryOperand(u, this.dataWidth);
                 case 6:
                     if (!this.rdr.TryReadLeUInt16(out u))
                         return null;

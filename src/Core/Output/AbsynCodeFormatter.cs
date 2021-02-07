@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ namespace Reko.Core.Output
 
         public override void VisitConstant(Constant c)
         {
-            var pt = c.DataType as PrimitiveType;
+            var pt = c.DataType.ResolveAs<PrimitiveType>();
             if (pt != null)
             {
                 switch (pt.Domain)

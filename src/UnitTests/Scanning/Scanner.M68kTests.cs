@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using NUnit.Framework;
 using Reko.Arch.M68k;
 using Reko.Arch.M68k.Assembler;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Scanning;
 using Reko.UnitTests.Mocks;
@@ -53,14 +54,14 @@ namespace Reko.UnitTests.Scanning
 
         private void BuildTest32(Action<M68kAssembler> asmProg)
         {
-            arch = new M68kArchitecture(sc, "m68k");
+            arch = new M68kArchitecture(sc, "m68k", new Dictionary<string, object>());
             BuildTest(Address.Ptr32(0x00100000), new DefaultPlatform(sc, arch), asmProg);
         }
 
         private void BuildTest32(Address addrBase, params byte[] bytes)
         {
-            arch = new M68kArchitecture(sc, "m68k");
-            var mem = new MemoryArea(addrBase, bytes);
+            arch = new M68kArchitecture(sc, "m68k", new Dictionary<string, object>());
+            var mem = new ByteMemoryArea(addrBase, bytes);
             program = new Program(
                 new SegmentMap(
                     mem.BaseAddress,

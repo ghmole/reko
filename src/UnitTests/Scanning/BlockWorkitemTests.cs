@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@ using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Scanning
 {
@@ -76,7 +77,7 @@ namespace Reko.UnitTests.Scanning
                 Address.Ptr32(0x00100000),
                 new ImageSegment(
                     ".text",
-                    new MemoryArea(Address.Ptr32(0x00100000), new byte[0x20000]),
+                    new ByteMemoryArea(Address.Ptr32(0x00100000), new byte[0x20000]),
                     AccessMode.ReadExecute));
             program.Platform = new DefaultPlatform(sc, arch.Object);
             arch.Setup(a => a.StackRegister).Returns((RegisterStorage)sp.Storage);
@@ -119,7 +120,7 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_Segment(string segName, uint addr, int size, AccessMode mode)
         {
-            program.SegmentMap.AddSegment(new ImageSegment(segName, new MemoryArea(Address.Ptr32(addr), new byte[size]), mode));
+            program.SegmentMap.AddSegment(new ImageSegment(segName, new ByteMemoryArea(Address.Ptr32(addr), new byte[size]), mode));
         }
 
         private bool StashArg(ref ProcessorState state, ProcessorState value)
@@ -151,9 +152,9 @@ namespace Reko.UnitTests.Scanning
         private void Given_NoInlinedCall()
         {
             arch.Setup(a => a.CreateImageReader(
-                It.IsAny<MemoryArea>(),
+                It.IsAny<ByteMemoryArea>(),
                 It.IsAny<Address>()))
-                .Returns(new LeImageReader(new byte[0]));
+                .Returns(new LeImageReader(new ByteMemoryArea(Address.Ptr32(0),new byte[0]), 0));
             arch.Setup(a => a.InlineCall(
                 It.IsAny<Address>(),
                 It.IsAny<Address>(),
@@ -396,7 +397,7 @@ namespace Reko.UnitTests.Scanning
         public void Bwi_CallingAllocaWithConstant()
         {
             var sc = new ServiceContainer();
-            program.Architecture = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            program.Architecture = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             program.Platform = new DefaultPlatform(sc, program.Architecture);
             var sig = CreateSignature(Registers.esp, Registers.eax);
             var alloca = new ExternalProcedure("alloca", sig)
@@ -479,7 +480,7 @@ namespace Reko.UnitTests.Scanning
             Given_SimpleTrace(trace);
 
             trace.Add(m => m.Call(Address.Ptr32(0x00102000), 4));
-            trace.Add(m => m.SideEffect(new ProcedureConstant(VoidType.Instance, new PseudoProcedure("shouldnt_decompile_this", VoidType.Instance, 0))));
+            trace.Add(m => m.SideEffect(new ProcedureConstant(VoidType.Instance, new IntrinsicProcedure("shouldnt_decompile_this", false, VoidType.Instance, 0))));
 
             var wi = CreateWorkItem(Address.Ptr32(0x2000));
             wi.Process();
@@ -624,7 +625,7 @@ testProc_exit:
             Assert.AreEqual("r0 = r1", block.Statements[0].ToString());
             Assert.AreEqual("goto 0x00100100<p32>", block.Statements[1].ToString());
 
-            Assert.AreEqual("l00101000", block.Succ[0].Name);
+            Assert.AreEqual("l00101000", block.Succ[0].DisplayName);
             scanner.Verify();
         }
 
@@ -659,17 +660,17 @@ testProc_exit:
             Assert.AreEqual("branch r1 l00100000_ds_t", block.Statements[0].ToString());
             var blFalse = block.ElseBlock;
             var blTrue = block.ThenBlock;
-            Assert.AreEqual("l00100000_ds_f", blFalse.Name);     // delay-slot-false
+            Assert.AreEqual("l00100000_ds_f", blFalse.DisplayName);     // delay-slot-false
             Assert.AreEqual(1, blFalse.Statements.Count);
             Assert.AreEqual("r0 = r1", blFalse.Statements[0].ToString());
             Assert.AreEqual(1, blFalse.Succ.Count);
-            Assert.AreEqual("l00100008", blFalse.Succ[0].Name);
+            Assert.AreEqual("l00100008", blFalse.Succ[0].DisplayName);
 
-            Assert.AreEqual("l00100000_ds_t", blTrue.Name);      // delay-slot-true
+            Assert.AreEqual("l00100000_ds_t", blTrue.DisplayName);      // delay-slot-true
             Assert.AreEqual(1, blTrue.Statements.Count);
             Assert.AreEqual("r0 = r1", blTrue.Statements[0].ToString());
             Assert.AreEqual(1, blTrue.Succ.Count);
-            Assert.AreEqual("l00101000", blTrue.Succ[0].Name);
+            Assert.AreEqual("l00101000", blTrue.Succ[0].DisplayName);
         }
 
         [Test]
@@ -768,15 +769,15 @@ testProc_exit:
             Assert.AreEqual("branch r1 l00100000_ds_t", block.Statements[0].ToString());
             var blFalse = block.ElseBlock;
             var blTrue = block.ThenBlock;
-            Assert.AreEqual("l00100008", blFalse.Name);     // delay-slot was anulled.
+            Assert.AreEqual("l00100008", blFalse.DisplayName);     // delay-slot was anulled.
             Assert.AreEqual(1, blFalse.Statements.Count);
             Assert.AreEqual("r2 = r1", blFalse.Statements[0].ToString());
 
-            Assert.AreEqual("l00100000_ds_t", blTrue.Name);      // delay-slot-true
+            Assert.AreEqual("l00100000_ds_t", blTrue.DisplayName);      // delay-slot-true
             Assert.AreEqual(1, blTrue.Statements.Count);
             Assert.AreEqual("r0 = r1", blTrue.Statements[0].ToString());
             Assert.AreEqual(1, blTrue.Succ.Count);
-            Assert.AreEqual("l00101000", blTrue.Succ[0].Name);
+            Assert.AreEqual("l00101000", blTrue.Succ[0].DisplayName);
         }
 
 
@@ -895,7 +896,7 @@ testProc_exit:
                 .Returns((Constant c, bool b) => Address.Ptr32(c.ToUInt32()));
             Constant co;
             arch.Setup(s => s.TryRead(
-                It.IsAny<MemoryArea>(),
+                It.IsAny<ByteMemoryArea>(),
                 It.IsAny<Address>(),
                 It.IsAny<PrimitiveType>(),
                 out co)).Returns(false);
@@ -977,7 +978,7 @@ testProc_exit:
                 It.IsAny<bool>())).Returns(Address.Ptr32(0x00100004));
             var addr = Constant.Word32(0x00123400);
             arch.Setup(a => a.TryRead(
-                It.IsNotNull<MemoryArea>(),
+                It.IsNotNull<ByteMemoryArea>(),
                 Address.Ptr32(0x00100004),
                 PrimitiveType.Word32,
                 out addr)).Returns(true);

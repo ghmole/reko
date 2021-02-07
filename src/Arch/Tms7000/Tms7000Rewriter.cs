@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Types;
 using System;
@@ -108,10 +109,10 @@ namespace Reko.Arch.Tms7000
                 case Mnemonic.push: RewritePush(); break;
                 case Mnemonic.reti: RewriteReti(); break;
                 case Mnemonic.rets: RewriteRets(); break;
-                case Mnemonic.rl: RewriteRotate(PseudoProcedure.Rol); break;
-                case Mnemonic.rlc: RewriteRotateC(PseudoProcedure.RolC); break;
-                case Mnemonic.rr: RewriteRotate(PseudoProcedure.Ror); break;
-                case Mnemonic.rrc: RewriteRotateC(PseudoProcedure.RorC); break;
+                case Mnemonic.rl: RewriteRotate(IntrinsicProcedure.Rol); break;
+                case Mnemonic.rlc: RewriteRotateC(IntrinsicProcedure.RolC); break;
+                case Mnemonic.rr: RewriteRotate(IntrinsicProcedure.Ror); break;
+                case Mnemonic.rrc: RewriteRotateC(IntrinsicProcedure.RorC); break;
                 case Mnemonic.sbb: RewriteAdcSbb(m.ISub); break;
                 case Mnemonic.setc: RewriteSetc(); break;
                 case Mnemonic.sta: RewriteSta(); break;
@@ -171,7 +172,7 @@ namespace Reko.Arch.Tms7000
                     {
                         ea = m.IAdd(
                             mem.Address,
-                            m.Cast(PrimitiveType.UInt16, binder.EnsureRegister(mem.Register)));
+                            m.Convert(binder.EnsureRegister(mem.Register), mem.Register.DataType, PrimitiveType.UInt16));
                     }
                     else
                     {
@@ -270,8 +271,9 @@ namespace Reko.Arch.Tms7000
             var opRight = Operand(instr.Operands[0]);
 
             var c = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
-            m.Assign(c, host.PseudoProcedure(
+            m.Assign(c, host.Intrinsic(
                 intrinsicName,
+                false,
                 PrimitiveType.Bool,
                 opLeft,
                 opRight,
@@ -291,7 +293,7 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteDint()
         {
-            m.SideEffect(host.PseudoProcedure("__dint", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__dint", false, VoidType.Instance));
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.False());
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.False());
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.False());
@@ -300,7 +302,7 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteEint()
         {
-            m.SideEffect(host.PseudoProcedure("__eint", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__eint", false, VoidType.Instance));
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF)), Constant.True());
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.NF)), Constant.True());
             m.Assign(binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.ZF)), Constant.True());
@@ -334,7 +336,7 @@ namespace Reko.Arch.Tms7000
 
         private void RewriteIdle()
         {
-            m.SideEffect(host.PseudoProcedure("__idle", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__idle", false, VoidType.Instance));
         }
 
         private void RewriteInv()
@@ -414,7 +416,7 @@ namespace Reko.Arch.Tms7000
         {
             var sp = binder.EnsureRegister(arch.sp);
             var dst = Operand(instr.Operands[0]);
-            m.Assign(dst, m.Mem8(m.Cast(PrimitiveType.Ptr16, sp)));
+            m.Assign(dst, m.Mem8(sp));
             m.Assign(sp, m.ISub(sp, 1));
             if (!(instr.Operands[0] is RegisterOperand reg &&
                 reg.Register == arch.st))
@@ -428,7 +430,7 @@ namespace Reko.Arch.Tms7000
             var sp = binder.EnsureRegister(arch.sp);
             var src = Operand(instr.Operands[0]);
             m.Assign(sp, m.IAdd(sp, 1));
-            m.Assign(m.Mem8(m.Cast(PrimitiveType.Ptr16, sp)), src);
+            m.Assign(m.Mem8(sp), src);
         }
 
         private void RewriteReti()
@@ -449,7 +451,7 @@ namespace Reko.Arch.Tms7000
             var C = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(
                 op,
-                host.PseudoProcedure(rot, op.DataType, op));
+                host.Intrinsic(rot, true, op.DataType, op));
             m.Assign(C, m.Cond(op));
         }
 
@@ -459,7 +461,7 @@ namespace Reko.Arch.Tms7000
             var C = binder.EnsureFlagGroup(arch.GetFlagGroup(arch.st, (uint)FlagM.CF));
             m.Assign(
                 op,
-                host.PseudoProcedure(rot, op.DataType, op, C));
+                host.Intrinsic(rot, true, op.DataType, op, C));
             m.Assign(C, m.Cond(op));
         }
 
@@ -492,14 +494,15 @@ namespace Reko.Arch.Tms7000
         private void RewriteSwap()
         {
             var op = Operand(instr.Operands[0]);
-            m.Assign(op, host.PseudoProcedure("__swap_nybbles", op.DataType, op));
+            m.Assign(op, host.Intrinsic("__swap_nybbles", true, op.DataType, op));
             CNZ(op);
         }
 
         private void RewriteTrap(int n)
         {
-            m.SideEffect(host.PseudoProcedure(
+            m.SideEffect(host.Intrinsic(
                 "__trap",
+                false,
                 VoidType.Instance,
                 Constant.Byte((byte)n)));
         }

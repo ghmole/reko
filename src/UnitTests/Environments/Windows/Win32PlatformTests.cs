@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ namespace Reko.UnitTests.Environments.Windows
         public void Setup()
         {
             sc = new ServiceContainer();
-            arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
         }
 
         private void When_Lookup_Procedure(string moduleName, string procName)
@@ -96,6 +96,7 @@ namespace Reko.UnitTests.Environments.Windows
                 false,
                 types, 
                 new Dictionary<string, FunctionType>(),
+                new Dictionary<string, ProcedureCharacteristics>(),
                 new Dictionary<string, DataType>());
 
             Expect_TypeLibraryLoaderService_LoadLibrary(

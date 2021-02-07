@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 using Reko.Arch.X86;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Environments.Msdos;
 using System;
@@ -32,8 +33,8 @@ namespace Reko.ImageLoaders.MzExe
 	/// </summary>
 	public class ExeImageLoader : ImageLoader
 	{
+        private readonly IServiceProvider services;
         private ImageLoader ldrDeferred;
-        private IServiceProvider services;
 
 		public ushort	e_magic;                     // 0000 - Magic number
 		public ushort   e_cbLastPage;                // 0002 - Bytes on last page of file
@@ -54,7 +55,8 @@ namespace Reko.ImageLoaders.MzExe
 		public ushort   e_ovno;                      // 001A - Overlay number
 
 		private const int MarkZbikowski = (('Z' << 8) | 'M');		// 'MZ' magic number expressed in little-endian.
-		public const int CbPsp = 0x0100;			// Program segment prefix size in bytes.
+		
+        public const int CbPsp = 0x0100;			// Program segment prefix size in bytes.
 		public const int CbPageSize = 0x0200;		// MSDOS pages are 512 bytes.
         private const int e_lfanewOffset = 0x003C;      // offset of the field where the LFA to a new
                                                         // EXE format header is located. This field is only valid
@@ -68,6 +70,18 @@ namespace Reko.ImageLoaders.MzExe
 			if (e_magic != MarkZbikowski)
 				throw new FormatException("Image is not an MS-DOS executable image.");
 		}
+
+        public uint FileDataSize {
+            get
+            {
+                uint size = this.e_cpImage * (uint)CbPageSize;
+                if (e_cbLastPage != 0)
+                {
+                    size += e_cbLastPage - (uint)CbPageSize;
+                }
+                return size;
+            } 
+        }
 
         private ImageLoader GetDeferredLoader()
         {
@@ -90,7 +104,14 @@ namespace Reko.ImageLoaders.MzExe
             return (uint) RawImage.Length > (uint) (e_lfanew + 1) && RawImage[e_lfanew] == 'L' && (RawImage[e_lfanew + 1] == 'E' || RawImage[e_lfanew + 1] == 'X');
         }
 
-		/// <summary>
+        public bool IsPharlapExtenderPresent(uint possibleHeaderOffset)
+        {
+            if (!ByteMemoryArea.TryReadLeUInt16(RawImage, possibleHeaderOffset, out ushort sig))
+                return false;
+            return sig == 0x3350;       // 'P3'.
+        }
+
+        /// <summary>
         /// Loads a Microsoft .EXE file. There are several widely varying 
         /// sub-formats, so we need to discover what flavour it is before we
         /// can proceed.
@@ -131,6 +152,14 @@ namespace Reko.ImageLoaders.MzExe
                 }
             }
 
+            // Phar lap DOS extenders are located after the real-mode part of the program.
+            var fileDataSize = this.FileDataSize;
+            if (IsPharlapExtenderPresent(fileDataSize))
+            {
+                var pharlapExtender = new PharLapExtender(services, Filename, base.RawImage, fileDataSize);
+                return pharlapExtender;
+            }
+
             // Fall back to loading real-mode MS-DOS program.
             var msdosLoader = new MsdosImageLoader(this);
             var msdosEntryPointOffset = (((e_cparHeader + e_cs) << 4) + e_ip) & 0xFFFFF;
@@ -150,7 +179,7 @@ namespace Reko.ImageLoaders.MzExe
             if (RawImage.Length < e_lfanewOffset + 4)
                 return null;
             
-            uint e_lfanew = MemoryArea.ReadLeUInt32(base.RawImage, e_lfanewOffset);
+            uint e_lfanew = ByteMemoryArea.ReadLeUInt32(base.RawImage, e_lfanewOffset);
             if (e_lfanew == 0 || e_lfanew + 4 >= RawImage.Length)
                 return null;
             return e_lfanew;
@@ -185,10 +214,6 @@ namespace Reko.ImageLoaders.MzExe
         public override RelocationResults Relocate(Program program, Address addrLoad)
 		{
 			return GetDeferredLoader().Relocate(program, addrLoad);
-		}
-
-		void RelocateNewExe(object neHeader)
-		{
 		}
 	}
 }

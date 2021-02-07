@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -75,10 +75,11 @@ namespace Reko.Typing
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine(
-                            string.Format("Exception in TypedExpressionRewriter.RewriteProgram: {0} ({1})\r\n{2}", proc, ex.Message, ex.StackTrace));
+                        Debug.Print("Exception in TypedExpressionRewriter.RewriteProgram: {0} ({1})\r\n{2}",
+                            proc, ex.Message, ex.StackTrace);
                         // reset flags after error
                         dereferenced = false;
+                        basePtr = null;
                     }
                 }
             }
@@ -262,12 +263,12 @@ namespace Reko.Typing
 
         public override Expression VisitAddress(Address addr)
         {
-            return tcr.Rewrite(addr, dereferenced);
+            return tcr.Rewrite(addr, basePtr, dereferenced);
         }
 
         public override Expression VisitConstant(Constant c)
         {
-            return tcr.Rewrite(c, this.dereferenced);
+            return tcr.Rewrite(c, basePtr, this.dereferenced);
         }
 
         public override Expression VisitMemoryAccess(MemoryAccess access)
@@ -351,6 +352,12 @@ namespace Reko.Typing
                 };
             }
             return exp;
+        }
+
+        public override Expression VisitConversion(Conversion conversion)
+        {
+            var exp = conversion.Expression.Accept(this);
+            return new Cast(conversion.DataType, exp);
         }
 
         private bool TypesAreCompatible(DataType dtSrc, DataType dtDst)

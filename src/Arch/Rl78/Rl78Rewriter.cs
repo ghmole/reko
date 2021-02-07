@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -119,11 +120,11 @@ namespace Reko.Arch.Rl78
                 case Mnemonic.push: RewritePush(); break;
                 case Mnemonic.ret: RewriteRet(); break;
                 case Mnemonic.reti: RewriteRet(); break;
-                case Mnemonic.rol: RewriteRotate(PseudoProcedure.Rol); break;
-                case Mnemonic.rolc: RewriteRotateC(PseudoProcedure.RolC); break;
-                case Mnemonic.rolwc: RewriteRotateC(PseudoProcedure.RolC); break;
-                case Mnemonic.ror: RewriteRotate(PseudoProcedure.Ror); break;
-                case Mnemonic.rorc: RewriteRotate(PseudoProcedure.RorC); break;
+                case Mnemonic.rol: RewriteRotate(IntrinsicProcedure.Rol); break;
+                case Mnemonic.rolc: RewriteRotateC(IntrinsicProcedure.RolC); break;
+                case Mnemonic.rolwc: RewriteRotateC(IntrinsicProcedure.RolC); break;
+                case Mnemonic.ror: RewriteRotate(IntrinsicProcedure.Ror); break;
+                case Mnemonic.rorc: RewriteRotate(IntrinsicProcedure.RorC); break;
                 case Mnemonic.sar: RewriteShift(m.Sar); break;
                 case Mnemonic.sarw: RewriteShiftw(m.Sar); break;
                 case Mnemonic.sel: RewriteSel(); break;
@@ -153,7 +154,7 @@ namespace Reko.Arch.Rl78
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Rl78Rw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Rl78Rw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -211,8 +212,9 @@ namespace Reko.Arch.Rl78
                 return m.Mem(op.Width, ea);
             case BitOperand bit:
                 var bitSrc = RewriteSrc(bit.Operand);
-                return host.PseudoProcedure(
+                return host.Intrinsic(
                     "__bit",
+                    true,
                     PrimitiveType.Bool,
                     bitSrc,
                     Constant.Byte((byte) bit.BitPosition));
@@ -260,8 +262,9 @@ namespace Reko.Arch.Rl78
                 return tmp;
             case BitOperand bit:
                 var left = RewriteSrc(bit.Operand);
-                m.SideEffect(host.PseudoProcedure(
+                m.SideEffect(host.Intrinsic(
                     "__set_bit",
+                    false,
                     VoidType.Instance,
                     left,
                     Constant.Byte((byte) bit.BitPosition),
@@ -303,7 +306,7 @@ namespace Reko.Arch.Rl78
                 }
                 else
                 {
-                    fn = (a, b) => m.IAdd(a, m.Cast(PrimitiveType.Word16, b));
+                    fn = (a, b) => m.IAdd(a, m.Convert(b, b.DataType, PrimitiveType.UInt16));
                 }
             }
             else
@@ -380,7 +383,7 @@ namespace Reko.Arch.Rl78
 
         private void RewriteHalt()
         {
-            m.SideEffect(host.PseudoProcedure("__halt", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__halt", false, VoidType.Instance));
         }
 
         private void RewriteIncDec(Func<Expression, Expression, Expression> fn)
@@ -446,7 +449,7 @@ namespace Reko.Arch.Rl78
             Expression val = m.Mem16(sp);
             if (dst.DataType.BitSize < 16)
             {
-                val = m.Cast(dst.DataType, val);
+                val = m.Convert(val, val.DataType, dst.DataType);
             }
             m.Assign(dst, val);
             m.Assign(sp, m.IAddS(sp, 2));
@@ -459,7 +462,7 @@ namespace Reko.Arch.Rl78
             var src = RewriteSrc(instr.Operands[0]);
             if (src.DataType.BitSize < 16)
             {
-                src = m.Cast(PrimitiveType.Word16, src);
+                src = m.Convert(src, src.DataType, PrimitiveType.Word16);
             }
             m.Assign(m.Mem16(sp), src);
         }
@@ -473,8 +476,9 @@ namespace Reko.Arch.Rl78
         {
             var src = RewriteSrc(instr.Operands[0]);
             var dst = RewriteDst(instr.Operands[0], src, (a, b) =>
-                host.PseudoProcedure(
+                host.Intrinsic(
                     intrinsic,
+                    true,
                     b.DataType,
                     b,
                     RewriteSrc(instr.Operands[1])));
@@ -485,8 +489,9 @@ namespace Reko.Arch.Rl78
         {
             var src = RewriteSrc(instr.Operands[0]);
             var dst = RewriteDst(instr.Operands[0], src, (a, b) =>
-                host.PseudoProcedure(
+                host.Intrinsic(
                     intrinsic,
+                    true,
                     b.DataType,
                     b,
                     C(),
@@ -497,7 +502,7 @@ namespace Reko.Arch.Rl78
         private void RewriteSel()
         {
             var bank = (RegisterBankOperand) instr.Operands[0];
-            m.SideEffect(host.PseudoProcedure("__select_register_bank", VoidType.Instance, Constant.Byte((byte) bank.Bank)));
+            m.SideEffect(host.Intrinsic("__select_register_bank", false, VoidType.Instance, Constant.Byte((byte) bank.Bank)));
         }
 
         private void RewriteSet1()
@@ -545,7 +550,7 @@ namespace Reko.Arch.Rl78
                 }
                 else
                 {
-                    fn = (a, b) => m.ISub(a, m.Cast(PrimitiveType.Word16, b));
+                    fn = (a, b) => m.ISub(a, m.Convert(b, b.DataType, PrimitiveType.Word16));
                 }
             }
             else

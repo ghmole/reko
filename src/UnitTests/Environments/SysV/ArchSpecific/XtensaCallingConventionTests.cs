@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ namespace Reko.UnitTests.Environments.SysV.ArchSpecific
     {
         private void AssertSignature(string sExp, DataType dtRet, params DataType[] args)
         {
-            var arch = new XtensaArchitecture(new ServiceContainer(), "xtensa");
+            var arch = new XtensaArchitecture(new ServiceContainer(), "xtensa", new Dictionary<string, object>());
             var cc = new XtensaCallingConvention(arch);
             var ccr = new CallingConventionEmitter();
             cc.Generate(ccr, dtRet, null, args.ToList());

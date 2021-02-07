@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Arch.X86;
 using Reko.Core;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Operators;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -1061,6 +1062,11 @@ namespace Reko.ImageLoaders.OdbgScript
                     value = v.str;
                     return true;
                 }
+                else if (v.Address is Address addr)
+                {
+                    value = addr.ToString();
+                    return true;
+                }
                 else if (v.IsInteger())
                 {
                     if (hex8forExec) //For Assemble Command (EXEC/ENDE) ie. "0DEADBEEF"
@@ -1083,6 +1089,16 @@ namespace Reko.ImageLoaders.OdbgScript
                 if (hex8forExec && !char.IsDigit(value[0]))
                     value = '0' + value;
                 return true;
+            }
+            else if (op is Application app && app.Procedure is ProcedureConstant pc)
+            {
+                if (pc.Procedure.Name == "Interpolate")
+                {
+                    value = InterpolateVariables(((StringConstant) app.Arguments[0]).ToString(), false);
+                    return true;
+                }
+                value = null;
+                return false;
             }
             //$TODO: more values.
             /*
@@ -1177,8 +1193,8 @@ namespace Reko.ImageLoaders.OdbgScript
                         if (!Host.SegmentMap.TryFindSegment(ea, out ImageSegment segment))
                             throw new AccessViolationException();
                         byte[] buffer = new byte[STRING_READSIZE];
-
-                        if (segment.MemoryArea.TryReadBytes(ea, buffer.Length, buffer))
+                        if (segment.MemoryArea is ByteMemoryArea bmem && 
+                            bmem.TryReadBytes(ea, buffer.Length, buffer))
                         {
                             buffer[buffer.Length - 1] = 0;
                             value = Encoding.UTF8.GetString(buffer);
@@ -1371,8 +1387,8 @@ namespace Reko.ImageLoaders.OdbgScript
                 {
                     if (!Host.SegmentMap.TryFindSegment(ea, out ImageSegment segment))
                         throw new AccessViolationException();
-                    value = segment.MemoryArea.ReadLeDouble(ea).ToDouble();
-                    return true;
+                    var offset = ea - segment.MemoryArea.BaseAddress;
+                    return segment.MemoryArea.TryReadLeDouble(offset, out value);
                 }
             }
             else

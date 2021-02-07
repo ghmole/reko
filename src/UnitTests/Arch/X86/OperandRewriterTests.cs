@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using System;
 using System.Collections.Generic;
 using Reko.Core.Serialization;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.X86
 {
@@ -36,7 +37,6 @@ namespace Reko.UnitTests.Arch.X86
 	{
 		private OperandRewriter orw;
 		private IntelArchitecture arch;
-		private X86State state;
 		private Procedure proc;
         private Program program;
         private X86Instruction instr;
@@ -49,13 +49,13 @@ namespace Reko.UnitTests.Arch.X86
         [OneTimeSetUp]
 		public void GlobalSetup()
 		{
-			arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+			arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
 		}
 
 		[SetUp]
 		public void Setup()
 		{
-            var mem = new MemoryArea(Address.Ptr32(0x10000), new byte[4]);
+            var mem = new ByteMemoryArea(Address.Ptr32(0x10000), new byte[4]);
             program = new Program
             {
                 SegmentMap = new SegmentMap(
@@ -68,7 +68,6 @@ namespace Reko.UnitTests.Arch.X86
                 Address = procAddress,
             };
             proc = Procedure.Create(arch, procAddress, arch.CreateFrame());
-			state = (X86State) arch.CreateProcessorState();
 			orw = new OperandRewriter32(arch, new ExpressionEmitter(), proc.Frame, new FakeRewriterHost(program));
 		}
 
@@ -76,7 +75,7 @@ namespace Reko.UnitTests.Arch.X86
 		public void X86Orw32_Register()
 		{
 			var r = new RegisterOperand(Registers.ebp);
-			var id = (Identifier) orw.Transform(null, r, r.Width, state);
+			var id = (Identifier) orw.Transform(null, r, r.Width);
 			Assert.AreEqual("ebp", id.Name);
 			Assert.IsNotNull(proc.Frame.FramePointer);
 		}
@@ -85,7 +84,7 @@ namespace Reko.UnitTests.Arch.X86
 		public void X86Orw32_Immediate()
 		{
 			var imm = new ImmediateOperand(Constant.Word16(0x0003));
-			var c = (Constant) orw.Transform(null, imm, imm.Width, state);
+			var c = (Constant) orw.Transform(null, imm, imm.Width);
 			Assert.AreEqual("3<16>", c.ToString());
 		}
 
@@ -93,7 +92,7 @@ namespace Reko.UnitTests.Arch.X86
 		public void X86Orw32_ImmediateExtend()
 		{
 			var imm = new ImmediateOperand(Constant.SByte(-1));
-			var c = (Constant) orw.Transform(null, imm, PrimitiveType.Word16, state);
+			var c = (Constant) orw.Transform(null, imm, PrimitiveType.Word16);
 			Assert.AreEqual("0xFFFF<16>", c.ToString());
 		}
 
@@ -101,7 +100,7 @@ namespace Reko.UnitTests.Arch.X86
 		public void X86Orw32_Fpu()
 		{
 			FpuOperand f = new FpuOperand(3);
-			var id = orw.Transform(instr, f, PrimitiveType.Real64,  state);
+			var id = orw.Transform(instr, f, PrimitiveType.Real64);
 			Assert.AreEqual(PrimitiveType.Real64, id.DataType);
 		}
 
@@ -111,7 +110,7 @@ namespace Reko.UnitTests.Arch.X86
 			MemoryOperand mem = new MemoryOperand(PrimitiveType.Word32);
 			mem.Base = Registers.ecx;
 			mem.Offset = Constant.Word32(4);
-			Expression expr = orw.Transform(instr, mem, PrimitiveType.Word32, state);
+			Expression expr = orw.Transform(instr, mem, PrimitiveType.Word32);
 			Assert.AreEqual("Mem0[ecx + 4<32>:word32]", expr.ToString());
 		}
 
@@ -119,7 +118,7 @@ namespace Reko.UnitTests.Arch.X86
 		public void X86Orw32_IndexedAccess()
 		{
 			MemoryOperand mem = new MemoryOperand(PrimitiveType.Word32, Registers.eax, Registers.edx, 4, Constant.Word32(0x24));
-			Expression expr = orw.Transform(instr, mem, PrimitiveType.Word32, state);
+			Expression expr = orw.Transform(instr, mem, PrimitiveType.Word32);
 			Assert.AreEqual("Mem0[eax + 0x24<32> + edx * 4<32>:word32]", expr.ToString());
 		}
 
@@ -140,9 +139,9 @@ namespace Reko.UnitTests.Arch.X86
 
 	public class FakeRewriterHost : IRewriterHost
 	{
-        private Program program;
-		private Dictionary<Address,FunctionType> callSignatures;
-		private Dictionary<Address,Procedure> procedures;
+        private readonly Program program;
+		private readonly Dictionary<Address,FunctionType> callSignatures;
+		private readonly Dictionary<Address,Procedure> procedures;
 
 		public FakeRewriterHost(Program program)
 		{
@@ -172,38 +171,37 @@ namespace Reko.UnitTests.Arch.X86
 			throw new NotImplementedException();
 		}
 
-        public Expression CallIntrinsic(string name, FunctionType fnType, params Expression[] args)
+        public Expression CallIntrinsic(string name, bool isIdempotent, FunctionType fnType, params Expression[] args)
         {
-            var ppp = program.EnsurePseudoProcedure(name, fnType);
+            var intrinsic = program.EnsureIntrinsicProcedure(name, isIdempotent, fnType);
             return new Application(
-                new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                new ProcedureConstant(PrimitiveType.Ptr32, intrinsic),
                 fnType.ReturnValue.DataType,
                 args);
         }
 
-        public Expression PseudoProcedure(string name , DataType returnType, params Expression[] args)
+        public Expression Intrinsic(string name, bool isIdempotent, DataType returnType, params Expression[] args)
         {
-            var ppp = program.EnsurePseudoProcedure(name, returnType, args);
+            var intrinsic = program.EnsureIntrinsicProcedure(name, isIdempotent, returnType, args);
             return new Application(
-                new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                new ProcedureConstant(PrimitiveType.Ptr32, intrinsic),
                 returnType,
                 args);
         }
 
-        public Expression PseudoProcedure(string name, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
+        public Expression Intrinsic(string name, bool isIdempotent, ProcedureCharacteristics c, DataType returnType, params Expression[] args)
         {
-            var ppp = program.EnsurePseudoProcedure(name, returnType, args);
-            ppp.Characteristics = c;
+            var intrinsic = program.EnsureIntrinsicProcedure(name, isIdempotent, returnType, args);
+            intrinsic.Characteristics = c;
             return new Application(
-                new ProcedureConstant(PrimitiveType.Ptr32, ppp),
+                new ProcedureConstant(PrimitiveType.Ptr32, intrinsic),
                 returnType,
                 args);
         }
 
         public FunctionType GetCallSignatureAtAddress(Address addrCallInstruction)
 		{
-            FunctionType sig;
-            if (callSignatures.TryGetValue(addrCallInstruction, out sig))
+            if (callSignatures.TryGetValue(addrCallInstruction, out FunctionType sig))
                 return sig;
             else
                 return null;
@@ -231,8 +229,7 @@ namespace Reko.UnitTests.Arch.X86
 
 		public Procedure GetProcedureAtAddress(Address addr, int cbStackDepth)
 		{
-            Procedure proc;
-            return procedures.TryGetValue(addr, out proc) ? proc : null;
+            return procedures.TryGetValue(addr, out Procedure proc) ? proc : null;
 		}
 
 		public Procedure [] GetProceduresFromVector(Address vectorAddress)
@@ -240,7 +237,7 @@ namespace Reko.UnitTests.Arch.X86
 			return new Procedure[0];
 		}
 
-		public MemoryArea Image
+		public ByteMemoryArea Image
 		{
 			get { throw new NotImplementedException(); }
 		}
@@ -250,6 +247,11 @@ namespace Reko.UnitTests.Arch.X86
 			// TODO:  Add FakeRewriterHost.SystemCallAt implementation
 			return null;
 		}
+
+        public bool TryRead(IProcessorArchitecture arch, Address addr, PrimitiveType dt, out Constant value)
+        {
+            throw new NotImplementedException();
+        }
 
         public void AddDiagnostic(Address addr, Diagnostic d)
         {
@@ -282,7 +284,7 @@ namespace Reko.UnitTests.Arch.X86
             throw new NotImplementedException();
         }
 
-        public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, int arity)
+        public IntrinsicProcedure EnsureIntrinsic(string name, bool isIdempotent, DataType returnType, int arity)
         {
             throw new NotImplementedException();
         }

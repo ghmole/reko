@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -112,11 +112,18 @@ namespace Reko.Core.Serialization
 
         public Identifier Deserialize(FpuStackVariable_v1 _)
         {
+            if (procSer.FpuStackShrinking)
+            {
+                --procSer.FpuStackOffset;
+            }
             var idArg = procSer.CreateId(
                 argCur!.Name ?? "fpArg" + procSer.FpuStackOffset, 
                 PrimitiveType.Real64,
                 new FpuStackStorage(procSer.FpuStackOffset, PrimitiveType.Real64));
-            ++procSer.FpuStackOffset;
+            if (procSer.FpuStackGrowing)
+            {
+                ++procSer.FpuStackOffset;
+            }
             return idArg;
         }
 

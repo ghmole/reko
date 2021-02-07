@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -30,10 +31,16 @@ namespace Reko.Core.Services
 {
     /// <summary>
     /// Reko calls methods on this interface when it encounters errors. The methods generate unit tests
-    /// that can be incorporated into the UnitTest projct.
+    /// that can be incorporated into the UnitTest project.
     /// </summary>
     public interface ITestGenerationService
     {
+        /// <summary>
+        /// Users can optionally override the output directory for more control 
+        /// of where the output goes.
+        /// </summary>
+        string? OutputDirectory { get; set; }
+
         /// <summary>
         /// This method is called when an incomplete disassembler can't decode a byte sequence.
         /// </summary>
@@ -46,7 +53,9 @@ namespace Reko.Core.Services
         /// <param name="addrStart">Address at which the undecoded byte sequence started.</param>
         /// <param name="rdr">Image reader positioned at the end of the byte sequence.</param>
         /// <param name="message">Optional message that will be emitted as a comment.</param>
-        void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message);
+        /// <param name="hexize">Optional function to convert raw bytes into text. By default, a hexadecimal string is 
+        /// generated.</param>
+        void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message, Func<byte[], string>? hexize = null);
 
         /// <summary>
         /// This method is called when an incomplete rewriter fails to rewrite a valid machine 
@@ -54,25 +63,44 @@ namespace Reko.Core.Services
         /// </summary>
         /// <param name="testPrefix">Prefix to use in the generated unit test.</param>
         /// <param name="instr">The <see cref="MachineInstruction"/> that didn't get rewritten.</param>
+        /// <param name="mnemonic">The mnemonic of the <see cref="MachineInstruction"/> that didn't get rewritten.</param>
         /// <param name="rdr">Image reader positioned after the end of the machine instruction.</param>
         /// <param name="message">Optional message that will be emitted as a comment.</param>
-        void ReportMissingRewriter(string testPrefix, MachineInstruction instr, EndianImageReader rdr, string message);
+        /// <param name="hexize">Optional function to convert raw bytes into text. By default, a hexadecimal string is 
+        /// generated.</param>
+        void ReportMissingRewriter(string testPrefix, MachineInstruction instr, string mnemonic, EndianImageReader rdr, string message, Func<byte[], string>? hexize = null);
+
+        /// <summary>
+        /// Remove files starting with the given <paramref name="filePrefix"/> from the output directory.
+        /// </summary>
+        /// <param name="filePrefix"></param>
+        void RemoveFiles(string filePrefix);
+
+        /// <summary>
+        /// Report the state of a procedure to a file determine by the filename.
+        /// </summary>
+        /// <param name="filePrefix"></param>
+        /// <param name="testCaption"></param>
+        /// <param name="proc"></param>
+        void ReportProcedure(string fileName, string testCaption, Procedure proc);
     }
 
     public class TestGenerationService : ITestGenerationService
     {
         private readonly IServiceProvider services;
         private readonly Dictionary<string, HashSet<byte[]>> emittedDecoderTests;
-        private readonly Dictionary<string, HashSet<int>> emittedRewriterTests;
+        private readonly Dictionary<string, HashSet<string>> emittedRewriterTests;
 
         public TestGenerationService(IServiceProvider services)
         {
             this.services = services;
-            this.emittedRewriterTests = new Dictionary<string, HashSet<int>>();
+            this.emittedRewriterTests = new Dictionary<string, HashSet<string>>();
             this.emittedDecoderTests = new Dictionary<string, HashSet<byte[]>>();
         }
 
-        public void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message)
+        public string? OutputDirectory { get; set; }
+
+        public void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message, Func<byte[], string>? hexizer)
         {
             var fsSvc = services.RequireService<IFileSystemService>();
             var outDir = GetOutputDirectory(fsSvc);
@@ -84,11 +112,14 @@ namespace Reko.Core.Services
             if (this.emittedDecoderTests[filename].Contains(instrBytes))
                 return;
             this.emittedDecoderTests[filename].Add(instrBytes);
-            var test = GenerateDecoderUnitTest(testPrefix, addrStart, instrBytes, message);
+            hexizer = hexizer ?? Hexizer;
+            var test = GenerateDecoderUnitTest(testPrefix, addrStart, hexizer(instrBytes), message);
             fsSvc.AppendAllText(filename, test);
         }
 
-        public void ReportMissingRewriter(string testPrefix, MachineInstruction instr, EndianImageReader rdr, string message)
+        private static string Hexizer(byte[] bytes) => string.Join("", bytes.Select(b => b.ToString("X2")));
+
+        public void ReportMissingRewriter(string testPrefix, MachineInstruction instr, string mnemonic, EndianImageReader rdr, string message, Func<byte[], string>? hexizer = null)
         {
             var fsSvc = services.RequireService<IFileSystemService>();
             var outDir = GetOutputDirectory(fsSvc);
@@ -96,10 +127,11 @@ namespace Reko.Core.Services
                 return;
             var filename = Path.Combine(outDir, Path.ChangeExtension(testPrefix, ".tests"));
             EnsureRewriterFile(fsSvc, filename);
-            if (this.emittedRewriterTests[filename].Contains(instr.MnemonicAsInteger))
+            if (this.emittedRewriterTests[filename].Contains(mnemonic))
                 return;
-            emittedRewriterTests[filename].Add(instr.MnemonicAsInteger);
-            var test = GenerateRewriterUnitTest(testPrefix, instr, rdr, message);
+            emittedRewriterTests[filename].Add(mnemonic);
+            hexizer = hexizer ?? Hexizer;
+            var test = GenerateRewriterUnitTest(testPrefix, instr, mnemonic, rdr, message, hexizer);
             fsSvc.AppendAllText(filename, test);
         }
 
@@ -107,16 +139,15 @@ namespace Reko.Core.Services
         /// Emits the text of a unit test that can be pasted into the unit tests 
         /// for a disassembler.
         /// </summary>
-        public static string GenerateDecoderUnitTest(string testPrefix, Address addrInstr, EndianImageReader rdr, string message)
+        public static string GenerateDecoderUnitTest(string testPrefix, Address addrInstr, EndianImageReader rdr, string message, Func<byte[], string> hexizer)
         {
             byte[] bytes = ReadInstructionBytes(addrInstr, rdr);
-            return GenerateDecoderUnitTest(testPrefix, addrInstr, bytes, message);
+            return GenerateDecoderUnitTest(testPrefix, addrInstr, hexizer(bytes), message);
         }
 
-        public static string GenerateDecoderUnitTest(string testPrefix, Address addrInstr, byte[] bytes, string message)
+        public static string GenerateDecoderUnitTest(string testPrefix, Address addrInstr, string instrHexBytes, string message)
         {
             var writer = new StringWriter();
-            var instrHexBytes = string.Join("", bytes.Select(b => b.ToString("X2")));
             writer.Write("// Reko: a decoder for the instruction {0} at address {1} has not been implemented.", instrHexBytes, addrInstr);
             if (!string.IsNullOrEmpty(message))
             {
@@ -141,10 +172,11 @@ namespace Reko.Core.Services
             return bytes;
         }
 
-        public static string GenerateRewriterUnitTest(string testPrefix, MachineInstruction instr, EndianImageReader rdr, string message)
+        public static string GenerateRewriterUnitTest(string testPrefix, MachineInstruction instr, string mnemonic, EndianImageReader rdr, string message, Func<byte[], string> hexizer)
         {
+            hexizer ??= Hexizer;
             byte[] bytes = ReadInstructionBytes(instr.Address!, rdr);
-
+            var hexbytes = hexizer(bytes);
             var sb = new StringWriter();
 
             if (!string.IsNullOrEmpty(message))
@@ -152,9 +184,9 @@ namespace Reko.Core.Services
                 sb.WriteLine($"        // {0}", message);
             }
             sb.WriteLine("        [Test]");
-            sb.WriteLine("        public void {0}_{1}()", testPrefix, instr.MnemonicAsString);
+            sb.WriteLine("        public void {0}_{1}()", testPrefix, mnemonic);
             sb.WriteLine("        {");
-            sb.WriteLine("            Given_HexString(\"{0}\");", string.Join("", bytes.Select(b => b.ToString("X2"))));
+            sb.WriteLine("            Given_HexString(\"{0}\");", hexbytes);
             sb.WriteLine("            AssertCode(     // {0}", instr);
             sb.WriteLine("                \"0|L--|{0}({1}): 1 instructions\",", instr.Address, instr.Length);
             sb.WriteLine("                \"1|L--|@@@\");");
@@ -182,7 +214,7 @@ namespace Reko.Core.Services
         {
             if (!emittedRewriterTests.ContainsKey(filename))
             {
-                emittedRewriterTests.Add(filename, new HashSet<int>());
+                emittedRewriterTests.Add(filename, new HashSet<string>());
                 var header = string.Join(Environment.NewLine,
                     "// This file contains unit tests automatically generated by Reko decompiler.",
                     "// Please copy the contents of this file and report it on GitHub, using the ",
@@ -195,6 +227,8 @@ namespace Reko.Core.Services
 
         private string? GetOutputDirectory(IFileSystemService fsSvc)
         {
+            if (OutputDirectory != null)
+                return OutputDirectory;
             var dcSvc = this.services.GetService<IDecompilerService>();
             if (dcSvc == null)
                 return null;
@@ -216,6 +250,27 @@ namespace Reko.Core.Services
             {
                 return null;
             }
+        }
+
+        public void RemoveFiles(string filePrefix)
+        {
+            var fsSvc = services.RequireService<IFileSystemService>();
+            var dir = GetOutputDirectory(fsSvc);
+            foreach (var filename in fsSvc.GetFiles(dir, filePrefix + "*"))
+            {
+                fsSvc.DeleteFile(filename);
+            }
+        }
+
+        public void ReportProcedure(string fileName, string testCaption, Procedure proc)
+        {
+            var fsSvc = services.RequireService<IFileSystemService>();
+            var dir = GetOutputDirectory(fsSvc);
+            var absFileName = Path.Combine(dir, fileName);
+            using var w = fsSvc.CreateStreamWriter(absFileName, true, Encoding.UTF8);
+            w.WriteLine(testCaption);
+            proc.Write(false, w);
+            w.WriteLine();
         }
 
         private class InstrBytesComparer : IEqualityComparer<byte[]>

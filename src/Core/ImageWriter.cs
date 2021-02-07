@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
  */
 #endregion
 
+using Reko.Core.Memory;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -47,13 +48,13 @@ namespace Reko.Core
             this.Position = (int)offset;
         }
 
-        public ImageWriter(MemoryArea mem, Address addr)
+        public ImageWriter(ByteMemoryArea mem, Address addr)
         {
             this.Bytes = mem.Bytes;
             this.Position = (int)(addr - mem.BaseAddress);
         }
 
-        public ImageWriter(MemoryArea mem, long offset)
+        public ImageWriter(ByteMemoryArea mem, long offset)
         {
             this.Bytes = mem.Bytes;
             this.Position = (int)offset;
@@ -155,7 +156,13 @@ namespace Reko.Core
 
         public ImageWriter WriteBeUInt32(uint offset, uint ui)
         {
-            MemoryArea.WriteBeUInt32(Bytes, offset, ui);
+            ByteMemoryArea.WriteBeUInt32(Bytes, offset, ui);
+            return this;
+        }
+
+        public ImageWriter WriteLeUInt32(uint offset, uint ui)
+        {
+            ByteMemoryArea.WriteLeUInt32(Bytes, offset, ui);
             return this;
         }
 
@@ -168,12 +175,12 @@ namespace Reko.Core
             return this;
         }
 
-        public ImageWriter WriteLeUInt32(uint offset, uint ui)
+        public ImageWriter WriteLeUInt32(uint ui)
         {
-            Bytes[offset] = (byte)ui;
-            Bytes[offset+1] = (byte)(ui >> 8);
-            Bytes[offset+2] = (byte)(ui >> 16);
-            Bytes[offset+3] = (byte)(ui >> 24);
+            WriteByte((byte) ui);
+            WriteByte((byte) (ui >> 8));
+            WriteByte((byte) (ui >> 16));
+            WriteByte((byte) (ui >> 24));
             return this;
         }
 
@@ -181,13 +188,6 @@ namespace Reko.Core
         public abstract ImageWriter WriteUInt32(uint w);
         public abstract ImageWriter WriteUInt32(uint offset, uint w);
         public abstract ImageWriter WriteUInt64(ulong w);
-
-        public ImageWriter WriteLeUInt32(uint ui)
-        {
-            WriteLeUInt32((uint) Position, ui);
-            Position += 4;
-            return this;
-        }
 
         public ImageWriter WriteLeInt32(int i)
         {
@@ -249,12 +249,12 @@ namespace Reko.Core
         {
         }
 
-        public BeImageWriter(MemoryArea mem, Address addr) 
+        public BeImageWriter(ByteMemoryArea mem, Address addr) 
             : base(mem, addr)
         {
         }
 
-        public BeImageWriter(MemoryArea mem, long offset)
+        public BeImageWriter(ByteMemoryArea mem, long offset)
             : base(mem, offset)
         {
         }
@@ -287,12 +287,12 @@ namespace Reko.Core
         {
         }
 
-        public LeImageWriter(MemoryArea mem, Address addr) 
+        public LeImageWriter(ByteMemoryArea mem, Address addr) 
             : base(mem, addr)
         {
         }
 
-        public LeImageWriter(MemoryArea mem, long offset)
+        public LeImageWriter(ByteMemoryArea mem, long offset)
             : base(mem, offset)
         {
         }

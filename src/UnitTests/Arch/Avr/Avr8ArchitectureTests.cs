@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ namespace Reko.UnitTests.Arch.Avr
         [Test]
         public void Avr8_arch_AliasZRegister()
         {
-            var arch = new Avr8Architecture(new ServiceContainer(), "avr8");
+            var arch = new Avr8Architecture(new ServiceContainer(), "avr8", new Dictionary<string, object>());
             var r30 = arch.GetRegister(30);
             var r31 = arch.GetRegister(31);
             var z = Avr8Architecture.z;

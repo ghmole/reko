@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Types;
 using System;
 using System.Diagnostics;
@@ -55,15 +56,16 @@ namespace Reko.Core.Assemblers
     
 	public class Emitter : IEmitter
 	{
-        private MemoryStream stmOut;
+        private readonly MemoryStream stmOut;
 
         public Emitter()
         {
             this.stmOut = new MemoryStream();
         }
 
-        public Emitter(byte [] existingBytes)
+        public Emitter(MemoryArea mem)
         {
+            var existingBytes = ((ByteMemoryArea) mem).Bytes;
             this.stmOut = new MemoryStream(existingBytes);
         }
 

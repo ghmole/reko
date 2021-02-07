@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ namespace Reko.UnitTests.Arch.Arm
         public void Arm64Arch_GetRegister()
         {
             var sc = new ServiceContainer();
-            var arch = new Arm64Architecture(sc, "aarch64");
+            var arch = new Arm64Architecture(sc, "aarch64", new Dictionary<string, object>());
             Assert.AreSame(Registers.GpRegs32[3], arch.GetRegister((StorageDomain) 3, new BitRange(16, 32)));
         }
     }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -235,7 +235,6 @@ namespace Reko.Core.Expressions
                 if (ptRight != null && ptRight.Domain != Domain.Pointer)
                     return PrimitiveType.Create(Domain.Pointer, dtLeft.BitSize);
             }
-
             if (ptLeft != null && ptLeft.IsIntegral && ptRight != null && ptRight.IsIntegral)
             {
                 // According to the C language definition, the sum
@@ -275,7 +274,9 @@ namespace Reko.Core.Expressions
                 }
                 if (dtRight is Pointer)
                     return PrimitiveType.Create(Domain.SignedInt, dtLeft.BitSize);
-                throw new TypeInferenceException(string.Format("Pulling difference {0} and {1}", dtLeft, dtRight));
+                // We are unable to reconcile the differences here. 
+                return PrimitiveType.CreateWord(dtLeft.BitSize);
+                //$TODO: should be a warning? throw new TypeInferenceException(string.Format("Pulling difference {0} and {1}", dtLeft, dtRight));
             }
             if (ptRight != null && ptRight.Domain == Domain.Pointer || 
                 dtRight is Pointer)
@@ -287,7 +288,9 @@ namespace Reko.Core.Expressions
                 // integer.
                 if (ptLeft != null && (ptLeft.Domain & Domain.Pointer) != 0)
                     return PrimitiveType.Create(Domain.Integer, dtLeft.BitSize);
-                throw new TypeInferenceException(string.Format("Pulling difference {0} and {1}", dtLeft, dtRight));
+                // We are unable to reconcile the differences here. 
+                return PrimitiveType.CreateWord(dtLeft.BitSize);
+                //$TODO: should be a warning? throw new TypeInferenceException(string.Format("Pulling difference {0} and {1}", dtLeft, dtRight));
             }
             return dtLeft;
         }
@@ -326,6 +329,13 @@ namespace Reko.Core.Expressions
                 return null;
             var global = factory.CreatePointer(globalFields, pt.BitSize);
             return GetPossibleFieldType(global, PrimitiveType.Int32, c);
+        }
+
+        public DataType VisitConversion(Conversion conversion)
+        {
+            conversion.Expression.Accept(this);
+            RecordDataType(conversion.DataType, conversion);
+            return conversion.DataType;
         }
 
         public DataType VisitDereference(Dereference deref)

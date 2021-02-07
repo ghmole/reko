@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ namespace Reko.Core.Assemblers
         Program AssembleFragment(Address baseAddress, string asmFragment);
 
         /// <summary>
-        /// Assembles the assembler language program from <paramref name="reader"/> and mutates 
+        /// Assembles the assembly language program from <paramref name="reader"/> and mutates 
         /// the provided <paramref name="program"/> starting at <paramref name="address"/>. 
         /// </summary>
         /// <param name="program">The program to mutate.</param>

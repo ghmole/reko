@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -199,7 +199,7 @@ namespace Reko.UnitTests.Analysis
 			this.ssaIds = ssa.Identifiers;
 
             var listener = new FakeDecompilerEventListener();
-			ConditionCodeEliminator cce = new ConditionCodeEliminator(ssa, platform, listener);
+			ConditionCodeEliminator cce = new ConditionCodeEliminator(program, ssa, listener);
 			cce.Transform();
 			DeadCode.Eliminate(ssa);
 

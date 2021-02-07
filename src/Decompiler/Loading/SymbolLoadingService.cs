@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@ namespace Reko.Loading
             if (type is null)
             {
                 var eventListener = services.RequireService<DecompilerEventListener>();
-                eventListener.Error(new NullCodeLocation(""), "Symbol source {0} in the Reko configuration failed to load.", symSrcDef.Name!);
+                eventListener.Error("Symbol source {0} in the Reko configuration failed to load.", symSrcDef.Name!);
                 return null;
             }
             var symSrc = (ISymbolSource)Activator.CreateInstance(type);

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -98,6 +98,7 @@ namespace Reko.UserInterfaces.WindowsForms.Forms
             {
                 dlg.Program.User.OutputFilePolicy = (string) optPolicy.Value;
             }
+            dlg.Program.User.AggressiveBranchRemoval = dlg.AggressiveBranchRemoval.Checked;
         }
 
         void OutputPolicies_SelectedIndexChanged(object sender, EventArgs e)

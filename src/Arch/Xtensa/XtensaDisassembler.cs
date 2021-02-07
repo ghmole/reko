@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using Reko.Core.Expressions;
 using System.Linq;
 using Reko.Core.Lib;
 using Reko.Core.Services;
+using Reko.Core.Memory;
 
 #pragma warning disable IDE1006 // Naming Styles
 
@@ -138,7 +139,7 @@ namespace Reko.Arch.Xtensa
             };
         }
 
-        public override XtensaInstruction NotYetImplemented(uint wInstr, string message)
+        public override XtensaInstruction NotYetImplemented(string message)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
             testGenSvc?.ReportMissingDecoder("Xtdasm", this.state.addr, this.rdr, message);
@@ -756,6 +757,7 @@ namespace Reko.Arch.Xtensa
             {
                 return new XtensaInstruction
                 {
+                    InstructionClass = InstrClass.Linear,
                     Mnemonic = Mnemonic.extui,
                     Operands = new MachineOperand[]
                     {
@@ -817,7 +819,7 @@ namespace Reko.Arch.Xtensa
                 0x100,
             };
 
-            var reserved = Instr(Mnemonic.reserved);
+            var reserved = Instr(Mnemonic.reserved, InstrClass.Invalid);
 
             var decoderLSCX = new Op1Decoder(
                 Instr(Mnemonic.lsx, Fr,Rs,Rt),
@@ -955,7 +957,7 @@ namespace Reko.Arch.Xtensa
                 Instr(Mnemonic.memw),
                 Instr(Mnemonic.extw),
                 reserved,
-                reserved);
+                Instr(Mnemonic.nop, InstrClass.Linear|InstrClass.Padding));
 
             var decoderRFET = new s_Rec(
                 Instr(Mnemonic.rfe),
@@ -1131,9 +1133,9 @@ namespace Reko.Arch.Xtensa
 
             var decoderS3 = new t_Decoder(
                 Instr2byte(Mnemonic.ret_n, InstrClass.Transfer),
-                reserved,
-                reserved,
-                reserved,
+                Instr2byte(Mnemonic.retw_n, InstrClass.Transfer),
+                Instr2byte(Mnemonic.break_n, InstrClass.Transfer|InstrClass.Call, Is),
+                Instr2byte(Mnemonic.nop_n, InstrClass.Linear|InstrClass.Padding),
 
                 reserved,
                 reserved,
@@ -1255,6 +1257,27 @@ namespace Reko.Arch.Xtensa
                 reserved,
                 Instr(Mnemonic.ldpte));       //$TODO: doesn't appear to be documented
 
+            var accer = new Op2Decoder(
+                Nyi("RER"),
+                reserved,
+                reserved,
+                reserved,
+
+                reserved,
+                reserved,
+                reserved,
+                reserved,
+
+                Nyi("RER"),
+                reserved,
+                reserved,
+                reserved,
+
+                reserved,
+                reserved,
+                reserved,
+                reserved);
+
             var decoderRST1 = new Op2Decoder(
                 Instr(Mnemonic.slli, Rr,Rs,IS),
                 Instr(Mnemonic.slli, Rr,Rs,IS),
@@ -1264,7 +1287,7 @@ namespace Reko.Arch.Xtensa
                 Instr(Mnemonic.srli, Rr,Rt,Is),
                 reserved,
                 Instr(Mnemonic.xsr,Rt,S),
-                Nyi("Table ACCER"),
+                accer,
 
                 Instr(Mnemonic.src, Rr,Rs,Rt),
                 Instr(Mnemonic.srl, Rr,Rt),
@@ -1408,7 +1431,7 @@ namespace Reko.Arch.Xtensa
                 Instr(Mnemonic.s32ri, Rt,Rs,I8_2));
 
             var decoderLSCI = new r_Decoder(
-                reserved,
+                Instr(Mnemonic.lsi, Ft,Rs,I8_2),
                 reserved,
                 reserved,
                 reserved,

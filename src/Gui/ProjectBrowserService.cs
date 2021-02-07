@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -192,7 +192,7 @@ namespace Reko.Gui
                 return;
             using (var dlg = Services.RequireService<IDialogFactory>().CreateSegmentEditorDialog())
             {
-                dlg.LoadUserSegment(segment.MemoryArea.Bytes, new UserSegment
+                dlg.LoadUserSegment(segment.MemoryArea, new UserSegment
                 {
                     Name = segment.Name,
                     Address = segment.Address,

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,8 +35,6 @@ namespace Reko.Core.Types
 		{
             if (bitSize <= 0)
                 throw new ArgumentOutOfRangeException("bitSize", "Invalid pointer size.");
-            if (bitSize == 24)
-                bitSize.ToString(); //$DEBUG
             this.Pointee = pointee;
 			this.bitSize = bitSize;
 		}

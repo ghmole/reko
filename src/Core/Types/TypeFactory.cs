@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -84,9 +84,9 @@ namespace Reko.Core.Types
             return new StructureType(name, size) { Fields = { field } };
 		}
 
-		public MemberPointer CreateMemberPointer(DataType basePointer, DataType pointee, int byteSize)
+		public MemberPointer CreateMemberPointer(DataType basePointer, DataType pointee, int bitSize)
 		{
-			return new MemberPointer(basePointer, pointee, byteSize);
+			return new MemberPointer(basePointer, pointee, bitSize);
 		}
 
 		public Pointer CreatePointer(DataType pointee, int bitSize)

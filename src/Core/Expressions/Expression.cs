@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,12 +18,10 @@
  */
 #endregion
 
-using Reko.Core.Operators;
 using Reko.Core.Types;
 using Reko.Core.Output;
 using System;
 using System.IO;
-using System.Collections;
 using System.Collections.Generic;
 
 #nullable enable

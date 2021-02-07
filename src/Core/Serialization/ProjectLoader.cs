@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@ using Reko.Core.Types;
 using Reko.Core.Expressions;
 using System.Globalization;
 using Reko.Core.Output;
+using Reko.Core.Memory;
 
 namespace Reko.Core.Serialization
 {
@@ -100,7 +101,7 @@ namespace Reko.Core.Serialization
         /// <returns></returns>
         private static bool IsXmlFile(byte[] image)
         {
-            if (MemoryArea.CompareArrays(image, 0, new byte[] { 0x3C, 0x3F, 0x78, 0x6D, 0x6C }, 5)) // <?xml
+            if (ByteMemoryArea.CompareArrays(image, 0, new byte[] { 0x3C, 0x3F, 0x78, 0x6D, 0x6C }, 5)) // <?xml
                 return true;
             return false;
         }
@@ -495,8 +496,7 @@ namespace Reko.Core.Serialization
                 }
                 catch
                 {
-                    var diagSvc = Services.RequireService<IDiagnosticsService>();
-                    diagSvc.Warn(
+                    listener.Warn(
                         "Unknown text encoding '{0}'. Defaulting to platform text encoding.", 
                         sUser.TextEncoding);
                 }
@@ -534,11 +534,17 @@ namespace Reko.Core.Serialization
                     .Where(s => s != null)
                     .ToList();
             }
+            if (sUser.BlockLabels != null)
+            {
+                program.User.BlockLabels = sUser.BlockLabels
+                    .ToDictionary(u => u.Location, u => u.Name);
+            }
             program.User.ShowAddressesInDisassembly = sUser.ShowAddressesInDisassembly;
             program.User.ShowBytesInDisassembly = sUser.ShowBytesInDisassembly;
             program.User.ExtractResources = sUser.ExtractResources;
             // Backwards compatibility: older versions used single file policy.
             program.User.OutputFilePolicy = sUser.OutputFilePolicy ?? Program.SingleFilePolicy;
+            program.User.AggressiveBranchRemoval = sUser.AggressiveBranchRemoval;
         }
 
         private Annotation LoadAnnotation(Annotation_v3 annotation)
@@ -561,7 +567,9 @@ namespace Reko.Core.Serialization
                         allLists.Add(addr, list);
                     }
                     var reg = platform.Architecture.GetRegister(sRegValue.Register);
-                    var c = Constant.Create(reg.DataType, Convert.ToUInt64(sRegValue.Value, 16));
+                    var c = sRegValue.Value != "*"
+                        ? Constant.Create(reg.DataType, Convert.ToUInt64(sRegValue.Value, 16))
+                        : Constant.Invalid;
                     if (reg != null)
                     {
                         list.Add(new UserRegisterValue

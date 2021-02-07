@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Linq;
 using Reko.Core.Services;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.X86
 {
@@ -50,6 +51,9 @@ namespace Reko.Arch.X86
 
             internal byte ByteValue { get; set; }
 
+            /// <summary>
+            /// Rex.W = 48h
+            /// </summary>
             internal bool FlagWideValue
             {
                 get
@@ -127,8 +131,7 @@ namespace Reko.Arch.X86
         private class X86InstructionDecodeInfo
         {
             // These fields are for analysis.
-            bool isModRegMemActive;
-            byte modRegMemByte;
+            byte? modRegMemByte;
 
             bool isSegmentOverrideActive;
             RegisterStorage segmentOverride;
@@ -144,17 +147,18 @@ namespace Reko.Arch.X86
             public List<MachineOperand> ops;
             public PrimitiveType iWidth;
 
+#nullable disable
             internal X86InstructionDecodeInfo()
             {
                 this.registerExtension = new X86LegacyCodeRegisterExtension(0);
                 this.ops = new List<MachineOperand>();
                 this.Reset();
             }
+#nullable enable
 
             internal void Reset()
             {
-                this.isModRegMemActive = false;
-                this.modRegMemByte = 0;
+                this.modRegMemByte = null;
 
                 this.isSegmentOverrideActive = false;
                 this.segmentOverride = RegisterStorage.None;
@@ -184,7 +188,6 @@ namespace Reko.Arch.X86
                             this.F3Prefix ? 3 : 0
                 };
             }
-
 
             internal bool IsSegmentOverrideActive()
             {
@@ -232,7 +235,7 @@ namespace Reko.Arch.X86
 
             internal bool IsModRegMemByteActive()
             {
-                return this.isModRegMemActive;
+                return this.modRegMemByte.HasValue;
             }
 
             public bool IsVex { get; set; }
@@ -241,15 +244,14 @@ namespace Reko.Arch.X86
             {
                 get
                 {
-                    if (!this.isModRegMemActive)
+                    if (!this.modRegMemByte.HasValue)
                     {
                         throw new InvalidOperationException("The modrm byte was accessed without checking for validity. Check the code.");
                     }
-                    return this.modRegMemByte;
+                    return this.modRegMemByte.Value;
                 }
                 set
                 {
-                    this.isModRegMemActive = true;
                     this.modRegMemByte = value;
                 }
             }
@@ -266,6 +268,7 @@ namespace Reko.Arch.X86
         }
 
         private readonly IServiceProvider services;
+        private readonly Decoder[] rootDecoders;
         private readonly ProcessorMode mode;
 		private readonly PrimitiveType defaultDataWidth;
 		private readonly PrimitiveType defaultAddressWidth;
@@ -284,6 +287,7 @@ namespace Reko.Arch.X86
         /// 16-bit operation, PrimitiveType.Word32 for 32-bit operation.</param>
 		public X86Disassembler(
             IServiceProvider services,
+            Decoder[] rootDecoders,
             ProcessorMode mode,
             EndianImageReader rdr,
             PrimitiveType defaultWordSize,
@@ -291,8 +295,11 @@ namespace Reko.Arch.X86
             bool useRexPrefix)
 		{
             this.services = services;
+            this.rootDecoders = rootDecoders;
+            Debug.Assert(rootDecoders != null);
             this.mode = mode;
 			this.rdr = rdr;
+            this.addr = rdr.Address;
 			this.defaultDataWidth = defaultWordSize;
 			this.defaultAddressWidth = defaultAddressSize;
             this.isRegisterExtensionEnabled = useRexPrefix;
@@ -309,7 +316,7 @@ namespace Reko.Arch.X86
         /// to point at the first address after the instruction and returned to the caller.
         /// </summary>
         /// <returns>A single disassembled instruction.</returns>
-        public override X86Instruction DisassembleInstruction()
+        public override X86Instruction? DisassembleInstruction()
         {
             this.addr = rdr.Address;
             if (!rdr.TryReadByte(out byte op))
@@ -322,7 +329,7 @@ namespace Reko.Arch.X86
             this.decodingContext.iWidth = defaultDataWidth;
 
             X86Instruction instr;
-            if (s_rootDecoders[op].Decode(this, op))
+            if (rootDecoders[op].Decode(this, op))
             {
                 instr = decodingContext.MakeInstruction();
             }
@@ -340,7 +347,7 @@ namespace Reko.Arch.X86
             return new X86Instruction(Mnemonic.illegal, InstrClass.Invalid, decodingContext.dataWidth, decodingContext.addressWidth);
         }
 
-        public override X86Instruction NotYetImplemented(uint wInstr, string message)
+        public override X86Instruction NotYetImplemented(string message)
         {
             var testGenSvc = services.GetService<ITestGenerationService>();
             testGenSvc?.ReportMissingDecoder("X86Dis", this.addr, this.rdr, message);
@@ -561,7 +568,7 @@ namespace Reko.Arch.X86
             var addr = dasm.mode.CreateSegmentedAddress(seg, off);
             if (addr == null)
                 return false;
-            dasm.decodingContext.ops.Add(new X86AddressOperand(addr));
+            dasm.decodingContext.ops.Add(AddressOperand.Create(addr));
             return true;
         }
 
@@ -626,9 +633,27 @@ namespace Reko.Arch.X86
             else
                 width = PrimitiveType.Word16;
             var op = dasm.DecodeModRM(width, dasm.decodingContext.SegmentOverride, dasm.GpRegFromBits);
+            if (op is null)
+                return false;
             dasm.decodingContext.ops.Add(op);
             return true;
         }
+
+        // B: The VEX.vvvv field of the VEX prefix selects a general purpose register
+        private static Mutator<X86Disassembler> B(OperandType opType)
+        {
+            return (u, d) =>
+            {
+                var width = d.OperandWidth(opType);
+                d.decodingContext.iWidth = width;
+                var op = d.GpRegFromBits(d.decodingContext.VexRegister, width);
+                if (op == null)
+                    return false;
+                d.decodingContext.ops.Add(new RegisterOperand(op));
+                return true;
+            };
+        }
+        private static readonly Mutator<X86Disassembler> By = B(OperandType.y);
 
         // Floating-point ST(x)
         private static bool F(uint op, X86Disassembler d)
@@ -667,6 +692,7 @@ namespace Reko.Arch.X86
         private static readonly Mutator<X86Disassembler> Gb = G(OperandType.b);
         private static readonly Mutator<X86Disassembler> Gd = G(OperandType.d);
         private static readonly Mutator<X86Disassembler> Gv = G(OperandType.v);
+        private static readonly Mutator<X86Disassembler> Gw = G(OperandType.w);
         private static readonly Mutator<X86Disassembler> Gy = G(OperandType.y);
 
         // If VEX encoding, use vvvv register.
@@ -740,7 +766,9 @@ namespace Reko.Arch.X86
                 else if (d.defaultAddressWidth.BitSize == 32)
                     op = AddressOperand.Ptr32((uint) uAddr);
                 else
-                    op = new ImmediateOperand(Constant.Create(d.defaultAddressWidth, uAddr));
+                {
+                    op = new ImmediateOperand(Constant.Create(PrimitiveType.Offset16, uAddr));
+                }
                 d.decodingContext.ops.Add(op);
                 return true;
             };
@@ -1052,6 +1080,25 @@ namespace Reko.Arch.X86
             return true;
         }
 
+        private static bool rDX(uint u, X86Disassembler dasm)
+        {
+            RegisterStorage reg;
+            var bitsize = dasm.decodingContext.dataWidth.BitSize;
+            if (bitsize == 16)
+            {
+                reg = Registers.dx;
+            }
+            else
+            {
+                if (dasm.decodingContext.RegisterExtension.FlagWideValue)
+                    reg = Registers.rdx;
+                else
+                    reg = Registers.edx;
+            }
+            dasm.decodingContext.ops.Add(new RegisterOperand(reg));
+            return true;
+        }
+
         private static bool n1(uint u, X86Disassembler d)
         {
             var op = new ImmediateOperand(Constant.Byte(1));
@@ -1116,43 +1163,16 @@ namespace Reko.Arch.X86
             return new InstructionDecoder(op, iclass, mutators);
         }
 
-        public static Alternative64Decoder Amd64Instr(Decoder legacy, Decoder amd64)
-        {
-            return new Alternative64Decoder(legacy, amd64);
-        }
 
-        public static VexInstructionDecoder VexInstr(Mnemonic legacy, Mnemonic vex, params Mutator<X86Disassembler> [] mutators)
-        {
-            var legDec = Instr(legacy, mutators);
-            var vexDec = Instr(vex, mutators);
-            return new VexInstructionDecoder(legDec, vexDec);
-        }
 
-        public static VexInstructionDecoder VexInstr(Decoder legacy, Decoder vex)
-        {
-            return new VexInstructionDecoder(legacy, vex);
-        }
 
-        public static AddrWidthDecoder AddrWidthDependent(
-            Decoder bit16 = null,
-            Decoder bit32 = null, 
-            Decoder bit64 = null)
-        {
-            return new AddrWidthDecoder(
-                bit16 ?? s_invalid,
-                bit32 ?? s_invalid,
-                bit64 ?? s_invalid);
-        }
 
-        public static DataWidthDecoder DataWidthDependent(
-            Decoder bit16 = null,
-            Decoder bit32 = null,
-            Decoder bit64 = null)
+
+
+
+        public static MemRegDecoder MemReg(Decoder mem, Decoder reg)
         {
-            return new DataWidthDecoder(
-                bit16 ?? s_invalid,
-                bit32 ?? s_invalid,
-                bit64 ?? s_invalid);
+            return new MemRegDecoder(mem, reg);
         }
 
         public static NyiDecoder nyi(string message)
@@ -1179,7 +1199,7 @@ namespace Reko.Arch.X86
             return true;
 		}
 
-        // Operand types as defined by the Intel manual
+        // Operand types as defined by the Intel manual section A.2.2
         private enum OperandType
         {
             None,
@@ -1213,6 +1233,10 @@ namespace Reko.Arch.X86
 		/// <summary>
 		/// Returns the operand width of the operand type.
 		/// </summary>
+        /// <remarks>
+        /// This extends the specification of Intel's section A.2.2 "Codes for operand type"
+        /// to include BCD80.
+        /// </remarks>
 		private PrimitiveType OperandWidth(OperandType fmt)
 		{
 			switch (fmt)
@@ -1318,14 +1342,14 @@ namespace Reko.Arch.X86
 			RegisterStorage.None,
 		};
 
-		public ImmediateOperand CreateImmediateOperand(PrimitiveType immWidth)
+		public ImmediateOperand? CreateImmediateOperand(PrimitiveType immWidth)
 		{
             if (!rdr.TryReadLe(immWidth, out Constant c))
                 return null;
 			return new ImmediateOperand(c);
 		}
 
-		private MachineOperand DecodeModRM(PrimitiveType dataWidth, RegisterStorage segOverride, Func<int, PrimitiveType, RegisterStorage> regFn)
+		private MachineOperand? DecodeModRM(PrimitiveType dataWidth, RegisterStorage segOverride, Func<int, PrimitiveType, RegisterStorage> regFn)
 		{
             if (!TryEnsureModRM(out byte modRm))
                 return null;
@@ -1336,7 +1360,7 @@ namespace Reko.Arch.X86
 			RegisterStorage b;
             RegisterStorage idx;
 			byte scale = 1;
-			PrimitiveType offsetWidth = null;
+			PrimitiveType? offsetWidth = null;
 
 			if (decodingContext.addressWidth == PrimitiveType.Word16)
 			{
@@ -1458,44 +1482,10 @@ namespace Reko.Arch.X86
             };
 		}
 
-        private static readonly Decoder s_invalid;
-        private static readonly Decoder s_nyi;
-		private static readonly Decoder [] s_rootDecoders;
-		private static readonly Decoder [] s_decoders0F;
-		private static readonly Decoder [] s_decoders0F38;
-		private static readonly Decoder [] s_decoders0F3A;
-        private static Decoder [] Grp1;
-        private static Decoder [] Grp1A;
-        private static Decoder [] Grp2;
-        private static Decoder [] Grp3;
-        private static Decoder [] Grp4;
-        private static Decoder [] Grp5;
-        private static Decoder [] Grp6;
-        private static Decoder [] Grp7;
-        private static Decoder [] Grp8;
-        private static Decoder [] Grp9;
-        private static Decoder [] Grp10;
-        private static Decoder [] Grp11;
-        private static Decoder [] Grp12;
-        private static Decoder [] Grp13;
-        private static Decoder [] Grp14;
-        private static Decoder [] Grp15;
-        private static Decoder [] Grp16;
-        private static Decoder [] Grp17;
-        private static Decoder [] s_fpuDecoders;
-
+#nullable disable
         static X86Disassembler()
 		{
-            s_invalid = Instr(Mnemonic.illegal, InstrClass.Invalid);
-            s_nyi = nyi("This could be invalid or it could be not yet implemented");
-            CreateGroupDecoders();
-            s_rootDecoders = CreateOnebyteDecoders();
-            s_decoders0F = CreateTwobyteDecoders();
-            s_decoders0F38 = Create0F38Decoders();
-            s_decoders0F3A = Create0F3ADecoders();
-
-            s_fpuDecoders = CreateFpuDecoders();
-            Debug.Assert(s_fpuDecoders.Length == 8 * 0x48);
 		}
+#nullable enable
     }
 }

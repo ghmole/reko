@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Text;
 using System.Linq;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.X86.Assembler
 {
@@ -46,20 +47,21 @@ namespace Reko.Arch.X86.Assembler
             Load = 0xAC,
             Scan = 0xAE,
         }
+        private readonly Address addrBase;
+        private readonly PrimitiveType defaultWordSize;
+        private readonly AssembledSegment unknownSegment;
+        private readonly SymbolTable symtab;
+        private readonly List<ImageSymbol> entryPoints;
+        private readonly Dictionary<Address, ImportReference> importReferences;
+        private readonly List<AssembledSegment> segments;
+        private readonly Dictionary<string, AssembledSegment> mpNameToSegment;
+        private readonly Dictionary<Symbol, AssembledSegment> symbolSegments;        // The segment to which a symbol belongs.
         private IProcessorArchitecture arch;
-        private Address addrBase;
         private ModRmBuilder modRm;
-        private PrimitiveType defaultWordSize;
         private IEmitter emitter;
         private AssembledSegment currentSegment;
-        private AssembledSegment unknownSegment;
-        private SymbolTable symtab;
-        private List<ImageSymbol> entryPoints;
-        private Dictionary<Address, ImportReference> importReferences;
-        private List<AssembledSegment> segments;
-        private Dictionary<string, AssembledSegment> mpNameToSegment;
-        private Dictionary<Symbol, AssembledSegment> symbolSegments;        // The segment to which a symbol belongs.
 
+#nullable disable
         public X86Assembler(IntelArchitecture arch, Address addrBase, List<ImageSymbol> entryPoints)
         {
             this.arch = arch;
@@ -102,16 +104,17 @@ namespace Reko.Arch.X86.Assembler
             symbolSegments = new Dictionary<Symbol, AssembledSegment>();
             this.SegmentOverride = RegisterStorage.None;
             segments = program.SegmentMap.Segments.Values
-                .Select(seg => new AssembledSegment(new Emitter(seg.MemoryArea.Bytes), new Symbol(seg.Name)))
+                .Select(seg => new AssembledSegment(new Emitter(seg.MemoryArea), new Symbol(seg.Name)))
                 .ToList();
             if (!program.SegmentMap.TryFindSegment(addrStart, out var segmentToMutate))
                 throw new InvalidOperationException($"Address {addrStart} is not a valid location in the program.");
             var offset = addrStart - segmentToMutate.MemoryArea.BaseAddress;
-            var asmSeg = this.segments.Single(seg => seg.Symbol.sym == segmentToMutate.Name);
+            var asmSeg = this.segments.Single(seg => seg.Symbol!.sym == segmentToMutate.Name);
             asmSeg.Emitter.Position = (int)offset;
             SwitchSegment(asmSeg);
             SetDefaultWordWidth(defaultWordSize);
         }
+#nullable enable
 
         public int CurrentPosition => this.emitter.Position;
 
@@ -130,7 +133,7 @@ namespace Reko.Arch.X86.Assembler
         {
             var stm = new MemoryStream();
             LoadSegments(stm);
-            var mem = new MemoryArea(addrBase, stm.ToArray());
+            var mem = new ByteMemoryArea(addrBase, stm.ToArray());
             RelocateSegmentReferences(mem);
             return new Program(
                 new SegmentMap(
@@ -160,13 +163,13 @@ namespace Reko.Arch.X86.Assembler
             }
         }
 
-        private void RelocateSegmentReferences(MemoryArea image)
+        private void RelocateSegmentReferences(ByteMemoryArea bmem)
         {
             foreach (var seg in segments)
             {
                 foreach (var reloc in seg.Relocations)
                 {
-                    image.WriteLeUInt16((uint)((reloc.Segment.Selector - addrBase.Selector.Value) * 16u + reloc.Offset), seg.Selector);
+                    bmem.WriteLeUInt16((uint)((reloc.Segment.Selector - addrBase.Selector!.Value) * 16u + reloc.Offset), seg.Selector);
                 }
             }
         }
@@ -276,10 +279,10 @@ namespace Reko.Arch.X86.Assembler
                 new MemoryOperand(PrimitiveType.Byte, Constant.Create(AddressWidth, offset)));
         }
 
-        internal PrimitiveType EnsureValidOperandSize(ParsedOperand op)
+        internal PrimitiveType? EnsureValidOperandSize(ParsedOperand op)
         {
             PrimitiveType w = op.Operand.Width;
-            if (w == null)
+            if (w is null)
                 Error("Width of the operand is unknown");
             return w;
         }
@@ -301,9 +304,9 @@ namespace Reko.Arch.X86.Assembler
                 ops = new ParsedOperand[] { new ParsedOperand(new FpuOperand(0)), ops[0] };
             }
 
-            FpuOperand fop1 = ops[0].Operand as FpuOperand;
-            FpuOperand fop2 = ops.Length > 1 ? ops[1].Operand as FpuOperand : null;
-            MemoryOperand mop = ops[0].Operand as MemoryOperand;
+            FpuOperand? fop1 = ops[0].Operand as FpuOperand;
+            FpuOperand? fop2 = ops.Length > 1 ? ops[1].Operand as FpuOperand : null;
+            MemoryOperand? mop = ops[0].Operand as MemoryOperand;
             if (mop == null && ops.Length > 1)
                 mop = ops[1].Operand as MemoryOperand;
             if (mop != null)
@@ -314,13 +317,16 @@ namespace Reko.Arch.X86.Assembler
             }
             if (isPop)
             {
-                if (fop1 == null)
+                if (fop1 is null)
+                {
                     Error("First operand must be of type ST(n)");
+                    return;
+                }
                 EmitOpcode(opcodeFreg, null);
                 if (fixedOrder)
                     fpuOperation ^= 1;
                 if (fop1.StNumber == 0)
-                    EmitModRM(fpuOperation, new ParsedOperand(fop2, null));
+                    EmitModRM(fpuOperation, new ParsedOperand(fop2!, null));
                 else
                     EmitModRM(fpuOperation, new ParsedOperand(fop1, null));
                 return;
@@ -368,7 +374,7 @@ namespace Reko.Arch.X86.Assembler
 
         public void ProcessImul(params ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth;
+            PrimitiveType? dataWidth;
             if (ops.Length == 1)
             {
                 dataWidth = EnsureValidOperandSize(ops[0]);
@@ -378,8 +384,9 @@ namespace Reko.Arch.X86.Assembler
             else
             {
                 dataWidth = EnsureValidOperandSizes(ops, 2);
-                RegisterOperand regOp = ops[0].Operand as RegisterOperand;
-                if (regOp == null)
+                if (dataWidth is null)
+                    return;
+                if (!(ops[0].Operand is RegisterOperand regOp))
                     throw new ApplicationException("First operand must be a register");
                 if (IsWordWidth(regOp) == 0)
                     throw new ApplicationException("Destination register must be word-width");
@@ -392,8 +399,7 @@ namespace Reko.Arch.X86.Assembler
                 }
                 else
                 {
-                    ImmediateOperand op3 = ops[2].Operand as ImmediateOperand;
-                    if (op3 == null)
+                    if (!(ops[2].Operand is ImmediateOperand op3))
                         throw new ApplicationException("Third operand must be an immediate value");
                     if (IsSignedByte(op3.Value.ToInt32()))
                     {
@@ -413,9 +419,10 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessIncDec(bool fDec, ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
-            RegisterOperand regOp = op.Operand as RegisterOperand;
-            if (regOp != null)
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
+            if (op.Operand is RegisterOperand regOp)
             {
                 if (IsWordWidth(dataWidth) != 0)
                 {
@@ -429,8 +436,7 @@ namespace Reko.Arch.X86.Assembler
                 return;
             }
 
-            MemoryOperand memOp = op.Operand as MemoryOperand;
-            if (memOp != null)
+            if (op.Operand is MemoryOperand memOp)
             {
                 EmitOpcode(0xFE | IsWordWidth(dataWidth), dataWidth);
                 EmitModRM(fDec ? 1 : 0, op);
@@ -457,14 +463,12 @@ namespace Reko.Arch.X86.Assembler
                 opPort = ops[1];
             }
 
-            RegisterOperand regOpData = opData.Operand as RegisterOperand;
-            if (regOpData == null || IsAccumulator(regOpData.Register) == 0)
-                throw new ApplicationException("invalid register for in or out instruction");
+            if (!(opData.Operand is RegisterOperand regOpData) || IsAccumulator(regOpData.Register) == 0)
+                throw new ApplicationException("Invalid register for in or out instruction.");
 
             int opcode = IsWordWidth(regOpData) | (fOut ? 0xE6 : 0xE4);
 
-            RegisterOperand regOpPort = opPort.Operand as RegisterOperand;
-            if (regOpPort != null)
+            if (opPort.Operand is RegisterOperand regOpPort)
             {
                 if (regOpPort.Register == Registers.dx || regOpPort.Register == Registers.edx)
                 {
@@ -475,8 +479,7 @@ namespace Reko.Arch.X86.Assembler
                 return;
             }
 
-            ImmediateOperand immOp = opPort.Operand as ImmediateOperand;
-            if (immOp != null)
+            if (opPort.Operand is ImmediateOperand immOp)
             {
                 if (immOp.Value.ToUInt32() > 0xFF)
                 {
@@ -533,10 +536,12 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessMov(params ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSizes(ops, 2);
+            PrimitiveType? dataWidth = EnsureValidOperandSizes(ops, 2);
+            if (dataWidth is null)
+                return;
 
-            RegisterOperand regOpSrc = ops[1].Operand as RegisterOperand;
-            RegisterOperand regOpDst = ops[0].Operand as RegisterOperand;
+            RegisterOperand? regOpSrc = ops[1].Operand as RegisterOperand;
+            RegisterOperand? regOpDst = ops[0].Operand as RegisterOperand;
             if (regOpDst != null)	//$BUG: what about segment registers?
             {
                 byte reg = RegisterEncoding(regOpDst.Register);
@@ -552,8 +557,7 @@ namespace Reko.Arch.X86.Assembler
                         EmitModRM(reg, ops[1]);
                         return;
                     }
-                    MemoryOperand mopSrc = ops[1].Operand as MemoryOperand;
-                    if (mopSrc != null)
+                    if (ops[1].Operand is MemoryOperand mopSrc)
                     {
                         EmitOpcode(0x8E, PrimitiveType.Word16);
                         EmitModRM(reg, mopSrc, ops[1].Symbol);
@@ -582,16 +586,14 @@ namespace Reko.Arch.X86.Assembler
                     return;
                 }
 
-                MemoryOperand memOpSrc = ops[1].Operand as MemoryOperand;
-                if (memOpSrc != null)
+                if (ops[1].Operand is MemoryOperand memOpSrc)
                 {
                     EmitOpcode(0x8A | (isWord & 1), dataWidth);
                     EmitModRM(reg, memOpSrc, ops[1].Symbol);
                     return;
                 }
 
-                ImmediateOperand immOpSrc = ops[1].Operand as ImmediateOperand;
-                if (immOpSrc != null)
+                if (ops[1].Operand is ImmediateOperand immOpSrc)
                 {
                     EmitOpcode(0xB0 | (isWord << 3) | reg, dataWidth);
                     if (isWord != 0)
@@ -601,7 +603,7 @@ namespace Reko.Arch.X86.Assembler
 
                     if (ops[1].Symbol != null && isWord != 0)
                     {
-                        ReferToSymbol(ops[1].Symbol, emitter.Position - (int) immOpSrc.Width.Size, immOpSrc.Width);
+                        ReferToSymbol(ops[1].Symbol!, emitter.Position - (int) immOpSrc.Width.Size, immOpSrc.Width);
                     }
                     return;
                 }
@@ -644,10 +646,15 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessMovx(int opcode, ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(ops[1]);
-            RegisterOperand regDst = ops[0].Operand as RegisterOperand;
-            if (regDst == null)
+            PrimitiveType? dataWidth = EnsureValidOperandSize(ops[1]);
+            if (dataWidth is null)
+                return;
+
+            if (!(ops[0].Operand is RegisterOperand regDst))
+            {
                 Error("First operand must be a register");
+                return;
+            }
             EmitOpcode(0x0F, regDst.Width);
             emitter.EmitByte(opcode | IsWordWidth(dataWidth));
             EmitModRM(RegisterEncoding(regDst.Register), ops[1]);
@@ -655,7 +662,10 @@ namespace Reko.Arch.X86.Assembler
 
         public void Mul(ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
+
             // Single operand doesn't accept immediate values.
             if (op.Operand is ImmediateOperand)
                 Error("Immediate operand not allowed for single-argument multiplication");
@@ -664,13 +674,10 @@ namespace Reko.Arch.X86.Assembler
             EmitModRM(4, op);
         }
 
-
-
         internal void ProcessPushPop(bool fPop, ParsedOperand op)
         {
             int imm;
-            ImmediateOperand immOp = op.Operand as ImmediateOperand;
-            if (immOp != null)
+            if (op.Operand is ImmediateOperand immOp)
             {
                 if (fPop)
                     throw new ApplicationException("Can't pop an immediate value");
@@ -688,9 +695,11 @@ namespace Reko.Arch.X86.Assembler
                 return;
             }
 
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
-            RegisterOperand regOp = op.Operand as RegisterOperand;
-            if (regOp != null)
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
+
+            if (op.Operand is RegisterOperand regOp)
             {
                 var rrr = regOp.Register;
                 if (IsBaseRegister(rrr))
@@ -722,7 +731,9 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessSetCc(byte bits, ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
             if (dataWidth != PrimitiveType.Byte)
                 Error("Instruction takes only a byte operand");
             EmitOpcode(0x0F, dataWidth);
@@ -733,8 +744,9 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessShiftRotation(byte subOpcode, ParsedOperand dst, ParsedOperand count)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(dst);
-
+            PrimitiveType? dataWidth = EnsureValidOperandSize(dst);
+            if (dataWidth is null)
+                return;
             if (count.Operand is ImmediateOperand immOp)
             {
                 int imm = immOp.Value.ToInt32();
@@ -775,18 +787,16 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessTest(params ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSizes(ops, 2);
-
-            RegisterOperand regOpSrc;
+            var dataWidth = EnsureValidOperandSizes(ops, 2);
+            if (dataWidth is null)
+                return;
 
             byte isWord = (byte) ((dataWidth != PrimitiveType.Byte) ? 0xFF : 0);
 
-            RegisterOperand regOpDst = ops[0].Operand as RegisterOperand;
-            if (regOpDst != null)	//$BUG: what about segment registers?
+            if (ops[0].Operand is RegisterOperand regOpDst)	//$BUG: what about segment registers?
             {
                 byte reg = RegisterEncoding(regOpDst.Register);
-                regOpSrc = ops[1].Operand as RegisterOperand;
-                if (regOpSrc != null)
+                if (ops[1].Operand is RegisterOperand regOpSrc)
                 {
                     if (regOpSrc.Width != regOpDst.Width)
                         Error("Operand size mismatch");
@@ -795,16 +805,13 @@ namespace Reko.Arch.X86.Assembler
                     return;
                 }
 
-                MemoryOperand memOpSrc = ops[1].Operand as MemoryOperand;
-                if (memOpSrc != null)
+                if (ops[1].Operand is MemoryOperand memOpSrc)
                 {
                     EmitOpcode(0x84 | (isWord & 1), dataWidth);
                     EmitModRM(reg, ops[1]);
                     return;
                 }
-
-                ImmediateOperand immOpSrc = ops[1].Operand as ImmediateOperand;
-                if (immOpSrc != null)
+                else if (ops[1].Operand is ImmediateOperand immOpSrc)
                 {
                     EmitOpcode(0xF6 | (isWord & 1), dataWidth);
                     EmitModRM(0, ops[0]);
@@ -813,10 +820,11 @@ namespace Reko.Arch.X86.Assembler
                     else
                         emitter.EmitByte(immOpSrc.Value.ToInt32());
 
-                    if (ops[1].Symbol != null && isWord != 0)
+                    var sym = ops[1].Symbol;
+                    if (sym != null && isWord != 0)
                     {
                         Debug.Assert(immOpSrc.Value.ToUInt32() == 0);
-                        ReferToSymbol(ops[1].Symbol, emitter.Position - 2, PrimitiveType.Word16);
+                        ReferToSymbol(sym, emitter.Position - 2, PrimitiveType.Word16);
                     }
                     return;
                 }
@@ -833,13 +841,15 @@ namespace Reko.Arch.X86.Assembler
 
             if (ops[1].Symbol != null && isWord != 0)
             {
-                ReferToSymbol(ops[1].Symbol, emitter.Position - 2, PrimitiveType.Word16);
+                ReferToSymbol(ops[1].Symbol!, emitter.Position - 2, PrimitiveType.Word16);
             }
         }
 
         internal void ProcessUnary(int operation, ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
             EmitOpcode(0xF6 | IsWordWidth(dataWidth), dataWidth);
             EmitModRM(operation, op);
         }
@@ -880,8 +890,7 @@ namespace Reko.Arch.X86.Assembler
 
         internal void EmitModRM(int reg, ParsedOperand op, byte b)
         {
-            RegisterOperand regOp = op.Operand as RegisterOperand;
-            if (regOp != null)
+            if (op.Operand is RegisterOperand regOp)
             {
                 modRm.EmitModRM(reg, regOp);
                 emitter.EmitByte(b);
@@ -892,18 +901,22 @@ namespace Reko.Arch.X86.Assembler
             }
         }
 
-        internal void EmitModRM(int reg, MemoryOperand memOp, Symbol sym)
+        internal void EmitModRM(int reg, MemoryOperand memOp, Symbol? sym)
         {
-            Constant offset = modRm.EmitModRMPrefix(reg, memOp);
+            Constant? offset = modRm.EmitModRMPrefix(reg, memOp);
+            if (offset is null)
+                return;
             int offsetPosition = emitter.Position;
             EmitOffset(offset);
             if (sym != null)
                 ReferToSymbol(sym, offsetPosition, offset.DataType);
         }
 
-        internal void EmitModRM(int reg, MemoryOperand memOp, byte b, Symbol sym)
+        internal void EmitModRM(int reg, MemoryOperand memOp, byte b, Symbol? sym)
         {
-            Constant offset = modRm.EmitModRMPrefix(reg, memOp);
+            Constant? offset = modRm.EmitModRMPrefix(reg, memOp);
+            if (offset is null)
+                return;
             emitter.EmitByte(b);
             int offsetPosition = emitter.Position;
             EmitOffset(offset);
@@ -912,7 +925,7 @@ namespace Reko.Arch.X86.Assembler
         }
 
         // width of the address of this opcode.
-        public PrimitiveType AddressWidth { get; set; }
+        public PrimitiveType? AddressWidth { get; set; }
 
         // Default address width for this segment.
         public PrimitiveType SegmentAddressWidth { get; set; }
@@ -922,7 +935,7 @@ namespace Reko.Arch.X86.Assembler
 
         public RegisterStorage SegmentOverride { get; set; }
 
-        private bool IsDataWidthOverridden(PrimitiveType dataWidth)
+        private bool IsDataWidthOverridden(PrimitiveType? dataWidth)
         {
             return dataWidth != null &&
                 dataWidth.Domain != Domain.Real &&
@@ -930,7 +943,7 @@ namespace Reko.Arch.X86.Assembler
                 dataWidth != SegmentDataWidth;
         }
 
-		public void EmitOpcode(int b, PrimitiveType dataWidth)
+		public void EmitOpcode(int b, PrimitiveType? dataWidth)
 		{
 			if (SegmentOverride != RegisterStorage.None)
 			{
@@ -980,30 +993,30 @@ namespace Reko.Arch.X86.Assembler
         private void EmitReferenceToSymbolSegment(Symbol sym)
         {
             var seg = GetSymbolSegmentReference(sym);
-            seg.Relocations.Add(new AssembledSegment.Relocation { Segment=currentSegment, Offset=(uint) emitter.Position });
+            seg.Relocations.Add(new AssembledSegment.Relocation(currentSegment, (uint) emitter.Position));
             emitter.EmitLeUInt16(0);            // make space for the segment selector, will be overwritten at relocation time.
         }
 
         private AssembledSegment GetSymbolSegmentReference(Symbol sym)
         {
-            AssembledSegment seg;
-            if (symbolSegments.TryGetValue(sym, out seg))
+            if (symbolSegments.TryGetValue(sym, out AssembledSegment seg))
                 return seg;
             seg = new AssembledSegment(emitter, null);
             symbolSegments.Add(sym, seg);
             return seg;
         }
 
-        private PrimitiveType EnsureValidOperandSizes(ParsedOperand[] ops, int count)
+        private PrimitiveType? EnsureValidOperandSizes(ParsedOperand[] ops, int count)
         {
-            if (count == 0)
-                return null;
-            PrimitiveType w = ops[0].Operand.Width;
+            PrimitiveType? w = ops[0].Operand.Width;
             if (count == 1 && ops[0].Operand.Width == null)
+            {
                 Error("Width of the first operand is unknown");
+                return null;
+            }
             if (count == 2)
             {
-                if (w == null)
+                if (w is null)
                 {
                     w = ops[1].Operand.Width;
                     if (w == null)
@@ -1046,19 +1059,19 @@ namespace Reko.Arch.X86.Assembler
             modRm.Error += modRm_Error;
         }
 
-        private void SwitchSegment(AssembledSegment unknownSegment)
+        private void SwitchSegment(AssembledSegment newSegment)
         {
-            currentSegment = unknownSegment;
-            emitter = unknownSegment.Emitter;
+            currentSegment = newSegment;
+            emitter = newSegment.Emitter;
             modRm = new ModRmBuilder(defaultWordSize, emitter);
         }
 
 
-        private int IsWordWidth(PrimitiveType width)
+        private int IsWordWidth(PrimitiveType? width)
         {
-            if (width == null)
+            if (width is null)
                 Error("Operand width is undefined");
-            if (width.Size == 1)
+            else if (width.Size == 1)
                 return 0;
             return 1;
         }
@@ -1085,7 +1098,7 @@ namespace Reko.Arch.X86.Assembler
             return registerEncodings[reg];
         }
 
-        public static Constant IntegralConstant(int i, PrimitiveType width)
+        public static Constant IntegralConstant(int i, PrimitiveType? width)
         {
             if (-0x80 <= i && i < 0x80)
                 width = PrimitiveType.SByte;
@@ -1158,13 +1171,13 @@ namespace Reko.Arch.X86.Assembler
 
         public void i386()
         {
-            arch = new X86ArchitectureFlat32(arch.Services, "x86-protected-32");
+            arch = new X86ArchitectureFlat32(arch.Services, "x86-protected-32", new Dictionary<string, object>());
             SetDefaultWordWidth(PrimitiveType.Word32);
         }
 
         public void i86()
         {
-            arch = new X86ArchitectureReal(arch.Services, "x86-real-16");
+            arch = new X86ArchitectureReal(arch.Services, "x86-real-16", new Dictionary<string, object>());
             SetDefaultWordWidth(PrimitiveType.Word16);
         }
 
@@ -1211,6 +1224,8 @@ namespace Reko.Arch.X86.Assembler
         public void Fiadd(ParsedOperand operand)
         {
             var dataWidth = EnsureValidOperandSize(operand);
+            if (dataWidth is null)
+                return;
             int opcode;
             switch (dataWidth.Size)
             {
@@ -1224,7 +1239,9 @@ namespace Reko.Arch.X86.Assembler
 
         public void Fild(ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
+            var dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
             int opCode;
             int reg;
             switch (dataWidth.Size)
@@ -1240,7 +1257,9 @@ namespace Reko.Arch.X86.Assembler
 
         public void Fistp(ParsedOperand src)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(src);
+            var dataWidth = EnsureValidOperandSize(src);
+            if (dataWidth is null)
+                return;
             int opCode;
             int reg;
             switch (dataWidth.Size)
@@ -1273,17 +1292,17 @@ namespace Reko.Arch.X86.Assembler
 
         public void Fstsw(ParsedOperand dst)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(dst);
-            RegisterOperand regOp = dst.Operand as RegisterOperand;
-            if (regOp != null)
+            PrimitiveType? dataWidth = EnsureValidOperandSize(dst);
+            if (dataWidth is null)
+                return;
+            if (dst.Operand is RegisterOperand regOp)
             {
                 if (regOp.Register != Registers.ax)
                     Error("Register operand must be AX");
                 EmitOpcode(0xDF, dataWidth);
                 emitter.EmitByte(0xE0);
             }
-            MemoryOperand mop = dst.Operand as MemoryOperand;
-            if (mop != null)
+            if (dst.Operand is MemoryOperand)
             {
                 if (dataWidth != PrimitiveType.Word16)
                     Error("Destination must be two bytes");
@@ -1562,7 +1581,7 @@ namespace Reko.Arch.X86.Assembler
         {
             emitter.EmitByte(0xEA);
             emitter.EmitLeUInt16((ushort)address.Offset);
-            emitter.EmitLeUInt16(address.Selector.Value);
+            emitter.EmitLeUInt16(address.Selector!.Value);
         }
 
         public X86Assembler Label(string label)
@@ -1626,12 +1645,13 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessBinop(int binop, params ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSizes(ops, 2);
+            PrimitiveType? dataWidth = EnsureValidOperandSizes(ops, 2);
+            if (dataWidth is null)
+                return;
             if (ops[1].Operand is ImmediateOperand immOp)
             {
                 int imm = immOp.Value.ToInt32();
-                RegisterOperand regOpDst = ops[0].Operand as RegisterOperand;
-                if (regOpDst != null && IsAccumulator(regOpDst.Register) != 0)
+                if (ops[0].Operand is RegisterOperand regOpDst && IsAccumulator(regOpDst.Register) != 0)
                 {
                     EmitOpcode((binop << 3) | 0x04 | IsWordWidth(ops[0].Operand), dataWidth);
                     emitter.EmitLeImmediate(immOp.Value, dataWidth);
@@ -1667,7 +1687,7 @@ namespace Reko.Arch.X86.Assembler
                 return;
             }
 
-            if (ops[0].Operand is MemoryOperand memOpDst)
+            if (ops[0].Operand is MemoryOperand)
             {
                 RegisterOperand regOpSrc = (RegisterOperand) ops[1].Operand;
                 EmitOpcode((binop << 3) | 0x00 | IsWordWidth(ops[1].Operand), dataWidth);
@@ -1675,7 +1695,7 @@ namespace Reko.Arch.X86.Assembler
             }
             else
             {
-                RegisterOperand regOpDst = ops[0].Operand as RegisterOperand;
+                RegisterOperand regOpDst = (RegisterOperand) ops[0].Operand;
                 EmitOpcode((binop << 3) | 0x02 | IsWordWidth(regOpDst), dataWidth);
                 EmitModRM(RegisterEncoding(regOpDst.Register), ops[1]);
             }
@@ -1683,7 +1703,10 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessBitOp(ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(ops[0]);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(ops[0]);
+            if (dataWidth is null)
+                return;
+
             if (ops[1].Operand is ImmediateOperand imm2)
             {
                 EmitOpcode(0x0F, dataWidth);
@@ -1701,15 +1724,19 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessBitScan(byte opCode, ParsedOperand dst, ParsedOperand src)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(src);
-            RegisterOperand regDst = dst.Operand as RegisterOperand;
-            if (regDst == null)
+            PrimitiveType? dataWidth = EnsureValidOperandSize(src);
+            if (dataWidth is null)
+                return;
+
+            if (!(dst.Operand is RegisterOperand regDst))
+            {
                 Error("First operand of bit scan instruction must be a register");
+                return;
+            }
             EmitOpcode(0x0F, dataWidth);
             emitter.EmitByte(opCode);
             EmitModRM(RegisterEncoding(regDst.Register), src);
         }
-
 
         internal void ProcessCallJmp(bool far, int direct, string destination)
         {
@@ -1738,26 +1765,32 @@ namespace Reko.Arch.X86.Assembler
 
         internal void ProcessDiv(int operation, ParsedOperand op)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op);
+            if (dataWidth is null)
+                return;
+
             EmitOpcode(0xF6 | IsWordWidth(dataWidth), dataWidth);
             EmitModRM(operation, op);
         }
 
         internal void ProcessDoubleShift(byte bits, ParsedOperand op0, ParsedOperand op1, ParsedOperand count)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSize(op0);
+            PrimitiveType? dataWidth = EnsureValidOperandSize(op0);
+            if (dataWidth is null)
+                return;
 
-            RegisterOperand regSrc = op1.Operand as RegisterOperand;
-            if (regSrc == null)
+            if (!(op1.Operand is RegisterOperand regSrc))
+            {
                 Error("Second operand of SHLD/SHRD must be a register");
+                return;
+            }
 
-            ImmediateOperand immShift = count.Operand as ImmediateOperand;
-            RegisterOperand regShift = count.Operand as RegisterOperand;
-            if (regShift != null && regShift.Register == Registers.cl)
+            ImmediateOperand? immShift = count.Operand as ImmediateOperand;
+            if (count.Operand is RegisterOperand regShift && regShift.Register == Registers.cl)
             {
                 bits |= 0x01;
             }
-            else if (immShift == null)
+            else if (immShift is null)
             {
                 Error("SHLD/SHRD instruction must be followed by a constant or CL");
             }
@@ -1769,7 +1802,7 @@ namespace Reko.Arch.X86.Assembler
                 emitter.EmitByte((byte) immShift.Value.ToUInt32());
         }
 
-        public void AddImport(string moduleName, string fnName,  PrimitiveType size)
+        public void AddImport(string? moduleName, string fnName,  PrimitiveType size)
         {
             Address u =  (addrBase + emitter.Position);
             ImportReferences.Add(u, new NamedImportReference(u, Path.GetFileNameWithoutExtension(moduleName), fnName, SymbolType.ExternalProcedure));
@@ -2019,16 +2052,18 @@ namespace Reko.Arch.X86.Assembler
 
         internal void Xchg(ParsedOperand[] ops)
         {
-            PrimitiveType dataWidth = EnsureValidOperandSizes(ops, 2);
-            RegisterOperand regOp = ops[0].Operand as RegisterOperand;
+            PrimitiveType? dataWidth = EnsureValidOperandSizes(ops, 2);
+            if (dataWidth is null)
+                return;
             ParsedOperand otherOp = ops[1];
-            if (regOp == null)
+            if (!(ops[0].Operand is RegisterOperand regOp))
             {
-                regOp = ops[1].Operand as RegisterOperand;
-                if (regOp == null)
+                if (!(ops[1].Operand is RegisterOperand regOp2))
                 {
                     Error("One operand must be a register.");
+                    return;
                 }
+                regOp = regOp2;
                 otherOp = ops[0];
             }
             EmitOpcode(0x86 | IsWordWidth(regOp), dataWidth);
@@ -2249,20 +2284,19 @@ namespace Reko.Arch.X86.Assembler
 
         private ParsedOperand Mem(
             PrimitiveType width, 
-            RegisterStorage seg, 
-            RegisterStorage @base,  
-            RegisterStorage index, 
+            RegisterStorage? seg, 
+            RegisterStorage? @base,  
+            RegisterStorage? index, 
             int scale, 
             string offset)
         {
-            int val;
             MemoryOperand mem;
-            Symbol sym = null;
+            Symbol? sym = null;
             if (offset != null)
             {
-                if (symtab.Equates.TryGetValue(offset, out val))
+                if (symtab.Equates.TryGetValue(offset, out int val))
                 {
-                    mem = new MemoryOperand(width, @base, IntegralConstant(val, @base.DataType));
+                    mem = new MemoryOperand(width, @base ?? RegisterStorage.None, IntegralConstant(val, @base!.DataType));
                     sym = null;
                 }
                 else
@@ -2290,7 +2324,7 @@ namespace Reko.Arch.X86.Assembler
             mem.Scale = (byte)scale;
             if (scale > 1)
             {
-                if (index == null)
+                if (index is null)
                 {
                     mem.Index = mem.Base;
                     mem.Base = RegisterStorage.None;
@@ -2298,7 +2332,7 @@ namespace Reko.Arch.X86.Assembler
                 else
                 {
                     mem.Index = index;
-                    mem.Base = @base;
+                    mem.Base = @base!;
                 }
             }
             return new ParsedOperand(mem, sym);

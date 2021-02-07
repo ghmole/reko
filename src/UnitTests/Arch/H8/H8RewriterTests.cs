@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.H8;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System.Collections.Generic;
 
@@ -33,7 +34,7 @@ namespace Reko.UnitTests.Arch.H8
 
         public H8RewriterTests()
         {
-            this.arch = new H8Architecture(CreateServiceContainer(), "h8");
+            this.arch = new H8Architecture(CreateServiceContainer(), "h8", new Dictionary<string, object>());
             this.addrLoad = Address.Ptr16(0x8000);
         }
 
@@ -147,7 +148,7 @@ namespace Reko.UnitTests.Arch.H8
             Given_HexString("1773");
             AssertCode(     // extu.l	er3
                 "0|L--|8000(2): 4 instructions",
-                "1|L--|er3 = (uint32) r3",
+                "1|L--|er3 = CONVERT(r3, word16, uint32)",
                 "2|L--|Z = cond(er3)",
                 "3|L--|N = false",
                 "4|L--|V = false");
@@ -198,7 +199,7 @@ namespace Reko.UnitTests.Arch.H8
             Given_HexString("5012");
             AssertCode(     // mulxu.b	r1h,r2h
                 "0|L--|8000(2): 1 instructions",
-                "1|L--|r2 = r2h *u r1h");
+                "1|L--|r2 = r2h *u16 r1h");
         }
 
         [Test]

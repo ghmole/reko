@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.NativeInterface;
 using Reko.Core.Rtl;
 using Reko.Core.Serialization;
@@ -44,7 +45,8 @@ namespace Reko.Arch.Arm
         private readonly Dictionary<int, RegisterStorage> regsByNumber;
         private readonly Dictionary<uint, FlagGroupStorage> flagGroups;
 
-        public ThumbArchitecture(IServiceProvider services, string archId) : base(services, archId)
+        public ThumbArchitecture(IServiceProvider services, string archId, Dictionary<string, object> options)
+            : base(services, archId, options)
         {
             this.Endianness = EndianServices.Little;
             this.FramePointerType = PrimitiveType.Ptr32;

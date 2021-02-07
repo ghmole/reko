@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace Reko.UnitTests.Arch.M6800
 
         public M6812DisassemblerTests()
         {
-            this.arch = new M6812Architecture(new ServiceContainer(), "m6812");
+            this.arch = new M6812Architecture(new ServiceContainer(), "m6812", new Dictionary<string, object>());
             this.addrLoad = Address.Ptr16(0);
         }
 

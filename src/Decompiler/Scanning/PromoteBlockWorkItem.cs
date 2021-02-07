@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,7 +54,6 @@ namespace Reko.Scanning
             var movedBlocks = new HashSet<Block>();
             var stack = new Stack<IEnumerator<Block>>();
             stack.Push(new Block[] { Block }.Cast<Block>().GetEnumerator());
-            var replacer = new IdentifierRelocator(ProcNew.Frame);
             while (stack.Count != 0)
             {
                 DumpBlocks(Block.Procedure);
@@ -68,7 +67,8 @@ namespace Reko.Scanning
                 if (b.Procedure == ProcNew || b == b.Procedure.ExitBlock || b.Procedure.EntryBlock.Succ[0] == b)
                     continue;
 
-                trace.Verbose("PBW:     Visiting block {0}, stack depth {1}", b.Name, stack.Count);
+                trace.Verbose("PBW:     Visiting block {0}, stack depth {1}", b.DisplayName, stack.Count);
+                var replacer = new IdentifierRelocator(b.Procedure.Frame, ProcNew.Frame);
                 b.Procedure.RemoveBlock(b);
                 ProcNew.AddBlock(b);
                 b.Procedure = ProcNew;
@@ -101,13 +101,13 @@ namespace Reko.Scanning
             trace.Verbose("{0}", procedure.Name);
             foreach (var block in procedure.ControlGraph.Blocks)
             {
-                trace.Verbose("  {0}; {1}", block.Name, block.Procedure.Name);
+                trace.Verbose("  {0}; {1}", block.DisplayName, block.Procedure.Name);
             }
         }
 
         public void FixInboundEdges(Block blockToPromote)
         {
-            trace.Verbose("PBW: Fixing inbound edges of {0}", blockToPromote.Name);
+            trace.Verbose("PBW: Fixing inbound edges of {0}", blockToPromote.DisplayName);
 
             // Get all blocks that are from "outside" blocks.
             var inboundBlocks = blockToPromote.Pred.Where(p => p.Procedure != ProcNew).ToArray();
@@ -149,7 +149,7 @@ namespace Reko.Scanning
 
         public void FixOutboundEdges(Block block)
         {
-            trace.Verbose("PBW: Fixing outbound edges of {0}", block.Name);
+            trace.Verbose("PBW: Fixing outbound edges of {0}", block.DisplayName);
             for (int i = 0; i < block.Succ.Count; ++i)
             {
                 var s = block.Succ[i];
@@ -178,7 +178,7 @@ namespace Reko.Scanning
 
         private void FixExitEdges(Block block)
         {
-            trace.Verbose("PBW: Fixing exit edges of {0}", block.Name);
+            trace.Verbose("PBW: Fixing exit edges of {0}", block.DisplayName);
             for (int i = 0; i < block.Succ.Count; ++i)
             {
                 var s = block.Succ[i];

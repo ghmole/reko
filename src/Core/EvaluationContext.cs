@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
  * the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #endregion
+
+#pragma warning disable IDE1006
 
 using Reko.Core.Expressions;
 using System;
@@ -45,6 +47,8 @@ namespace Reko.Core
     /// </remarks>
     public interface EvaluationContext
     {
+        EndianServices Endianness { get; }
+
         /// <summary>
         /// Gets the symbolic value of the identifier <paramref name="id"/>.
         /// </summary>
@@ -79,5 +83,13 @@ namespace Reko.Core
 
         bool IsUsedInPhi(Identifier id);
         Expression MakeSegmentedAddress(Constant c1, Constant c2);
+
+        /// <summary>
+        /// Reinterprets a string of raw bits as a floating point number appropriate
+        /// for the current architecture.
+        /// </summary>
+        /// <param name="rawBits">Raw bits to be interpreted.</param>
+        /// <returns></returns>
+        Constant ReinterpretAsFloat(Constant rawBits);
     }
 }

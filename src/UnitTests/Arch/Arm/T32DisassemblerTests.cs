@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using NUnit.Framework;
 using Reko.Arch.Arm;
 using Reko.Core;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
 
@@ -35,7 +36,7 @@ namespace Reko.UnitTests.Arch.Arm
 
         protected override IProcessorArchitecture CreateArchitecture()
         {
-            return new ThumbArchitecture(new ServiceContainer(), "arm-thumb");
+            return new ThumbArchitecture(new ServiceContainer(), "arm-thumb", new Dictionary<string, object>());
         }
 
         protected MachineInstruction Disassemble16(params ushort[] instrs)
@@ -58,9 +59,9 @@ namespace Reko.UnitTests.Arch.Arm
             {
                 w.WriteLeUInt16(instr);
             }
-            var image = new MemoryArea(Address.Ptr32(0x00100000), w.ToArray());
+            var mem = new ByteMemoryArea(Address.Ptr32(0x00100000), w.ToArray());
             var arch = CreateArchitecture();
-            this.dasm = CreateDisassembler(arch, image.CreateLeReader(0));
+            this.dasm = CreateDisassembler(arch, mem.CreateLeReader(0));
         }
 
         private void AssertCode(string sExp, params ushort[] instrs)

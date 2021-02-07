@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Output;
 using Reko.Core.Types;
 using System;
@@ -48,7 +49,6 @@ namespace Reko.Core
 
         public void Dump(Formatter formatter)
         {
-            var map = program.SegmentMap;
             var mappedItems = program.GetItemsBySegment();
             Dump(mappedItems, formatter);
         }
@@ -89,7 +89,7 @@ namespace Reko.Core
                 }
                 else
                 {
-                    formatter.Write(block.Block.Name);
+                    formatter.Write(block.Block.DisplayName);
                     formatter.Write(":");
                     formatter.WriteLine();
                 }
@@ -249,13 +249,15 @@ namespace Reko.Core
             var dasm = arch.CreateDisassembler(arch.CreateImageReader(segment.MemoryArea, addrStart));
             try
             {
-                var writer = new InstrWriter(program.Platform, addrStart, formatter);
+                var writer = new InstrWriter(formatter);
+                var options = new MachineInstructionRendererOptions(
+                    flags: MachineInstructionRendererFlags.ResolvePcRelativeAddress,
+                    syntax: "");
                 foreach (var instr in dasm)
                 {
-                    writer.Address = instr.Address!;
                     if (instr.Address! >= addrLast)
                         break;
-                    if (!DumpAssemblerLine(segment.MemoryArea, arch, instr, writer))
+                    if (!DumpAssemblerLine(segment.MemoryArea, arch, instr, writer, options))
                         break;
                 }
             }
@@ -266,24 +268,27 @@ namespace Reko.Core
             }
         }
 
-        public bool DumpAssemblerLine(MemoryArea mem, IProcessorArchitecture arch, MachineInstruction instr, InstrWriter writer)
+        public bool DumpAssemblerLine(
+            MemoryArea mem, 
+            IProcessorArchitecture arch, 
+            MachineInstruction instr, 
+            InstrWriter writer,
+            MachineInstructionRendererOptions options)
         {
-            var instrAddress = instr.Address!;
+            var instrAddress = instr.Address;
             Address addrBegin = instrAddress;
             if (ShowAddresses)
                 writer.WriteFormat("{0} ", addrBegin);
             if (ShowCodeBytes)
             {
-                WriteByteRange(mem, arch, instrAddress, instrAddress + instr.Length, writer);
+                WriteOpcodes(mem, arch, instrAddress, instrAddress + instr.Length, writer);
                 if (instr.Length * 3 < 16)
                 {
                     writer.WriteString(new string(' ', 16 - (instr.Length * 3)));
                 }
             }
             writer.WriteString("\t");
-            writer.Address = addrBegin;
-            writer.Address = instrAddress;
-            instr.Render(writer, MachineInstructionWriterOptions.ResolvePcRelativeAddress);
+            instr.Render(writer, options);
             writer.WriteLine();
             return true;
         }
@@ -316,7 +321,7 @@ namespace Reko.Core
             w.Write("\t");
         }
 
-        public void WriteByteRange(MemoryArea image, IProcessorArchitecture arch, Address begin, Address addrEnd, InstrWriter writer)
+        public void WriteOpcodes(MemoryArea image, IProcessorArchitecture arch, Address begin, Address addrEnd, InstrWriter writer)
 		{
 			EndianImageReader rdr = arch.CreateImageReader(image, begin);
             var byteSize = (7 + arch.InstructionBitSize) / 8;
@@ -325,27 +330,43 @@ namespace Reko.Core
 
             while (rdr.Address < addrEnd)
 			{
-                var v = rdr.Read(instrByteSize);
-                writer.WriteFormat(instrByteFormat, v.ToUInt64());
+                if (rdr.TryRead(instrByteSize, out var v))
+                    writer.WriteFormat(instrByteFormat, v.ToUInt64());
 			}
 		}
 
-        public class InstrWriter : MachineInstructionWriter
+        public class InstrWriter : MachineInstructionRenderer
         {
             private readonly Formatter formatter;
             private int chars;
             private readonly List<string> annotations;
+            private Address addrInstr;
 
-            public InstrWriter(IPlatform platform, Address addr, Formatter formatter)
+            public InstrWriter(Formatter formatter)
             {
-                this.Platform = platform;
-                this.Address = addr;
                 this.formatter = formatter;
                 this.annotations = new List<string>();
+                this.addrInstr = Address.Ptr32(0);
             }
 
-            public IPlatform Platform { get; }
-            public Address Address { get; set; }
+            public Address Address => addrInstr;
+
+            public void BeginInstruction(Address addr)
+            {
+                this.addrInstr = addr;
+            }
+
+            public void EndInstruction()
+            {
+            }
+
+            public void BeginOperand()
+            {
+            }
+
+            public void EndOperand()
+            {
+            }
 
             public void Tab()
             {
@@ -466,6 +487,12 @@ namespace Reko.Core
             {
                 WritePrefix();
                 w.WriteHyperlink(text, href);
+            }
+
+            public override void WriteLabel(string label, object block)
+            {
+                WritePrefix();
+                w.Write(label);
             }
 
             public override void WriteKeyword(string keyword)

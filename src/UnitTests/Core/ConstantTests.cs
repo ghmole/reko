@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -154,6 +154,21 @@ namespace Reko.UnitTests.Core
             Assert.AreEqual("0x8000<u16>", Constant.UInt16(0x7FFF).Complement().ToString());
             Assert.AreEqual("0x80000000<u32>", Constant.UInt32(0x7FFFFFFF).Complement().ToString());
             Assert.AreEqual("0x8000000000000000<u64>", Constant.UInt64(0x7FFFFFFFFFFFFFFF).Complement().ToString());
+        }
+
+        [Test]
+        public void ConIsMaxUnsigned()
+        {
+            Assert.IsTrue(Constant.SByte(-1).IsMaxUnsigned);
+            Assert.IsTrue(Constant.Byte(0xFF).IsMaxUnsigned);
+            Assert.IsTrue(Constant.Int16(-1).IsMaxUnsigned);
+            Assert.IsTrue(Constant.UInt16(0xFFFF).IsMaxUnsigned);
+            Assert.IsTrue(Constant.Int32(-1).IsMaxUnsigned);
+            Assert.IsTrue(Constant.UInt32(~0u).IsMaxUnsigned);
+            Assert.IsTrue(Constant.Int32(-1).IsMaxUnsigned);
+            Assert.IsTrue(Constant.UInt32(~0u).IsMaxUnsigned);
+            Assert.IsTrue(Constant.Int64(-1L).IsMaxUnsigned);
+            Assert.IsTrue(Constant.UInt64(~0UL).IsMaxUnsigned);
         }
 
     }

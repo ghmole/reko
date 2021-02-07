@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -188,7 +188,7 @@ namespace Reko.UnitTests.Core.Serialization
                 throw new NotImplementedException();
             }
 
-            public override int GetByteSizeFromCBasicType(CBasicType cb)
+            public override int GetBitSizeFromCBasicType(CBasicType cb)
             {
                 throw new NotImplementedException();
             }
@@ -390,14 +390,22 @@ namespace Reko.UnitTests.Core.Serialization
                 OsPath.Absolute("meta1.xml"),
                 this.platform.Object,
                 new TypeLibrary(
-                    false, types1, new Dictionary<string, FunctionType>(), new Dictionary<string, DataType>()
+                    false,
+                    types1,
+                    new Dictionary<string, FunctionType>(),
+                    new Dictionary<string, ProcedureCharacteristics>(),
+                    new Dictionary<string, DataType>()
                 )
             );
             mockFactory.CreateLoadMetadataStub(
                 OsPath.Absolute("meta2.xml"),
                 this.platform.Object,
                 new TypeLibrary(
-                    false, types2, new Dictionary<string, FunctionType>(), new Dictionary<string, DataType>()
+                    false,
+                    types2,
+                    new Dictionary<string, FunctionType>(),
+                    new Dictionary<string, ProcedureCharacteristics>(),
+                    new Dictionary<string, DataType>()
                 )
             );
 

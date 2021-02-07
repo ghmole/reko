@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -82,35 +82,35 @@ namespace Reko.Arch.Avr.Avr32
             return mem;
         }
 
-        public override void Write(MachineInstructionWriter writer, MachineInstructionWriterOptions options)
+        protected override void DoRender(MachineInstructionRenderer renderer, MachineInstructionRendererOptions options)
         {
             if (this.PreDecrement)
             {
-                writer.WriteString("--");
-                writer.WriteString(Base.Name);
+                renderer.WriteString("--");
+                renderer.WriteString(Base.Name);
                 return;
             }
             if (this.PostIncrement)
             {
-                writer.WriteString(Base.Name);
-                writer.WriteString("++");
+                renderer.WriteString(Base.Name);
+                renderer.WriteString("++");
                 return;
             }
-            writer.WriteString(Base.Name);
-            writer.WriteString("[");
+            renderer.WriteString(Base.Name);
+            renderer.WriteString("[");
             if (Index != null)
             {
-                writer.WriteString(Index.Name);
+                renderer.WriteString(Index.Name);
                 if (Shift > 0)
                 {
-                    writer.WriteFormat("<<{0}", Shift);
+                    renderer.WriteFormat("<<{0}", Shift);
                 }
             }
             else
             {
-                writer.WriteFormat("{0}", Offset);
+                renderer.WriteFormat("{0}", Offset);
             }
-            writer.WriteString("]");
+            renderer.WriteString("]");
         }
     }
 }

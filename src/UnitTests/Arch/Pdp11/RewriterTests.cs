@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,13 +28,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.Pdp11
 {
     [TestFixture]
     public class RewriterTests : RewriterTestBase
     {
-        private Pdp11Architecture arch = new Pdp11Architecture(CreateServiceContainer(), "pdp11");
+        private Pdp11Architecture arch = new Pdp11Architecture(CreateServiceContainer(), "pdp11", new Dictionary<string, object>());
         private Address addrBase = Address.Ptr16(0x0200);
 
         public override IProcessorArchitecture Architecture
@@ -84,7 +85,7 @@ namespace Reko.UnitTests.Arch.Pdp11
             Given_UInt16s(0x92C2);
             AssertCode(
                 "0|L--|0200(2): 3 instructions",
-                "1|L--|r2 = (int16) Mem0[r3:byte]",
+                "1|L--|r2 = CONVERT(Mem0[r3:byte], byte, int16)",
                 "2|L--|NZ = cond(r2)",
                 "3|L--|V = false");
         }
@@ -368,7 +369,7 @@ namespace Reko.UnitTests.Arch.Pdp11
             AssertCode(
                 "0|L--|0200(4): 4 instructions",
                 "1|L--|v3 = r0_r1",
-                "2|L--|r0 = v3 / 0xC8<16>",
+                "2|L--|r0 = v3 /16 0xC8<16>",
                 "3|L--|r1 = v3 % 0xC8<16>",
                 "4|L--|NZVC = cond(r0)");
         }

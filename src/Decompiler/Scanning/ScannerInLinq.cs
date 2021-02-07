@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ using System.Text;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -202,11 +203,11 @@ namespace Reko.Scanning
             while (e.MoveNext())
             {
                 var next = e.Current;
-                yield return (prev, item, next);
+                yield return (prev!, item, next!);
                 prev = item;
                 item = next;
             }
-            yield return (prev, item, default(T));
+            yield return (prev!, item, default(T)!);
         }
 
         /// <summary>
@@ -230,12 +231,12 @@ namespace Reko.Scanning
             // Determine an architecture for the item.
             var prevArch = GetBlockArchitecture(prev);
             var nextArch = GetBlockArchitecture(next);
-            IProcessorArchitecture? arch = null;
-            if (prevArch == null)
+            IProcessorArchitecture? arch;
+            if (prevArch is null)
             {
                 arch = nextArch ?? program.Architecture;
             }
-            else if (nextArch == null)
+            else if (nextArch is null)
             {
                 arch = prevArch ?? program.Architecture;
             }

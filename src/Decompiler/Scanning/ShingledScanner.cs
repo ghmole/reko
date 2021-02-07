@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using System;
@@ -168,7 +169,7 @@ namespace Reko.Scanning
 
             var y = new byte[cbAlloc];
             // Advance by the instruction granularity.
-            var step = program.Architecture.InstructionBitSize / 8;
+            var step = program.Architecture.InstructionBitSize / program.Architecture.MemoryGranularity;
             
             // Align the start address to instruction granularity. If we align off 
             // into invalid memory, return immediately.
@@ -603,7 +604,9 @@ namespace Reko.Scanning
             var rdr = program.CreateImageReader(arch, seg.Address);
             while (rdr.TryRead(program.Platform.PointerType, out Constant c))
             {
-                yield return program.Architecture.MakeAddressFromConstant(c, false);
+                var addr = program.Architecture.MakeAddressFromConstant(c, false);
+                if (addr != null)
+                    yield return addr;
             }
         }
 

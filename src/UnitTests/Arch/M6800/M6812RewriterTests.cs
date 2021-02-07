@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 
 namespace Reko.UnitTests.Arch.M6800
@@ -19,7 +20,7 @@ namespace Reko.UnitTests.Arch.M6800
 
         public M6812RewriterTests()
         {
-            this.arch = new Reko.Arch.M6800.M6812Architecture(CreateServiceContainer(), "m6812");
+            this.arch = new Reko.Arch.M6800.M6812Architecture(CreateServiceContainer(), "m6812", new Dictionary<string, object>());
             this.addr = Address.Ptr16(0);
         }
 
@@ -30,7 +31,7 @@ namespace Reko.UnitTests.Arch.M6800
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
             return arch.CreateRewriter(
-                new BeImageReader(mem, mem.BaseAddress),
+                arch.CreateImageReader(mem, mem.BaseAddress),
                 arch.CreateProcessorState(),
                 binder,
                 host);
@@ -197,7 +198,7 @@ namespace Reko.UnitTests.Arch.M6800
             Given_HexString("E4F4");
             AssertCode(     // andb\ta,sp
                 "0|L--|0000(2): 3 instructions",
-                "1|L--|b = b & Mem0[sp + (uint16) a:byte]",
+                "1|L--|b = b & Mem0[sp + CONVERT(a, byte, uint16):byte]",
                 "2|L--|NZ = cond(b)",
                 "3|L--|V = false");
         }

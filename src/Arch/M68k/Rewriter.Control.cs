@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -85,24 +85,31 @@ namespace Reko.Arch.M68k
                 instr.Address + instr.Length,
                 InstrClass.ConditionalTransfer);
             m.SideEffect(
-                host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, m.Byte(6)));
+                host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance, m.Byte(6)));
         }
 
         private void RewriteChk2()
         {
             var reg = orw.RewriteSrc(instr.Operands[1], instr.Address);
             var lowBound = orw.RewriteSrc(instr.Operands[0], instr.Address);
-            var ea = ((MemoryAccess)lowBound).EffectiveAddress;
-            var hiBound = m.Mem(lowBound.DataType, m.IAdd(ea, lowBound.DataType.Size));
-            m.Branch(
-                m.Cand(
-                    m.Ge(reg, lowBound),
-                    m.Le(reg, hiBound)),
-                instr.Address + instr.Length,
-                InstrClass.ConditionalTransfer);
-                new RtlSideEffect(
-                    host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, m.Byte(6)),
+            if (lowBound is MemoryAccess memLo)
+            {
+                var ea = memLo.EffectiveAddress;
+                var hiBound = m.Mem(lowBound.DataType, m.IAdd(ea, lowBound.DataType.Size));
+                m.Branch(
+                    m.Cand(
+                        m.Ge(reg, lowBound),
+                        m.Le(reg, hiBound)),
+                    instr.Address + instr.Length,
+                    InstrClass.ConditionalTransfer);
+                m.SideEffect(
+                    host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance, m.Byte(6)),
                     InstrClass.Linear);
+            }
+            else
+            {
+                EmitInvalid();
+            }
         }
 
         private void RewriteJmp()
@@ -156,7 +163,7 @@ namespace Reko.Arch.M68k
         {
             if (this.instr.Operands.Length > 0)
             {
-                m.SideEffect(host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, RewriteSrcOperand(this.instr.Operands[0])));
+                m.SideEffect(host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance, RewriteSrcOperand(this.instr.Operands[0])));
                 iclass = InstrClass.Call | InstrClass.Transfer;
             }
             else
@@ -179,6 +186,14 @@ namespace Reko.Arch.M68k
             EmitInvalid();
         }
 
+        private void RewriteRtr()
+        {
+            var sp = binder.EnsureRegister(arch.StackRegister);
+            m.Assign(binder.EnsureRegister(Registers.ccr), m.Mem16(sp));
+            m.Assign(sp, m.IAddS(sp, 2));
+            m.Return(4, 0);
+        }
+
         private void RewriteRts()
         {
             m.Return(4, 0);
@@ -186,13 +201,13 @@ namespace Reko.Arch.M68k
 
         private void RewriteStop()
         {
-            m.SideEffect(host.PseudoProcedure("__stop", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__stop", false, VoidType.Instance));
         }
 
         private void RewriteTrap()
         {
             var vector = orw.RewriteSrc(instr.Operands[0], instr.Address);
-            m.SideEffect(host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, vector));
+            m.SideEffect(host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance, vector));
         }
 
         private void RewriteTrapCc(ConditionCode cc, FlagM flags)
@@ -215,7 +230,7 @@ namespace Reko.Arch.M68k
             {
                 args.Add(orw.RewriteSrc(instr.Operands[0], instr.Address));
             }
-            m.SideEffect(host.PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, args.ToArray()));
+            m.SideEffect(host.Intrinsic(IntrinsicProcedure.Syscall, false, VoidType.Instance, args.ToArray()));
         }
     }
 }

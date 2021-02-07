@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,9 @@ namespace Reko.Core.Services
         XmlWriter CreateXmlWriter(string filename);
         void CreateDirectory(string dirPath);
         string GetCurrentDirectory();
+        void DeleteFile(string filename);
         bool FileExists(string filePath);
+        string[] GetFiles(string? dir, string v);
         bool IsPathRooted(string path);
         string MakeRelativePath(string fromPath, string toPath);
         byte[] ReadAllBytes(string filePath);
@@ -105,9 +107,19 @@ namespace Reko.Core.Services
             Directory.CreateDirectory(dirPath);
         }
 
+        public void DeleteFile(string filePath)
+        {
+            File.Delete(filePath);
+        }
+        
         public string GetCurrentDirectory()
         {
             return Directory.GetCurrentDirectory();
+        }
+
+        public string[] GetFiles(string? directory, string pattern)
+        {
+            return Directory.GetFiles(directory, pattern);
         }
 
         public bool FileExists(string filePath)

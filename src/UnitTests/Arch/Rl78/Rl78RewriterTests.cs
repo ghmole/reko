@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using NUnit.Framework;
 using Reko.Arch.Rl78;
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -40,7 +41,7 @@ namespace Reko.UnitTests.Arch.Rl78
 
         public Rl78RewriterTests()
         {
-            this.arch = new Rl78Architecture(CreateServiceContainer(), "rl78");
+            this.arch = new Rl78Architecture(CreateServiceContainer(), "rl78", new Dictionary<string, object>());
             this.addr = Address.Ptr32(0x01000);
         }
 
@@ -50,8 +51,8 @@ namespace Reko.UnitTests.Arch.Rl78
 
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
-            var state = (Rl78ProcessorState) arch.CreateProcessorState();
-            return new Rl78Rewriter(arch, new LeImageReader(mem, 0), state, new Frame(arch.WordWidth), host);
+            var state = arch.CreateProcessorState();
+            return arch.CreateRewriter(arch.CreateImageReader(mem, 0), state, new Frame(arch.WordWidth), host);
         }
 
         [Test]

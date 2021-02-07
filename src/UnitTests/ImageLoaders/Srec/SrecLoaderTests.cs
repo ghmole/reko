@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 using NUnit.Framework;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.ImageLoaders.Srec;
 using Reko.UnitTests.Mocks;
 using System;
@@ -91,8 +92,9 @@ namespace Reko.UnitTests.ImageLoaders.Srec
             Assert.AreEqual(0x0420, program.SegmentMap.BaseAddress.ToLinear());
             Assert.AreEqual(1, program.SegmentMap.Segments.Count);
             var seg = program.SegmentMap.Segments.Values.First();
-            Assert.AreEqual(3, seg.MemoryArea.Bytes.Length);
-            Assert.AreEqual(0x3, seg.MemoryArea.Bytes[2]);
+            var bmem = (ByteMemoryArea) seg.MemoryArea;
+            Assert.AreEqual(3, bmem.Bytes.Length);
+            Assert.AreEqual(0x3, bmem.Bytes[2]);
         }
     }
 }

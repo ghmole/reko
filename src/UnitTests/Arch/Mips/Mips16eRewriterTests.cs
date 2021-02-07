@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.Mips;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -40,9 +41,11 @@ namespace Reko.UnitTests.Arch.Mips
         [SetUp]
         public void Setup()
         {
-            this.arch = new MipsBe32Architecture(CreateServiceContainer(), "mips-be-32");
+            this.arch = new MipsBe32Architecture(
+                CreateServiceContainer(),
+                "mips-be-32",
+                new Dictionary<string, object> { { "decoder", "mips16e" } });
             this.addr = Address.Ptr32(0x00100000);
-            this.arch.LoadUserOptions(new Dictionary<string, object> { { "decoder", "mips16e" } });
         }
 
         public override IProcessorArchitecture Architecture => arch;
@@ -173,7 +176,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("86EE",        // lb\tr7,000E(r7)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r7 = (word32) Mem0[r7 + 14<i32>:int8]");
+                "1|L--|r7 = CONVERT(Mem0[r7 + 14<i32>:int8], int8, word32)");
         }
 
         [Test]
@@ -181,7 +184,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("A1BE",        // lbu\tr5,001E(r5)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r5 = (word32) Mem0[r5 + 30<i32>:byte]");
+                "1|L--|r5 = CONVERT(Mem0[r5 + 30<i32>:byte], byte, word32)");
         }
 
         [Test]
@@ -189,7 +192,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("8888",        // lh\tr4,0010(r4)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r4 = (word32) Mem0[r4 + 16<i32>:int16]");
+                "1|L--|r4 = CONVERT(Mem0[r4 + 16<i32>:int16], int16, word32)");
         }
 
         [Test]
@@ -197,7 +200,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("AE47",        // lhu\tr2,000E(r2)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r2 = (word32) Mem0[r2 + 14<i32>:uint16]");
+                "1|L--|r2 = CONVERT(Mem0[r2 + 14<i32>:uint16], uint16, word32)");
         }
 
         [Test]
@@ -280,7 +283,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("C275",        // sb\tr3,0015(r3)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|Mem0[r3 + 21<i32>:byte] = (byte) r3");
+                "1|L--|Mem0[r3 + 21<i32>:byte] = SLICE(r3, byte, 0)");
         }
 
         [Test]
@@ -288,7 +291,7 @@ namespace Reko.UnitTests.Arch.Mips
         {
             AssertCode("C84D",        // sh\tr2,001A(r2)
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|Mem0[r2 + 26<i32>:word16] = (word16) r2");
+                "1|L--|Mem0[r2 + 26<i32>:word16] = SLICE(r2, word16, 0)");
         }
 
         [Test]

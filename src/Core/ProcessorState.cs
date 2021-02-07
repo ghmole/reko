@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,6 +52,8 @@ namespace Reko.Core
             this.ErrorListener = this.ErrorListener;
         }
 #nullable enable
+
+        public EndianServices Endianness => Architecture.Endianness;
 
         /// <summary>
         /// Method to call if an error occurs within the processor state object (such as stack over/underflows).
@@ -141,9 +143,10 @@ namespace Reko.Core
         {
             if (access.EffectiveAddress is Constant constAddr)
             {
+                // This can only happen on linear architectures.
                 if (constAddr == Constant.Invalid)
                     return constAddr;
-                var ea = Architecture.MakeAddressFromConstant(constAddr, false);
+                var ea = Architecture.MakeAddressFromConstant(constAddr, false)!;
                 return GetMemoryValue(ea, access.DataType, segmentMap);
             }
             if (access.EffectiveAddress is Address addr)
@@ -215,6 +218,11 @@ namespace Reko.Core
         public Expression MakeSegmentedAddress(Constant seg, Constant off)
         {
             return Architecture.MakeSegmentedAddress(seg, off);
+        }
+
+        public Constant ReinterpretAsFloat(Constant rawBits)
+        {
+            return Architecture.ReinterpretAsFloat(rawBits);
         }
 
         public void RemoveIdentifierUse(Identifier id)

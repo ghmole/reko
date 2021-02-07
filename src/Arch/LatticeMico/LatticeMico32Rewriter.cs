@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ using System.Text;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -147,7 +148,7 @@ namespace Reko.Arch.LatticeMico
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Lm32Rw", this.instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Lm32Rw", this.instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private Expression Nor(Expression a, Expression b)
@@ -243,7 +244,7 @@ namespace Reko.Arch.LatticeMico
             var dst = Rewrite(instr.Operands[0]);
             if (src.DataType.BitSize < dst.DataType.BitSize)
             {
-                src = m.Cast(dt, src);
+                src = m.Convert(src, src.DataType, dt);
             }
             m.Assign(dst, src);
         }
@@ -260,8 +261,7 @@ namespace Reko.Arch.LatticeMico
         {
             var src = Rewrite(instr.Operands[1]);
             var dst = Rewrite(instr.Operands[0]);
-            src = m.Cast(dt, src);
-            m.Assign(dst, m.Cast(PrimitiveType.Int32, src));
+            m.Assign(dst, m.Convert(m.Slice(dt, src, 0), dt, PrimitiveType.Int32));
         }
 
         private void RewriteStore()

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using System.Threading.Tasks;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -108,8 +109,8 @@ namespace Reko.Arch.i8051
                 case Mnemonic.push: RewritePush(); break;
                 case Mnemonic.ret: RewriteRet(); break;
                 case Mnemonic.reti: RewriteRet(); break;
-                case Mnemonic.rl: RewriteRotate(PseudoProcedure.Rol); break;
-                case Mnemonic.rr: RewriteRotate(PseudoProcedure.Ror); break;
+                case Mnemonic.rl: RewriteRotate(IntrinsicProcedure.Rol); break;
+                case Mnemonic.rr: RewriteRotate(IntrinsicProcedure.Ror); break;
                 case Mnemonic.setb: RewriteSetb(); break;
                 case Mnemonic.sjmp: RewriteJump(); break;
                 case Mnemonic.subb: RewriteAddcSubb(m.ISub); break;
@@ -318,7 +319,7 @@ namespace Reko.Arch.i8051
         private void RewriteRotate(string rot)
         {
             var dst = OpSrc(instr.Operands[0], arch.DataMemory);
-            m.Assign(dst, host.PseudoProcedure(rot, dst.DataType, dst, m.Byte(1)));
+            m.Assign(dst, host.Intrinsic(rot, true, dst.DataType, dst, m.Byte(1)));
         }
 
         private void RewriteRet()
@@ -354,7 +355,7 @@ namespace Reko.Arch.i8051
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("i8051_rw", this.instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("i8051_rw", this.instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private void Invalid()

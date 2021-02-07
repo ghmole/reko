@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,14 +30,14 @@ namespace Reko.Arch.X86.Assembler
 		private MachineOperand op;
 		private bool longJmp;
 
-		public ParsedOperand(MachineOperand op, Symbol sym, bool longJmp)
+		public ParsedOperand(MachineOperand op, Symbol? sym, bool longJmp)
 		{
 			this.op = op;
 			this.Symbol = sym;
 			this.longJmp = longJmp;
 		}
 
-		public ParsedOperand(MachineOperand op, Symbol sym)
+		public ParsedOperand(MachineOperand op, Symbol? sym)
 		{
 			this.op = op;
 			this.Symbol = sym;
@@ -59,6 +59,6 @@ namespace Reko.Arch.X86.Assembler
 			get { return op; }
 		}
 
-		public Symbol Symbol { get; set; }
+		public Symbol? Symbol { get; set; }
 	}
 }

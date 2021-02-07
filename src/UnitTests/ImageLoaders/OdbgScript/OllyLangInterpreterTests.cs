@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Moq;
 using NUnit.Framework;
 using Reko.Core;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using Reko.ImageLoaders.OdbgScript;
@@ -38,7 +39,7 @@ namespace Reko.UnitTests.ImageLoaders.OdbgScript
         private Mock<IProcessorArchitecture> arch;
         private Mock<IFileSystemService> fsSvc;
         private OllyLangInterpreter engine;
-        private MemoryArea mem;
+        private ByteMemoryArea mem;
         private SegmentMap imageMap;
 
         [SetUp]
@@ -100,9 +101,14 @@ namespace Reko.UnitTests.ImageLoaders.OdbgScript
                 }));
         }
 
-        private void Given_Image(uint addr, params byte[] bytes)
+        private void Given_Image(uint uAddr, params byte[] bytes)
         {
-            mem = new MemoryArea(Address.Ptr32(addr), bytes);
+            Given_Image(Address.Ptr32(uAddr), bytes);
+        }
+
+        private void Given_Image(Address addr, params byte[] bytes)
+        {
+            mem = new ByteMemoryArea(addr, bytes);
             imageMap = new SegmentMap(
                 mem.BaseAddress,
                 new ImageSegment(".text", mem, AccessMode.ReadExecute));
@@ -142,7 +148,7 @@ namespace Reko.UnitTests.ImageLoaders.OdbgScript
                 .Returns((Address a, int l, byte[] b) =>
             {
                 var offset = a - mem.BaseAddress;
-                MemoryArea.WriteBytes(b, offset, l, mem.Bytes);
+                ByteMemoryArea.WriteBytes(b, offset, l, mem.Bytes);
                 return true;
             });
 
@@ -255,6 +261,29 @@ add foo,4
 ");
             engine.Run();
             Assert.AreEqual(7, engine.variables["foo"].ToUInt64());
+        }
+
+        [Test]
+        public void Ose_mov_mem()
+        {
+            Given_Engine();
+            Given_Script(
+@"var selector
+mov selector,[es:di],2
+");
+            Given_MakeSegmentedAddress();
+            Given_ArchRegister(new RegisterStorage("es", 3, 0, PrimitiveType.SegmentSelector));
+            Given_ArchRegister(new RegisterStorage("di", 4, 0, PrimitiveType.Word16));
+            Given_Image(Address.SegPtr(0x0800, 0), 
+                new byte[] { 0x67, 0x45, 0x23, 0x01, 0xFF, 0xFE});
+            emu.Setup(e => e.ReadRegister(
+                It.Is<RegisterStorage>(r => r.Name == "es"))).Returns(0x0800);
+            emu.Setup(e => e.ReadRegister(
+                It.Is<RegisterStorage>(r => r.Name == "di"))).Returns(0x0002);
+
+            engine.Run();
+
+            Assert.AreEqual(0x0123, engine.variables["selector"].ToUInt64());
         }
     }
 

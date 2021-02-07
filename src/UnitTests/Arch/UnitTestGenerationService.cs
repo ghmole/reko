@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +20,10 @@
 
 using Reko.Core;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using System;
+using System.Linq;
 
 namespace Reko.UnitTests.Arch
 {
@@ -34,16 +36,31 @@ namespace Reko.UnitTests.Arch
             this.services = services;
         }
 
-        public void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message)
+        public string OutputDirectory { get; set; }
+
+        public void RemoveFiles(string filePrefix)
         {
-            var test = TestGenerationService.GenerateDecoderUnitTest(testPrefix, addrStart, rdr, message);
+        }
+
+        public void ReportMissingDecoder(string testPrefix, Address addrStart, EndianImageReader rdr, string message, Func<byte[], string> hexizer)
+        {
+            var test = TestGenerationService.GenerateDecoderUnitTest(testPrefix, addrStart, rdr, message, hexizer ?? Hexizer);
             Console.WriteLine(test);
         }
 
-        public void ReportMissingRewriter(string testPrefix, MachineInstruction instr, EndianImageReader rdr, string message)
+        public void ReportMissingRewriter(string testPrefix, MachineInstruction instr, string mnemonic, EndianImageReader rdr, string message, Func<byte[], string> hexizer)
         {
-            var test = TestGenerationService.GenerateRewriterUnitTest(testPrefix, instr, rdr, message);
+            var test = TestGenerationService.GenerateRewriterUnitTest(testPrefix, instr, mnemonic, rdr, message, hexizer ?? Hexizer);
             Console.WriteLine(test);
+        }
+
+        private static string Hexizer(byte[] bytes)
+        {
+            return string.Join("",bytes.Select(b => $"{b:X2}"));
+        }
+
+        public void ReportProcedure(string fileName, string testCaption, Procedure proc)
+        {
         }
     }
 }

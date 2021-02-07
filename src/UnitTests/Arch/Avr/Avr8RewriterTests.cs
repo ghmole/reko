@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.Avr;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -38,7 +39,7 @@ namespace Reko.UnitTests.Arch.Avr
 
         public Avr8RewriterTests()
         {
-            this.arch = new Avr8Architecture(CreateServiceContainer(), "avr8");
+            this.arch = new Avr8Architecture(CreateServiceContainer(), "avr8", new Dictionary<string, object>());
         }
 
         public override IProcessorArchitecture Architecture => arch;
@@ -46,7 +47,7 @@ namespace Reko.UnitTests.Arch.Avr
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
             var state = (Avr8State)arch.CreateProcessorState();
-            return new Avr8Rewriter(arch, new LeImageReader(mem, 0), state, new Frame(arch.FramePointerType), host);
+            return new Avr8Rewriter(arch, mem.CreateLeReader(0), state, new Frame(arch.FramePointerType), host);
         }
 
         public override Address LoadAddress => baseAddr;
@@ -495,7 +496,7 @@ namespace Reko.UnitTests.Arch.Avr
             Given_UInt16s(0x02E2);	// muls	r30,r18
             AssertCode(
                 "0|L--|0100(2): 3 instructions",
-                "1|L--|r1_r0 = r30 *s r18",
+                "1|L--|r1_r0 = r30 *s16 r18",
                 "2|L--|C = r1_r0 < 0<16>",
                 "3|L--|Z = r1_r0 == 0<16>");
         }

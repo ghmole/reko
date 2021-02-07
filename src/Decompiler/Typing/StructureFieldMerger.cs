@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -141,7 +141,7 @@ namespace Reko.Typing
                     overlappingFields = new List<StructureField>();
                 }
                 //$REVIEW: what happens if a field has a user-given name?
-                AddFieldToCluster(new StructureField(field.Offset,  field.DataType), overlappingFields);
+                AddFieldToCluster(field.Clone(), overlappingFields);
             }
             if (overlappingFields.Count > 0)
                 yield return overlappingFields;

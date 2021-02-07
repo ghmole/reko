@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ namespace Reko.UnitTests.Environments.SysV.ArchSpecific
 
         private void AssertSignature(string sExp, DataType retType, params DataType[] args)
         {
-            var arch = new PowerPcBe64Architecture(new ServiceContainer(), "ppc-be-64");
+            var arch = new PowerPcBe64Architecture(new ServiceContainer(), "ppc-be-64", new Dictionary<string, object>());
             var cc = new PowerPc64CallingConvention(arch);
             var ccr = new CallingConventionEmitter();
             cc.Generate(ccr, retType, null, args.ToList());

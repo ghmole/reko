@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace Reko.UnitTests.Arch.Alpha
         [SetUp]
         public void Setup()
         {
-            this.arch = new AlphaArchitecture(new ServiceContainer(), "alpha");
+            this.arch = new AlphaArchitecture(new ServiceContainer(), "alpha", new Dictionary<string, object>());
             this.addrLoad = Address.Ptr64(0x00100000);
 
         }

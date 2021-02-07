@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ using Reko.Arch.X86.Assembler;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -100,7 +101,7 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_Mips_Image(params uint[] words)
         {
-            var image = new MemoryArea(
+            var image = new ByteMemoryArea(
                 Address.Ptr32(0x10000),
                 words.Select(w => new[]
                 {
@@ -111,24 +112,24 @@ namespace Reko.UnitTests.Scanning
                 })
                 .SelectMany(w => w)
                 .ToArray());
-            var arch = new MipsLe32Architecture(new ServiceContainer(), "mips-le-32");
+            var arch = new MipsLe32Architecture(new ServiceContainer(), "mips-le-32", new Dictionary<string, object>());
             CreateProgram(image, arch);
         }
 
         private void Given_x86_Image(params byte[] bytes)
         {
-            var image = new MemoryArea(
+            var image = new ByteMemoryArea(
                 Address.Ptr32(0x10000),
                 bytes);
             this.rd = image.Relocations;
-            var arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string,object>());
             CreateProgram(image, arch);
         }
 
         private void Given_x86_Image(Action<X86Assembler> asm)
         {
             var addrBase = Address.Ptr32(0x100000);
-            var arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
             var entry = ImageSymbol.Procedure(arch, addrBase);
             var m = new X86Assembler(arch, addrBase, new List<ImageSymbol> { entry });
             asm(m);
@@ -138,22 +139,22 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_x86_64_Image(params byte[] bytes)
         {
-            var image = new MemoryArea(
+            var bmem = new ByteMemoryArea(
                 Address.Ptr64(0x0100000000000000),
                 bytes);
-            var arch = new X86ArchitectureFlat64(new ServiceContainer(), "x86-protected-64");
-            CreateProgram(image, arch);
+            var arch = new X86ArchitectureFlat64(new ServiceContainer(), "x86-protected-64", new Dictionary<string, object>());
+            CreateProgram(bmem, arch);
         }
 
-        private void CreateProgram(MemoryArea mem, IProcessorArchitecture arch)
+        private void CreateProgram(ByteMemoryArea bmem, IProcessorArchitecture arch)
         {
-            var segmentMap = new SegmentMap(mem.BaseAddress);
+            var segmentMap = new SegmentMap(bmem.BaseAddress);
             var seg = segmentMap.AddSegment(new ImageSegment(
                 ".text",
-                mem,
+                bmem,
                 AccessMode.ReadExecute)
             {
-                Size = (uint)mem.Bytes.Length
+                Size = (uint)bmem.Bytes.Length
             });
             seg.Access = AccessMode.ReadExecute;
             var platform = new DefaultPlatform(arch.Services, arch);
@@ -175,11 +176,12 @@ namespace Reko.UnitTests.Scanning
         {
             this.host = new Mock<IRewriterHost>();
             var dev = new Mock<DecompilerEventListener>();
-            //host.Setup(h => h.EnsurePseudoProcedure(null, null, 0))
+            //host.Setup(h => h.EnsureIntrinsicProcedure(null, null, 0))
             //    .IgnoreArguments()
-            //    .Return(new PseudoProcedure("<>", PrimitiveType.Word32, 2));
-            host.Setup(h => h.PseudoProcedure(
+            //    .Return(new IntrinsicProcedure("<>", PrimitiveType.Word32, 2));
+            host.Setup(h => h.Intrinsic(
                 It.IsAny<string>(),
+                It.IsAny<bool>(),
                 It.IsAny<DataType>(),
                 It.IsAny<Expression[]>())).Returns((Expression)null);
             host.Setup(h => h.GetImport(

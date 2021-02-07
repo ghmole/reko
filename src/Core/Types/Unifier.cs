@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -234,7 +234,7 @@ namespace Reko.Core.Types
             if (++recDepth > 100)
             {
                 --recDepth;
-                DebugEx.Error(trace, "Unifier: exceeded stack depth, giving up");
+                trace.Error("Unifier: exceeded stack depth, giving up");
                 if (a == null && b == null)
                     return null;
                 if (a == null)
@@ -369,7 +369,7 @@ namespace Reko.Core.Types
 			{
 				DataType baseType = UnifyInternal(mpA.BasePointer, mpB.BasePointer)!;
 				DataType pointee = UnifyInternal(mpA.Pointee, mpB.Pointee)!;
-				return new MemberPointer(baseType, pointee, mpB.Size);
+				return new MemberPointer(baseType, pointee, mpB.BitSize);
 			}
 			if (mpA != null)
 			{
@@ -505,6 +505,18 @@ namespace Reko.Core.Types
 
 		public DataType UnifyFunctions(FunctionType a, FunctionType b)
 		{
+            if (!a.ParametersValid && !b.ParametersValid)
+            {
+                return a;
+            }
+            if (!a.ParametersValid)
+            {
+                return b;
+            }
+            if (!b.ParametersValid)
+            {
+                return a;
+            }
 			if (a.Parameters!.Length != b.Parameters!.Length)
 			{
 				return MakeUnion(a, b);

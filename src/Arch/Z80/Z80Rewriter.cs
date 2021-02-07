@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Operators;
 using Reko.Core.Rtl;
 using Reko.Core.Serialization;
@@ -42,6 +43,7 @@ namespace Reko.Arch.Z80
         private InstrClass iclass;
         private RtlEmitter m;
 
+#nullable disable
         public Z80Rewriter(Z80ProcessorArchitecture arch, EndianImageReader rdr, ProcessorState state, IStorageBinder binder, IRewriterHost host)
         {
             this.arch = arch;
@@ -49,6 +51,7 @@ namespace Reko.Arch.Z80
             this.host = host;
             this.dasm = new Z80Disassembler(arch, rdr).GetEnumerator();
         }
+#nullable enable
 
         public IEnumerator<RtlInstructionCluster> GetEnumerator()
         {
@@ -93,20 +96,20 @@ namespace Reko.Arch.Z80
                 case Mnemonic.ini: RewriteIn(m.IAdd, false); break;
                 case Mnemonic.inir: RewriteIn(m.IAdd, true); break;
                 case Mnemonic.im:
-                    m.SideEffect(host.PseudoProcedure("__im", VoidType.Instance, RewriteOp(dasm.Current.Operands[0])));
+                    m.SideEffect(host.Intrinsic("__im", false, VoidType.Instance, RewriteOp(dasm.Current.Operands[0])));
                     break;
                 case Mnemonic.inc: RewriteInc(); break;
                 case Mnemonic.jp: RewriteJp(dasm.Current); break;
                 case Mnemonic.jr: RewriteJr(); break;
                 case Mnemonic.ld: RewriteLd();  break;
-                case Mnemonic.rl: RewriteRotation(PseudoProcedure.RolC, true); break;
-                case Mnemonic.rla: RewriteRotation(PseudoProcedure.RolC, true); break;
-                case Mnemonic.rlc: RewriteRotation(PseudoProcedure.Rol, false); break;
-                case Mnemonic.rlca: RewriteRotation(PseudoProcedure.Rol, false); break;
-                case Mnemonic.rr: RewriteRotation(PseudoProcedure.RorC, true); break;
-                case Mnemonic.rra: RewriteRotation(PseudoProcedure.RorC, true); break;
-                case Mnemonic.rrc: RewriteRotation(PseudoProcedure.Ror, true); break;
-                case Mnemonic.rrca: RewriteRotation(PseudoProcedure.Ror, true); break;
+                case Mnemonic.rl: RewriteRotation(IntrinsicProcedure.RolC, true); break;
+                case Mnemonic.rla: RewriteRotation(IntrinsicProcedure.RolC, true); break;
+                case Mnemonic.rlc: RewriteRotation(IntrinsicProcedure.Rol, false); break;
+                case Mnemonic.rlca: RewriteRotation(IntrinsicProcedure.Rol, false); break;
+                case Mnemonic.rr: RewriteRotation(IntrinsicProcedure.RorC, true); break;
+                case Mnemonic.rra: RewriteRotation(IntrinsicProcedure.RorC, true); break;
+                case Mnemonic.rrc: RewriteRotation(IntrinsicProcedure.Ror, true); break;
+                case Mnemonic.rrca: RewriteRotation(IntrinsicProcedure.Ror, true); break;
                 case Mnemonic.ldd: RewriteBlockInstruction(m.ISub, false); break;
                 case Mnemonic.lddr: RewriteBlockInstruction(m.ISub, true); break;
                 case Mnemonic.ldi: RewriteBlockInstruction(m.IAdd, false); break;
@@ -227,11 +230,11 @@ namespace Reko.Arch.Z80
             Expression src;
             if (useCarry)
             {
-                src = host.PseudoProcedure(pseudoOp, reg.DataType, reg, one, C);
+                src = host.Intrinsic(pseudoOp, true, reg.DataType, reg, one, C);
             }
             else 
             {
-                src = host.PseudoProcedure(pseudoOp, reg.DataType, reg, one);
+                src = host.Intrinsic(pseudoOp, true, reg.DataType, reg, one);
             }
             m.Assign(reg, src);
             m.Assign(C, m.Cond(reg));
@@ -360,7 +363,7 @@ namespace Reko.Arch.Z80
             var a = binder.EnsureRegister(Registers.a);
             m.Assign(
                 a,
-                host.PseudoProcedure("__daa", PrimitiveType.Byte, a));
+                host.Intrinsic("__daa", true, PrimitiveType.Byte, a));
             AssignCond(FlagM.CF | FlagM.ZF | FlagM.SF | FlagM.PF, a);
         }
 
@@ -381,12 +384,12 @@ namespace Reko.Arch.Z80
 
         private void RewriteDi()
         {
-            m.SideEffect(host.PseudoProcedure("__di", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__di",false,VoidType.Instance));
         }
 
         private void RewriteEi()
         {
-            m.SideEffect(host.PseudoProcedure("__ei", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__ei", false, VoidType.Instance));
         }
 
         private void RewriteEx()
@@ -426,7 +429,7 @@ namespace Reko.Arch.Z80
             {
                 Terminates = true,
             };
-            m.SideEffect(host.PseudoProcedure("__hlt", c, VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__hlt", false, c, VoidType.Instance));
         }
 
         private void RewriteInc()
@@ -448,7 +451,7 @@ namespace Reko.Arch.Z80
                 m.Goto(target.Address);
                 break;
             case MemoryOperand mTarget:
-                m.Goto(binder.EnsureRegister(mTarget.Base));
+                m.Goto(binder.EnsureRegister(mTarget.Base!));
                 break;
             }
         }
@@ -504,12 +507,12 @@ namespace Reko.Arch.Z80
                 return immOp.Value;
             case MemoryOperand memOp:
                 {
-                    Identifier bReg = null;
+                    Identifier? bReg = null;
                     if (memOp.Base != null)
                         bReg = binder.EnsureRegister(memOp.Base);
-                    if (memOp.Offset == null)
+                    if (memOp.Offset is null)
                     {
-                        return m.Mem(memOp.Width, bReg);
+                        return m.Mem(memOp.Width, bReg!);
                     }
                     else if (bReg == null)
                     {
@@ -518,20 +521,9 @@ namespace Reko.Arch.Z80
                     else
                     {
                         int s = memOp.Offset.ToInt32();
-                        if (s > 0)
-                        {
-                            return m.Mem(memOp.Width, m.IAdd(bReg, s));
+                        return m.Mem(memOp.Width, m.AddSubSignedInt(bReg, s));
                         }
-                        else if (s < 0)
-                        {
-                            return m.Mem(memOp.Width, m.ISub(bReg, -s));
                         }
-                        else
-                        {
-                            return m.Mem(memOp.Width, bReg);
-                        }
-                    }
-                }
             default:
                 throw new NotImplementedException(string.Format("Rewriting of Z80 operand type {0} is not implemented yet.", op.GetType().FullName));
             }
@@ -541,7 +533,7 @@ namespace Reko.Arch.Z80
         {
             var dst = RewriteOp(dasm.Current.Operands[0]);
             var src = RewriteOp(dasm.Current.Operands[1]);
-            m.Assign(dst, host.PseudoProcedure("__in", PrimitiveType.Byte, src));
+            m.Assign(dst, host.Intrinsic("__in", false, PrimitiveType.Byte, src));
         }
 
         private void RewriteIn(Func<Expression,Expression,Expression> incDec, bool repeat)
@@ -552,7 +544,7 @@ namespace Reko.Arch.Z80
             var Z = binder.EnsureFlagGroup(arch.GetFlagGroup("Z"));
             m.Assign(
                 m.Mem8(hl),
-                host.PseudoProcedure("__in", PrimitiveType.Byte, c));
+                host.Intrinsic("__in", false, PrimitiveType.Byte, c));
             m.Assign(hl, incDec(hl, m.Int16(1)));
             m.Assign(b, m.ISub(b, 1));
             m.Assign(Z, m.Cond(b));
@@ -566,7 +558,7 @@ namespace Reko.Arch.Z80
         {
             var dst = RewriteOp(dasm.Current.Operands[0]);
             var src = RewriteOp(dasm.Current.Operands[1]);
-            m.SideEffect(host.PseudoProcedure("__out", PrimitiveType.Byte, dst, src));
+            m.SideEffect(host.Intrinsic("__out", false, PrimitiveType.Byte, dst, src));
         }
 
         private void RewritePop()
@@ -589,7 +581,7 @@ namespace Reko.Arch.Z80
         {
             var bit = RewriteOp(dasm.Current.Operands[0]);
             var op = RewriteOp(dasm.Current.Operands[1]);
-            AssignCond(FlagM.ZF, host.PseudoProcedure("__bit", PrimitiveType.Bool, op, bit));
+            AssignCond(FlagM.ZF, host.Intrinsic("__bit", true, PrimitiveType.Bool, op, bit));
         }
 
         private void RewriteResSet(string pseudocode)
@@ -601,7 +593,7 @@ namespace Reko.Arch.Z80
                 dst = binder.CreateTemporary(op.DataType);
             else
                 dst = op;
-            m.Assign(dst, host.PseudoProcedure(pseudocode, dst.DataType, op, bit));
+            m.Assign(dst, host.Intrinsic(pseudocode, false, dst.DataType, op, bit));
             if (dst != op)
             {
                 m.Assign(op, dst);

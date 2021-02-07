@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,7 +73,7 @@ namespace Reko.Arch.PaRisc
                 var zero = Constant.Zero(SizeFromCondition(instr.Condition.Type));
                 var c = RewriteCondition(dst, zero);
                 m.BranchInMiddleOfInstruction(c.Invert(), instr.Address + 4, InstrClass.ConditionalTransfer);
-                m.SideEffect(host.PseudoProcedure("__trap", VoidType.Instance));
+                m.SideEffect(host.Intrinsic("__trap", false, VoidType.Instance));
             }
             else
             {
@@ -136,7 +136,7 @@ namespace Reko.Arch.PaRisc
             var dt = (instr.Sign == SignExtension.s)
                 ? PrimitiveType.Int32
                 : PrimitiveType.UInt32;
-            m.Assign(dst, m.Cast(dt, m.Slice(dtSlice, src, lePos)));
+            m.Assign(dst, m.Convert(m.Slice(dtSlice, src, lePos), dtSlice, dt));
         }
 
         private void RewriteLd(PrimitiveType size)
@@ -145,7 +145,7 @@ namespace Reko.Arch.PaRisc
             var dst = RewriteOp(instr.Operands[1]);
             if (src.DataType.BitSize < dst.DataType.BitSize)
             {
-                src = m.Cast(PrimitiveType.Create(Domain.UnsignedInt, dst.DataType.BitSize), src);
+                src = m.Convert(src, size, PrimitiveType.Create(Domain.UnsignedInt, dst.DataType.BitSize));
             }
             m.Assign(dst, src);
         }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -183,7 +183,7 @@ ProcedureBuilder_exit:
                 var r2_r1 = m.Frame.EnsureSequence(PrimitiveType.Word64, r2.Storage, r1.Storage);
 
                 m.Assign(r2_r1, m.Mem(r2_r1.DataType, m.Ptr32(0x2000)));
-                m.MStore(m.IAdd(r3, 0x2000), m.Cast(r1.DataType, r2_r1));
+                m.MStore(m.IAdd(r3, 0x2000), m.Slice(r1.DataType, r2_r1, 0));
                 m.MStore(m.IAdd(r3, 0x2004), m.Slice(PrimitiveType.Word32, r2_r1, 32));
                 m.Return();
             });

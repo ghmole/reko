@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,7 +60,8 @@ namespace Reko.Analysis
         private readonly HashSet<SsaIdentifier> incompletePhis;
         private readonly HashSet<Procedure> sccProcs;
         private readonly ExpressionEmitter m;
-        private HashSet<SsaIdentifier> sidsToRemove;
+        private readonly Dictionary<(SsaIdentifier, BitRange), SsaIdentifier> availableSlices;
+        private readonly HashSet<SsaIdentifier> sidsToRemove;
         private Block? block;
         private Statement? stmCur;
 
@@ -78,6 +79,7 @@ namespace Reko.Analysis
             this.sccProcs = sccProcs;
             this.ssa = new SsaState(proc);
             this.blockstates = ssa.Procedure.ControlGraph.Blocks.ToDictionary(k => k, v => new SsaBlockState(v));
+            this.availableSlices = new Dictionary<(SsaIdentifier, BitRange), SsaIdentifier>();
             this.factory = new TransformerFactory(this);
             this.incompletePhis = new HashSet<SsaIdentifier>();
             this.sidsToRemove = new HashSet<SsaIdentifier>();
@@ -105,7 +107,7 @@ namespace Reko.Analysis
         /// <param name="proc"></param>
         public SsaState Transform()
         {
-            DebugEx.Inform(trace, "SsaTransform: {0}, rename frame accesses {1}", ssa.Procedure.Name, this.RenameFrameAccesses);
+            trace.Inform("SsaTransform: {0}, rename frame accesses {1}", ssa.Procedure.Name, this.RenameFrameAccesses);
             this.sidsToRemove.Clear();
             foreach (var bs in blockstates.Values)
             {
@@ -121,13 +123,13 @@ namespace Reko.Analysis
                 if (b != b.Procedure.EntryBlock && b.Pred.Count == 0)
                     continue;
 
-                DebugEx.Verbose(trace, "SsaTransform:   {0} ({1} statements)", b.Name, b.Statements.Count);
+                trace.Verbose("SsaTransform:   {0} ({1} statements)", b.DisplayName, b.Statements.Count);
                 this.block = b;
                 blockstates[b].Terminates = false;
                 foreach (var s in b.Statements.ToList())
                 {
                     this.stmCur = s;
-                    DebugEx.Verbose(trace, "SsaTransform:     {0:X4} {1}", s.LinearAddress, s);
+                    trace.Verbose("SsaTransform:     {0:X4} {1}", s.LinearAddress, s);
                     s.Instruction = s.Instruction.Accept(this);
                     if (blockstates[b].Terminates)
                     {
@@ -242,7 +244,7 @@ namespace Reko.Analysis
             // (e.g. eax, ax, al, ah) and render them as a single
             // register (eax).
             this.block = ssa.Procedure.ExitBlock;
-            DebugEx.Verbose(trace, "SsaTransform: AddUsesToExitBlock  {0}", this.block);
+            trace.Verbose("SsaTransform: AddUsesToExitBlock  {0}", this.block);
 
             // Compute the set of all blocks b such that there is a path from
             // b to the exit block.
@@ -274,11 +276,11 @@ namespace Reko.Analysis
                     block))
                 .ToList();
             block.Statements.AddRange(stms);
-            DebugEx.Verbose(trace, "AddUsesToExitBlock");
+            trace.Verbose("AddUsesToExitBlock");
             stms.ForEach(u =>
             {
                 var use = (UseInstruction)u.Instruction;
-                DebugEx.Verbose(trace, "SsaTransform:   {0}", use);
+                trace.Verbose("SsaTransform:   {0}", use);
                 use.Expression = NewUse((Identifier)use.Expression, u, true);
             });
         }
@@ -1201,7 +1203,7 @@ namespace Reko.Analysis
         public class SsaBlockState
         {
             public readonly Block Block;
-            public readonly Dictionary<StorageDomain, AliasState> currentDef;
+            public readonly Dictionary<StorageDomain, AliasState> currentDef;       // Identifiers defined in this block
             public readonly IntervalTree<int, Alias> currentStackDef;
             public readonly Dictionary<StorageDomain, FlagAliasState> currentFlagDef;
             public readonly Dictionary<Storage, SsaIdentifier> currentSimpleDef;
@@ -1221,7 +1223,7 @@ namespace Reko.Analysis
             public override string ToString()
             {
                 var sb = new StringBuilder();
-                sb.AppendFormat("BlockState {0}", Block.Name);
+                sb.AppendFormat("BlockState {0}", Block.DisplayName);
                 sb.AppendLine();
                 sb.AppendFormat("    {0}",
                     string.Join(",", currentDef.Keys.Select(k => ((int)k).ToString())));

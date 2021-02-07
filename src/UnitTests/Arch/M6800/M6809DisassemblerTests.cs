@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@ namespace Reko.UnitTests.Arch.M6800
         [SetUp]
         public void Setup()
         {
-            this.arch = new Reko.Arch.M6800.M6809Architecture(new ServiceContainer(), "m6809");
+            this.arch = new Reko.Arch.M6800.M6809Architecture(new ServiceContainer(), "m6809", new Dictionary<string, object>());
             this.addr = Address.Ptr16(0x0100);
         }
 

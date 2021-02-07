@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,7 +80,7 @@ namespace Reko.Analysis
                     return;
                 var proc = sst.SsaState.Procedure;
 				ProcedureFlow flow = crw.mpprocflow[proc];
-                flow.Dump(platform.Architecture);
+                flow.Dump(proc.Architecture);
 				crw.EnsureSignature(sst.SsaState, proc.Frame, flow);
 			}
 
@@ -334,7 +334,7 @@ namespace Reko.Analysis
 
         private ApplicationBuilder CreateApplicationBuilder(SsaState ssaCaller, Statement stmCaller, CallInstruction call, Expression fn)
         {
-            return new CallApplicationBuilder(ssaCaller, stmCaller, call, fn);
+            return new CallApplicationBuilder(ssaCaller, stmCaller, call, fn, false);
         }
 
         public void RemoveStatementsFromExitBlock(SsaState ssa)
@@ -373,6 +373,7 @@ namespace Reko.Analysis
                     return false;
                 ApplicationBuilder ab = CreateApplicationBuilder(ssaCaller, stm, call, fn);
                 var instr = ab.CreateInstruction(sigCallee, procCallee.Characteristics);
+                var instrOld = stm.Instruction;
                 stm.Instruction = instr;
                 var ssam = new SsaMutator(ssaCaller);
                 ssam.AdjustSsa(stm, call);
@@ -476,7 +477,7 @@ namespace Reko.Analysis
                 var stm = block.Statements[i];
                 if (stm.Instruction is ReturnInstruction ret)
                 {
-                    if (idRet.DataType.BitSize < e.DataType.BitSize)
+                    if (idStg != null && idRet.DataType.BitSize < e.DataType.BitSize)
                     {
                         int offset = idStg!.Storage.OffsetOf(idRet.Storage);
                         e = new Slice(idRet.DataType, e, offset);

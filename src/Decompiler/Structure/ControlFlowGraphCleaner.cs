@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ namespace Reko.Structure
 	/// </summary>
 	public class ControlFlowGraphCleaner
 	{
-		private Procedure proc;
+		private readonly Procedure proc;
 		private bool dirty;
 
 		public ControlFlowGraphCleaner(Procedure proc)
@@ -78,7 +78,7 @@ namespace Reko.Structure
             var branch = block.Statements.Last;
             var condition = ((Branch)branch.Instruction).Condition;
             block.Statements.Remove(branch);
-            if (IsCritical(condition))
+            if (CriticalInstruction.IsCritical(condition))
             {
                 var linearAddr = branch.LinearAddress;
                 block.Statements.Add(linearAddr, new SideEffect(condition));
@@ -158,11 +158,5 @@ namespace Reko.Structure
 
 			proc.Dump(true);
 		}
-
-        private bool IsCritical(Expression e)
-        {
-            var ci = new CriticalInstruction();
-            return ci.IsCritical(e);
-        }
 	}
 }

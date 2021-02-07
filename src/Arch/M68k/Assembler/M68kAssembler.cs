@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Core;
 using Reko.Core.Assemblers;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
@@ -78,13 +79,13 @@ namespace Reko.Arch.M68k.Assembler
 
         public Program GetImage()
         {
-            var mem = new MemoryArea(BaseAddress, Emitter.GetBytes());
+            var mem = new ByteMemoryArea(BaseAddress, Emitter.GetBytes());
             return new Program(
                 new SegmentMap(
                     mem.BaseAddress,
                     new ImageSegment("code", mem, AccessMode.ReadWriteExecute)),
                 arch, 
-                new DefaultPlatform(null, arch));
+                new DefaultPlatform(arch.Services, arch));
         }
 
         internal void Cnop(int extra, int align)
@@ -169,13 +170,13 @@ namespace Reko.Arch.M68k.Assembler
         public MachineOperand Mem(RegisterOperand rop)
         {
             var a = (AddressRegister) rop.Register;
-            return new MemoryOperand(null, a);
+            return new MemoryOperand(null!, a);
         }
 
         public MemoryOperand Mem(int offset, RegisterOperand rop)
         {
             var a = (AddressRegister) rop.Register;
-            return new MemoryOperand(null, a, Constant.Int16((short)offset));
+            return new MemoryOperand(null!, a, Constant.Int16((short)offset));
             throw new NotImplementedException();
         }
 
@@ -210,12 +211,12 @@ namespace Reko.Arch.M68k.Assembler
 
         public PostIncrementMemoryOperand Post(RegisterOperand a)
         {
-            return new PostIncrementMemoryOperand(null, (AddressRegister) a.Register);
+            return new PostIncrementMemoryOperand(null!, (AddressRegister) a.Register);
         }
 
         public PredecrementMemoryOperand Pre(RegisterOperand a)
         {
-            return new PredecrementMemoryOperand(null, (AddressRegister) a.Register);
+            return new PredecrementMemoryOperand(null!, (AddressRegister) a.Register);
         }
 
         private void EmitConstants()

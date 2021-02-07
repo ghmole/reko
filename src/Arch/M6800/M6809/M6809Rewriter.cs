@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -200,7 +201,7 @@ namespace Reko.Arch.M6800.M6809
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("M6809Rw", this.instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("M6809Rw", this.instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private Expression Clr(Expression e)
@@ -267,12 +268,12 @@ namespace Reko.Arch.M6800.M6809
 
         private Expression Rol1(Expression e)
         {
-            return host.PseudoProcedure(PseudoProcedure.Rol, e.DataType, e, Constant.Byte(1));
+            return host.Intrinsic(IntrinsicProcedure.Rol, true, e.DataType, e, Constant.Byte(1));
         }
 
         private Expression Ror1(Expression e)
         {
-            return host.PseudoProcedure(PseudoProcedure.Ror, e.DataType, e, Constant.Byte(1));
+            return host.Intrinsic(IntrinsicProcedure.Ror, true, e.DataType, e, Constant.Byte(1));
         }
 
         private Expression Sbc(Expression a, Expression b)
@@ -450,7 +451,7 @@ namespace Reko.Arch.M6800.M6809
                     idx = binder.EnsureRegister(mem.Index);
                     if (idx.DataType.BitSize < ea.DataType.BitSize)
                     {
-                        idx = m.Cast(PrimitiveType.Int16, idx);
+                        idx = m.Convert(idx, idx.DataType, PrimitiveType.Int16);
                     }
                     ea = m.IAdd(ea, idx);
                     tmp = memFn(bin, dst, ea, mem);
@@ -509,7 +510,7 @@ namespace Reko.Arch.M6800.M6809
         {
             var b = binder.EnsureRegister(Registers.B);
             var x = binder.EnsureRegister(Registers.X);
-            m.Assign(x, m.IAdd(x, m.Cast(PrimitiveType.UInt16, b)));
+            m.Assign(x, m.IAdd(x, m.Convert(b, b.DataType, PrimitiveType.UInt16)));
         }
 
         private void RewriteModifyCc(Func<Expression, Expression, Expression> fn)
@@ -552,7 +553,7 @@ namespace Reko.Arch.M6800.M6809
         private void RewriteDaa()
         {
             var a = binder.EnsureRegister(Registers.A);
-            m.Assign(a, host.PseudoProcedure("__daa", PrimitiveType.Byte, a));
+            m.Assign(a, host.Intrinsic("__daa", true, PrimitiveType.Byte, a));
             NZ_C(a);
         }
 
@@ -643,7 +644,7 @@ namespace Reko.Arch.M6800.M6809
         {
             var b = binder.EnsureRegister(Registers.B);
             var d = binder.EnsureRegister(Registers.D);
-            m.Assign(d, m.Cast(PrimitiveType.Int16, b));
+            m.Assign(d, m.Convert(b, PrimitiveType.Byte, PrimitiveType.Int16));
             NZ__(d);
         }
 
@@ -676,7 +677,7 @@ namespace Reko.Arch.M6800.M6809
 
         private void RewriteSync()
         {
-            m.SideEffect(host.PseudoProcedure("__sync", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__sync", false, VoidType.Instance));
         }
 
         private void RewriteTfr()

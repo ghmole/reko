@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -174,6 +174,13 @@ namespace Reko.Core.Expressions
             if (!(p is Constant cP))
                 return false;
             return (c.ToInt64() == cP.ToInt64());
+        }
+
+        bool ExpressionVisitor<bool>.VisitConversion(Conversion conversion)
+        {
+            return
+                p is Conversion convP &&
+                Match(convP.Expression, conversion.Expression);
         }
 
         bool ExpressionVisitor<bool>.VisitDereference(Dereference deref)
@@ -368,6 +375,8 @@ namespace Reko.Core.Expressions
             {
                 throw new InvalidOperationException();
             }
+
+            public override bool IsMaxUnsigned => throw new InvalidOperationException();
 
             public override byte ToByte()
             {

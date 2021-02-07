@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using NUnit.Framework;
 using Reko.Arch.X86;
 using Reko.Arch.X86.Assembler;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using Reko.Environments.Windows;
@@ -50,7 +51,7 @@ namespace Reko.UnitTests.Arch.X86
             sc = new ServiceContainer();
             importReferences = new Dictionary<Address, ImportReference>();
             sc.AddService<IFileSystemService>(new FileSystemServiceImpl());
-            arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
         }
 
         private void Given_RegValue(RegisterStorage reg, uint value)
@@ -77,7 +78,7 @@ namespace Reko.UnitTests.Arch.X86
 
         private void Given_MsdosCode(Action<X86Assembler> coder)
         {
-            arch = new X86ArchitectureReal(new ServiceContainer(), "x86-real-16");
+            arch = new X86ArchitectureReal(new ServiceContainer(), "x86-real-16", new Dictionary<string, object>());
             var asm = new X86Assembler(arch, Address.SegPtr(0x07F0, 0), new List<ImageSymbol>());
             asm.Segment("PSP");
             asm.Repeat(0x100, m => m.Db(0));
@@ -246,7 +247,8 @@ namespace Reko.UnitTests.Arch.X86
             emu.InstructionPointer += 4;
             emu.Start();
 
-            Assert.AreEqual(0x12345620u, segmentMap.Segments.Values.First().MemoryArea.ReadLeUInt32(0));
+            var bmem = (ByteMemoryArea) segmentMap.Segments.Values.First().MemoryArea;
+            Assert.AreEqual(0x12345620u, bmem.ReadLeUInt32(0));
         }
 
         [Test]
@@ -375,10 +377,11 @@ namespace Reko.UnitTests.Arch.X86
                 m.Mov(m.eax, 0x7FFFFFFF);
                 m.Inc(m.eax);
             });
-
+            emu.Flags |= X86Emulator.Cmask;
             emu.Start();
 
             Assert.AreEqual(0x80000000u, emu.Registers[Registers.eax.Number]);
+            Assert.IsTrue((emu.Flags & X86Emulator.Cmask) != 0);
             Assert.IsTrue((emu.Flags & X86Emulator.Zmask) == 0);
             Assert.IsTrue((emu.Flags & X86Emulator.Omask) != 0);
         }
@@ -561,8 +564,8 @@ namespace Reko.UnitTests.Arch.X86
             emu.Start();
 
             Assert.AreEqual(0x0010000A, emu.Registers[Registers.edi.Number]);
-
         }
+
 
         [Test]
         public void X86Emu_cld()
@@ -951,7 +954,7 @@ namespace Reko.UnitTests.Arch.X86
         }
 
         [Test]
-        public void X86emu_X86Emu_indexed_memory_16()
+        public void X86emu_indexed_memory_16()
         {
             Given_MsdosCode(m =>
             {
@@ -966,6 +969,42 @@ namespace Reko.UnitTests.Arch.X86
             emu.Start();
 
             Assert.AreEqual(0x42, emu.ReadRegister(Registers.al));
+        }
+
+        [Test]
+        public void X86emu_test_16()
+        {
+            Given_MsdosCode(m =>
+            {
+                m.Mov(m.cx, 0xABCD);
+                m.Mov(m.bx, 0x8123);
+                m.Stc();
+                m.Test(m.cx, m.bx);
+                m.Hlt();
+            });
+
+            emu.Start();
+            Assert.IsTrue((emu.Flags & X86Emulator.Cmask) == 0);    // should clear C
+            Assert.IsTrue((emu.Flags & X86Emulator.Smask) != 0);    // result is signed
+            Assert.IsTrue((emu.Flags & X86Emulator.Zmask) == 0);    // and not 0.
+        }
+
+        [Test]
+        public void X86emu_jcxz()
+        {
+            Given_MsdosCode(m =>
+            {
+                m.Clc();
+                m.Mov(m.cx, 0x0000);
+                m.Jcxz("cx_zero");
+                m.Hlt();
+                m.Label("cx_zero");
+                m.Stc();
+                m.Hlt();
+            });
+
+            emu.Start();
+            Assert.IsTrue((emu.Flags & X86Emulator.Cmask) != 0);    // should set C
         }
     }
 }

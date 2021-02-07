@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using Reko.Arch.Msp430;
 using NUnit.Framework;
 using Reko.Core.Rtl;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.Msp430
 {
@@ -37,7 +38,7 @@ namespace Reko.UnitTests.Arch.Msp430
 
         public Msp430RewriterTests()
         {
-            this.arch = new Msp430Architecture(CreateServiceContainer(), "msp430");
+            this.arch = new Msp430Architecture(CreateServiceContainer(), "msp430", new Dictionary<string, object>());
         }
 
         public override IProcessorArchitecture Architecture => arch;
@@ -343,7 +344,7 @@ namespace Reko.UnitTests.Arch.Msp430
             AssertCode(
                 "0|L--|0100(2): 4 instructions",
                 "1|L--|v3 = SLICE(r15, byte, 0)",
-                "2|L--|r15 = (int16) v3",
+                "2|L--|r15 = CONVERT(v3, byte, int16)",
                 "3|L--|V = false",
                 "4|L--|NZC = cond(r15)");
         }

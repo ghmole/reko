@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 Pavel Tomin.
+ * Copyright (C) 1999-2021 Pavel Tomin.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -416,7 +416,7 @@ namespace Reko.UserInterfaces.WindowsForms
             if (userObj == null)
                 return;
             var blockData = userObj.UserData as CfgBlockNode;
-            Debug.Print("Node: {0}", blockData.Block.Name);
+            Debug.Print("Node: {0}", blockData.Block.DisplayName);
         }
 
     }

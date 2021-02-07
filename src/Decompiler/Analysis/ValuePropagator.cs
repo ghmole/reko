@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ namespace Reko.Analysis
     /// </remarks>
     public class ValuePropagator : InstructionVisitor<Instruction>
     {
-        private static TraceSwitch trace = new TraceSwitch("ValuePropagation", "Traces value propagation");
+        private static readonly TraceSwitch trace = new TraceSwitch("ValuePropagation", "Traces value propagation");
 
         private readonly IProcessorArchitecture arch;
         private readonly SsaState ssa;
@@ -229,7 +229,7 @@ namespace Reko.Analysis
                 ci,
                 this.arch.FpuStackRegister,
                 -sig.FpuStackDelta);
-            var ab = new CallApplicationBuilder(this.ssa, stm, ci, ci.Callee);
+            var ab = new CallApplicationBuilder(this.ssa, stm, ci, ci.Callee, true);
             stm.Instruction = ab.CreateInstruction(sig, chr);
             ssam.AdjustSsa(stm, ci);
         }

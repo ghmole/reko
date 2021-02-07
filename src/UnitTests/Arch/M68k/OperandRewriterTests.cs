@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,15 +36,13 @@ namespace Reko.UnitTests.Arch.M68k
     public class OperandRewriterTests
     {
         private M68kArchitecture arch;
-        private Rewriter rw;
         private Address addrInstr;
 
         [SetUp]
         public void Setup()
         {
-            this.arch = new M68kArchitecture(new ServiceContainer(), "m68k");
+            this.arch = new M68kArchitecture(new ServiceContainer(), "m68k", new Dictionary<string, object>());
             this.addrInstr = Address.Ptr32(0x0012340C);
-            this.rw = new Rewriter(this.arch, null, new M68kState(arch), new Frame(arch.FramePointerType), null);
         }
 
         [Test]

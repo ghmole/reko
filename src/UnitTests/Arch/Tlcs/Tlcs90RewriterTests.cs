@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Arch.Tlcs;
 using Reko.Arch.Tlcs.Tlcs90;
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -35,16 +36,16 @@ namespace Reko.UnitTests.Arch.Tlcs
     [TestFixture]
     public class Tlcs90RewriterTests : RewriterTestBase
     {
-        private Tlcs90Architecture arch = new Tlcs90Architecture(new ServiceContainer(), "tlcs90");
-        private Address baseAddr = Address.Ptr16(0x0100);
+        private readonly Tlcs90Architecture arch = new Tlcs90Architecture(new ServiceContainer(), "tlcs90", new Dictionary<string, object>());
+        private readonly Address baseAddr = Address.Ptr16(0x0100);
 
         public override IProcessorArchitecture Architecture => arch;
         public override Address LoadAddress => baseAddr;
 
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
-            Tlcs90State state = (Tlcs90State)arch.CreateProcessorState();
-            return new Tlcs90Rewriter(arch, new LeImageReader(mem, 0), state, binder, host);
+            var state = arch.CreateProcessorState();
+            return arch.CreateRewriter(arch.CreateImageReader(mem, 0), state, binder, host);
         }
 
         [SetUp]
@@ -275,9 +276,9 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("F3A4");  // sla
             AssertCode(
                 "0|L--|0100(2): 6 instructions",
-                "1|L--|v4 = Mem0[hl + (int16) a:byte]",
+                "1|L--|v4 = Mem0[hl + CONVERT(a, byte, int16):byte]",
                 "2|L--|v5 = v4 << 1<i8>",
-                "3|L--|Mem0[hl + (int16) a:byte] = v5",
+                "3|L--|Mem0[hl + CONVERT(a, byte, int16):byte] = v5",
                 "4|L--|H = false",
                 "5|L--|N = false",
                 "6|L--|SZXC = cond(v5)");
@@ -705,7 +706,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             AssertCode(
                 "0|L--|0100(2): 4 instructions",
                 "1|L--|v5 = hl",
-                "2|L--|l = v5 / 0x4A<8>",
+                "2|L--|l = v5 /8 0x4A<8>",
                 "3|L--|h = v5 % 0x4A<8>",
                 "4|L--|V = cond(l)");
         }

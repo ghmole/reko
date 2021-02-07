@@ -1,5 +1,5 @@
 #region License
-/* Copyright (C) 1999-2020 John Källén.
+/* Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ namespace Reko.Core
         /// </summary>
         Project? Project { get; }
 
-        bool Load(string fileName, string? loader = null);
+        bool Load(string fileName, string? loader = null, Address? addLoad = null);
         Program LoadRawImage(string file, LoadDetails raw);
         Program LoadRawImage(byte[] bytes, LoadDetails raw);
         void ScanPrograms();

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ namespace Reko.Typing
 	/// </summary>
 	public class EquivalenceClassBuilder : InstructionVisitorBase
 	{
-        private static TraceSwitch trace = new TraceSwitch(nameof(EquivalenceClassBuilder), "Trace EquivalenceClassBuilder") { Level = TraceLevel.Warning };
+        private static readonly TraceSwitch trace = new TraceSwitch(nameof(EquivalenceClassBuilder), "Trace EquivalenceClassBuilder") { Level = TraceLevel.Warning };
 
 		private readonly TypeFactory factory;
 		private readonly TypeStore store;
@@ -90,9 +90,12 @@ namespace Reko.Typing
                 if (selector.HasValue)
                 {
                     segment.Identifier!.TypeVariable = null;
-                    var tvSeg = store.EnsureExpressionTypeVariable(factory, segment.Identifier, segment.Identifier.Name + "_t");
-                    tvSeg.OriginalDataType = segment.Identifier.DataType;
-                    this.segTypevars[selector.Value] = tvSeg;
+                    var tvSelector = store.EnsureExpressionTypeVariable(factory, segment.Identifier);
+                    this.segTypevars[selector.Value] = tvSelector;
+                    tvSelector.OriginalDataType = factory.CreatePointer(
+                        segment.Fields,
+                        segment.Identifier.DataType.BitSize);
+                    store.SegmentTypes[segment] = segment.Fields;
                 }
             }
         }
@@ -229,7 +232,13 @@ namespace Reko.Typing
 			EnsureTypeVariable(cof);
 		}
 
-		public override void VisitDeclaration(Declaration decl)
+        public override void VisitConversion(Conversion conversion)
+        {
+            conversion.Expression.Accept(this);
+            EnsureTypeVariable(conversion);
+        }
+
+        public override void VisitDeclaration(Declaration decl)
 		{
 			decl.Identifier.Accept(this);
 			if (decl.Expression != null)
@@ -301,7 +310,7 @@ namespace Reko.Typing
             {
                 if (signature.ReturnValue.TypeVariable == null)
                 {
-                    DebugEx.Warn(trace, "Eqb: {0:X}: Type variable for return value of signature of {1} is missing", stmCur!.LinearAddress, stmCur.Block.Procedure.Name);
+                    trace.Warn("Eqb: {0:X}: Type variable for return value of signature of {1} is missing", stmCur!.LinearAddress, stmCur.Block.Procedure.Name);
                     return;
                 }
                 store.MergeClasses(

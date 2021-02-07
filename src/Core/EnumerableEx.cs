@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -152,7 +152,7 @@ namespace Reko.Core
             if (d.TryGetValue(key, out var value))
                 return value;
             else
-                return def;
+                return def!;
         }
 
         public static IEnumerable<TResult> ZipMany<TSource, TResult>(

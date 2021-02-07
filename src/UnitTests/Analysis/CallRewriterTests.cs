@@ -1,7 +1,7 @@
 
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ using Reko.Core.Code;
 using Reko.Core.Expressions;
 using Reko.Core.Output;
 using Reko.Core.Serialization;
+using Reko.Core.Services;
 using Reko.Core.Types;
 using Reko.UnitTests.Mocks;
 using System;
@@ -56,8 +57,8 @@ namespace Reko.UnitTests.Analysis
         public void Setup()
         {
             program = new Program();
-            var sc = new ServiceContainer();
-            program.Architecture = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            sc = new ServiceContainer();
+            program.Architecture = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             program.Platform = new DefaultPlatform(sc, program.Architecture);
             crw = new CallRewriter(program.Platform, new ProgramDataFlow(), new FakeDecompilerEventListener());
             proc = new Procedure(program.Architecture, "foo", Address.Ptr32(0x00123400), program.Architecture.CreateFrame());
@@ -66,7 +67,7 @@ namespace Reko.UnitTests.Analysis
             pb = new ProgramBuilder();
             ssaStates = new List<SsaState>();
             eventListener = new FakeDecompilerEventListener();
-
+            sc.AddService<DecompilerEventListener>(eventListener);
         }
 
         private class NestedProgram
@@ -104,7 +105,7 @@ namespace Reko.UnitTests.Analysis
         {
             var dynamicLinker = new Mock<IDynamicLinker>();
 
-            dfa = new DataFlowAnalysis(program, dynamicLinker.Object, eventListener);
+            dfa = new DataFlowAnalysis(program, dynamicLinker.Object, sc);
             var ssts = dfa.RewriteProceduresToSsa();
 
             // Discover ssaId's that are live out at each call site.

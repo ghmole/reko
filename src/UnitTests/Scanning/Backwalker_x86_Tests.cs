@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -151,7 +151,7 @@ namespace Reko.UnitTests.Scanning
         public void Setup()
         {
             sc = new ServiceContainer();
-            arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             m = new ProcedureBuilder();
             var map = new SegmentMap(Address.Ptr32(0x10000000));
             state = arch.CreateProcessorState();
@@ -168,7 +168,7 @@ namespace Reko.UnitTests.Scanning
             var el = new FakeDecompilerEventListener();
             sc.AddService<IFileSystemService>(fsSvc);
             sc.AddService<DecompilerEventListener>(el);
-            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             var asm = new X86TextAssembler(arch);
             using (var rdr = new StreamReader(FileUnitTester.MapTestPath(relativePath)))
             {
@@ -363,7 +363,7 @@ namespace Reko.UnitTests.Scanning
             //m.Label("dummy");
             //m.Dd(0);
 
-            RunTest(new X86ArchitectureFlat32(sc, "x86-protected-32"),
+            RunTest(new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>()),
                 new RtlGoto(m.Mem32(m.IAdd(m.IMul(edx, 4), 0x10010)), InstrClass.Transfer),
                 "Scanning/BwSwitch32.txt");
         }
@@ -392,7 +392,7 @@ namespace Reko.UnitTests.Scanning
             m.Assign(bx, m.IAdd(bx, bx));
             m.Assign(SCZO, new ConditionOf(bx));
 
-            RunTest(new X86ArchitectureReal(sc, "x86-real-16"),
+            RunTest(new X86ArchitectureReal(sc, "x86-real-16", new Dictionary<string, object>()),
                 new RtlGoto(m.Mem16(m.IAdd(bx, 0x1234)), InstrClass.Transfer),
                 "Scanning/BwSwitch16.txt");
         }
@@ -443,7 +443,7 @@ namespace Reko.UnitTests.Scanning
             // jmp [eax + 0x12000]
 
             m.Assign(edx, m.Mem32(m.ISub(ebp, 0xC4)));
-            m.Assign(eax, m.Cast(PrimitiveType.Word32, m.Mem8(m.IAdd(edx, 0x10000))));
+            m.Assign(eax, m.Convert(m.Mem8(m.IAdd(edx, 0x10000)), PrimitiveType.Byte, PrimitiveType.Word32));
             var xfer = new RtlGoto(m.Mem32(m.IAdd(eax, 0x12000)), InstrClass.Transfer);
 
             var block1 = m.CurrentBlock;

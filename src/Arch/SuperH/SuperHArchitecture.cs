@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ using Reko.Core.Rtl;
 using Reko.Core.Types;
 using BindingFlags = System.Reflection.BindingFlags;
 using Reko.Core.Lib;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.SuperH
 {
@@ -39,7 +40,8 @@ namespace Reko.Arch.SuperH
     {
         private readonly Dictionary<uint, FlagGroupStorage> grfs;
 
-        public SuperHArchitecture(IServiceProvider services, string archId, EndianServices endianness) : base(services, archId)
+        public SuperHArchitecture(IServiceProvider services, string archId, EndianServices endianness, Dictionary<string, object> options)
+            : base(services, archId, options)
         {
             this.Endianness = endianness;
             this.FramePointerType = PrimitiveType.Ptr32;
@@ -189,14 +191,16 @@ namespace Reko.Arch.SuperH
 
     public class SuperHLeArchitecture : SuperHArchitecture
     {
-        public SuperHLeArchitecture(IServiceProvider services, string archId) : base(services, archId, EndianServices.Little)
+        public SuperHLeArchitecture(IServiceProvider services, string archId, Dictionary<string, object> options)
+            : base(services, archId, EndianServices.Little, options)
         {
         }
     }
 
     public class SuperHBeArchitecture : SuperHArchitecture
     {
-        public SuperHBeArchitecture(IServiceProvider services, string arch) : base(services, arch, EndianServices.Big)
+        public SuperHBeArchitecture(IServiceProvider services, string arch, Dictionary<string, object> options) :
+            base(services, arch, EndianServices.Big, options)
         {
         }
     }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ using Reko.Core.Lib;
 using Reko.Core.Types;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Reko.Analysis
@@ -42,7 +43,7 @@ namespace Reko.Analysis
             protected readonly SsaTransform outer;
             protected readonly SsaIdentifierCollection ssaIds;
             protected readonly IDictionary<Block, SsaBlockState> blockstates;
-
+            private Stack<Block> bloxx = new Stack<Block>();
             public IdentifierTransformer(Identifier id, Statement stm, SsaTransform outer)
             {
                 this.id = id;
@@ -67,7 +68,7 @@ namespace Reko.Analysis
             /// <returns>The SSA name of the identifier that was read.</returns>
             public virtual SsaIdentifier ReadVariable(SsaBlockState bs)
             {
-                trace.Verbose("ReadVariable {0} in block {1}", this.id, bs.Block.Name);
+                trace.Verbose("ReadVariable {0} in block {1}", this.id, bs.Block.DisplayName);
                 if (bs.Terminates)
                 {
                     // Reko has determined that this block diverges. We fall back to 
@@ -84,10 +85,18 @@ namespace Reko.Analysis
                 // CFG of the Procedure being malformed due to errors in the Scanning
                 // phase. Once #726 is addressed, there should be no need for this
                 // code.
-                //if (++this.depth > 1000)
-                //    throw new StackOverflowException("");
+                bloxx.Push(bs.Block);
+                if (this.bloxx.Count> 1000)
+                {
+                    bs.Block.Procedure.Dump(true);
+                    foreach (var block in bloxx)
+                    {
+                        Debug.Print("  {0}", block.DisplayName);
+                    }
+                    throw new StackOverflowException($"Boundless recursion in {bs.Block.Procedure.Name}.");
+                }
                 sid = ReadVariableRecursive(bs);
-                //--this.depth;
+                bloxx.Pop();
                 return sid!;
             }
 
@@ -247,10 +256,10 @@ namespace Reko.Analysis
             private bool TryRemoveTrivial(SsaIdentifier phi, out SsaIdentifier sid)
             {
                 var phiFunc = ((PhiAssignment) phi.DefStatement!.Instruction).Src;
-                DebugEx.Verbose(trace, "  Checking {0} for triviality", phiFunc);
+                trace.Verbose("  Checking {0} for triviality", phiFunc);
                 if (phiFunc.Arguments.All(a => a.Value == phi.Identifier))
                 {
-                    DebugEx.Verbose(trace, "  {0} is a def", phi.Identifier);
+                    trace.Verbose("  {0} is a def", phi.Identifier);
                     // Undef'ined or unreachable parameter; assume it's a def.
                     sid = NewDefInstruction(phi.OriginalIdentifier, phi.DefStatement.Block);
                 }
@@ -270,7 +279,7 @@ namespace Reko.Analysis
                 sid.Uses.RemoveAll(u => u == phi.DefStatement);
 
                 // Remove all phi uses which may have become trivial now.
-                DebugEx.Verbose(trace, "Removing {0} and uses {1}", phi.Identifier.Name, string.Join(",", users));
+                trace.Verbose("Removing {0} and uses {1}", phi.Identifier.Name, string.Join(",", users));
                 foreach (var use in users)
                 {
                     if (use.Instruction is PhiAssignment phiAss)
@@ -488,27 +497,31 @@ namespace Reko.Analysis
             /// <returns>The new SSA identifier</returns>
             public override Identifier WriteVariable(SsaBlockState bs, SsaIdentifier sid)
             {
-                DebugEx.Verbose(trace, "  WriteBlockLocalVariable: ({0}, {1}, ({2})", bs.Block.Name, id, this.liveBits);
+                trace.Verbose("  WriteBlockLocalVariable: ({0}, {1}, ({2})", bs.Block.DisplayName, id, this.liveBits);
                 if (!bs.currentDef.TryGetValue(id.Storage.Domain, out var aliasState))
                 {
                     aliasState = new AliasState();
                     bs.currentDef.Add(id.Storage.Domain, aliasState);
                 }
-                var stgDef = id.Storage;
-                var defRange = stgDef.GetBitRange();
-                for (int i = 0; i < aliasState.Definitions.Count; ++i)
+                if (sid.DefStatement != null && !(sid.DefStatement.Instruction is AliasAssignment))
                 {
-                    var (sidPrev, prevRange, offset) = aliasState.Definitions[i];
-                    var stgPrev = sidPrev.Identifier.Storage;
-                    if (defRange.Covers(prevRange))
+                    // Only store a definition if it isn't an alias.
+                    var stgDef = id.Storage;
+                    var defRange = stgDef.GetBitRange();
+                    for (int i = 0; i < aliasState.Definitions.Count; ++i)
                     {
-                        DebugEx.Verbose(trace, "     overwriting: {0}", sidPrev.Identifier);
-                        aliasState.Definitions.RemoveAt(i);
-                        --i;
+                        var (sidPrev, prevRange, offset) = aliasState.Definitions[i];
+                        var stgPrev = sidPrev.Identifier.Storage;
+                        if (defRange.Covers(prevRange))
+                        {
+                            trace.Verbose("     overwriting: {0}", sidPrev.Identifier);
+                            aliasState.Definitions.RemoveAt(i);
+                            --i;
+                        }
                     }
+                    aliasState.Definitions.Add((sid, defRange, this.Offset));
                 }
-                aliasState.Definitions.Add((sid, defRange, this.Offset));
-                DebugEx.Verbose(trace, "     writing: {0}", sid.Identifier);
+                trace.Verbose("     writing: {0}", sid.Identifier);
 
                 var newDict = aliasState.ExactAliases
                     .Where(kv => !kv.Key.OverlapsWith(id.Storage))
@@ -524,19 +537,19 @@ namespace Reko.Analysis
 
             public override SsaIdentifier? ReadBlockLocalVariable(SsaBlockState bs)
             {
-                DebugEx.Verbose(trace, "  ReadBlockLocalVariable: ({0}, {1}, ({2})", bs.Block.Name, id, this.liveBits);
+                trace.Verbose("  ReadBlockLocalVariable: ({0}, {1}, ({2})", bs.Block.DisplayName, id, this.liveBits);
                 if (!bs.currentDef.TryGetValue(id.Storage.Domain, out var alias))
                     return null;
 
-                // Identifier id is defined locally in this block.
+                // Identifier id is available in this block.
                 // Has an exact alias already been calculated?
                 if (alias.ExactAliases.TryGetValue(id.Storage, out var sid))
                 {
-                    DebugEx.Verbose(trace, "    found alias ({0}, {1})", bs.Block.Name, sid.Identifier.Name);
+                    trace.Verbose("    found alias ({0}, {1})", bs.Block.DisplayName, sid.Identifier.Name);
                     return sid;
                 }
 
-                // At least some of the bits of 'id' are defined locally in this 
+                // At least some of the bits of 'id' are available locally in this 
                 // block. Walk across the bits of 'id', collecting all parts
                 // defined into a sequence.
                 int offsetLo = this.liveBits.Lsb;
@@ -546,7 +559,7 @@ namespace Reko.Analysis
                 {
                     var useRange = new BitRange(offsetLo, offsetHi);
                     var (sidElem, usedRange, defRange) = FindIntersectingRegister(alias.Definitions, useRange);
-                    if (sidElem == null || offsetLo < usedRange.Lsb)
+                    if (sidElem is null || offsetLo < usedRange.Lsb)
                     {
                         // Found a gap in the register that wasn't defined in
                         // this basic block. Seek backwards
@@ -599,10 +612,10 @@ namespace Reko.Analysis
             /// the first intersection of the read interval in <paramref name="bitLo"/> and 
             /// <paramref name="bitHi"> intersects the written register.
             /// </summary>
-            public (SsaIdentifier, BitRange, BitRange) FindIntersectingRegister(List<(SsaIdentifier,BitRange,int)> definitions, BitRange useRange)
+            public (SsaIdentifier?, BitRange, BitRange) FindIntersectingRegister(List<(SsaIdentifier,BitRange,int)> definitions, BitRange useRange)
             {
-                var result = ((SsaIdentifier)null!, useRange, default(BitRange));
-                for (int i = definitions.Count-1; i >= 0; --i)
+                var result = ((SsaIdentifier?)null, useRange, default(BitRange));
+                for (int i = definitions.Count - 1; i >= 0; --i)
                 {
                     var (sid, defRange, offset) = definitions[i];
                     var intersection = defRange.Intersect(useRange);
@@ -610,6 +623,7 @@ namespace Reko.Analysis
                     {
                         defRange = new BitRange(intersection.Lsb + offset, intersection.Msb + offset);
                         result = (sid, intersection, defRange);
+                        useRange = new BitRange(useRange.Lsb, defRange.Lsb);
                     }
                 }
                 return result;
@@ -635,10 +649,14 @@ namespace Reko.Analysis
             {
                 if (range.Covers(sidSrc.Identifier.Storage.GetBitRange()))
                     return sidSrc;
-                var e = outer.m.Slice(idSlice.DataType, sidSrc.Identifier, range.Lsb);
+                // Avoid creating an aliasing slice if it already exists.
+                if (outer.availableSlices.TryGetValue((sidSrc, range), out var sidAlias))
+                    return sidAlias;
+                var e = outer.m.Slice(idSlice.DataType, sidSrc.Identifier, range.Lsb - (int)sidSrc.Identifier.Storage.BitAddress);
                 var ass = new AliasAssignment(idSlice, e);
-                var sidAlias = InsertAfterDefinition(sidSrc.DefStatement!, ass);
+                sidAlias = InsertAfterDefinition(sidSrc.DefStatement!, ass);
                 sidSrc.Uses.Add(sidAlias.DefStatement!);
+                outer.availableSlices.Add((sidSrc, range), sidAlias);
                 return sidAlias;
             }
         }
@@ -670,7 +688,7 @@ namespace Reko.Analysis
             /// <returns>The new SSA identifier</returns>
             public override Identifier WriteVariable(SsaBlockState bs, SsaIdentifier sid)
             {
-                DebugEx.Verbose(trace, "  WriteBlockLocalVariable: ({0}, {1}, ({2:X8})", bs.Block.Name, id, this.flagMask);
+                trace.Verbose("  WriteBlockLocalVariable: ({0}, {1}, ({2:X8})", bs.Block.DisplayName, id, this.flagMask);
                 if (!bs.currentFlagDef.TryGetValue(id.Storage.Domain, out var aliasState))
                 {
                     aliasState = new FlagAliasState();
@@ -680,7 +698,7 @@ namespace Reko.Analysis
                 {
                     if ((aliasState.Definitions[i].Item2 & ~flagMask) == 0)
                     {
-                        DebugEx.Verbose(trace, "     overwriting: {0} {1:X8}",
+                        trace.Verbose("     overwriting: {0} {1:X8}",
                             aliasState.Definitions[i].Item1.Identifier,
                             aliasState.Definitions[i].Item2);
                         aliasState.Definitions.RemoveAt(i);
@@ -688,7 +706,7 @@ namespace Reko.Analysis
                     }
                 }
                 aliasState.Definitions.Add((sid, flagMask));
-                DebugEx.Verbose(trace, "     writing: {0} {1:X8}", sid.Identifier, flagMask);
+                trace.Verbose("     writing: {0} {1:X8}", sid.Identifier, flagMask);
 
                 var newDict = aliasState.ExactAliases
                     .Where(kv => !kv.Key.Storage.OverlapsWith(id.Storage))

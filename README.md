@@ -1,15 +1,16 @@
 
 # reko - a general purpose decompiler.
 
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/uxmal/reko?branch=master&svg=true)](https://ci.appveyor.com/project/uxmal/reko)
  [![Build Status](https://travis-ci.org/uxmal/reko.svg?branch=master)](https://travis-ci.org/uxmal/reko) 
+ [![Join us on Discord](https://img.shields.io/static/v1?link=https://discord.gg/9PMWVxEjqr&message=Join%20Discord&logo=discord&style=flat&color=107090&labelColor=5E5E5E&label=&logoColor=white)](https://discord.gg/9PMWVxEjqr)
  [![Join the chat at https://gitter.im/uxmal/reko](https://badges.gitter.im/uxmal/reko.svg)](https://gitter.im/uxmal/reko?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
- [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/uxmal/reko?branch=master&svg=true)](https://ci.appveyor.com/project/uxmal/reko)
- 
-<img align="right" src="https://raw.githubusercontent.com/uxmal/reko/analysis-development/web/images/reko.png" /> 
 
-**Reko** (Swedish: "decent, obliging") is a C# project containing
-a decompiler for machine code binaries.  This project is freely
-available under the GNU General Public License.
+ 
+<img align="right" src="web/images/reko.png" /> 
+
+**Reko** (Swedish: "decent, obliging") is a decompiler for machine code binaries.
+This project is freely available under the GNU General Public License.
 
 The project consists of front ends, core decompiler engine, and back
 ends to help it achieve its goals.  A command-line, a Windows GUI,

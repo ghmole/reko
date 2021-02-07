@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
@@ -298,7 +299,7 @@ namespace Reko.Arch.Arm.AArch32
             };
         }
 
-        public override AArch32Instruction NotYetImplemented(uint wInstr, string message)
+        public override AArch32Instruction NotYetImplemented(string message)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
             testGenSvc?.ReportMissingDecoder("ThumbDis", this.addr, this.rdr, message);
@@ -560,7 +561,7 @@ namespace Reko.Arch.Arm.AArch32
         };
 
         private static readonly ArmVectorData[] unsigned_bhwd = new[]
-        {
+ {
             ArmVectorData.U8,
             ArmVectorData.U16,
             ArmVectorData.U32,
@@ -1889,7 +1890,7 @@ namespace Reko.Arch.Arm.AArch32
         {
             return (u, d) =>
             {
-                d.NotYetImplemented(u, $"Unimplemented '{message}' when decoding {u:X4}");
+                d.NotYetImplemented($"Unimplemented '{message}' when decoding {u:X4}");
                 return false;
             };
         }
@@ -1942,7 +1943,6 @@ namespace Reko.Arch.Arm.AArch32
         {
             return new NyiDecoder<T32Disassembler, Mnemonic, AArch32Instruction>(msg);
         }
-
 
         static T32Disassembler()
         {

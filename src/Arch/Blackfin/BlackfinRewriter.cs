@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,16 +18,17 @@
  */
 #endregion
 
+using Reko.Core;
+using Reko.Core.Expressions;
+using Reko.Core.Machine;
+using Reko.Core.Memory;
+using Reko.Core.Rtl;
+using Reko.Core.Services;
+using Reko.Core.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using Reko.Core;
-using Reko.Core.Expressions;
-using Reko.Core.Machine;
-using Reko.Core.Rtl;
-using Reko.Core.Services;
-using Reko.Core.Types;
 
 namespace Reko.Arch.Blackfin
 {
@@ -95,7 +96,7 @@ namespace Reko.Arch.Blackfin
         private void EmitUnitTest(BlackfinInstruction instr)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("BlackfinRw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("BlackfinRw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private Address Addr(int iOperand)
@@ -123,7 +124,7 @@ namespace Reko.Arch.Blackfin
 
         private void RewriteCli()
         {
-            m.SideEffect(host.PseudoProcedure("__cli", VoidType.Instance));
+            m.SideEffect(host.Intrinsic("__cli", false, VoidType.Instance));
         }
 
         private void RewriteJump()
@@ -146,17 +147,17 @@ namespace Reko.Arch.Blackfin
         private void RewriteMovx()
         {
             var src = Operand(1);
-            m.Assign(Reg(0), m.Cast(PrimitiveType.Word32, src));
+            m.Assign(Reg(0), m.Convert(src, src.DataType, PrimitiveType.Word32));
         }
 
         private void RewriteMovxb()
         {
-            m.Assign(Reg(0), m.Cast(PrimitiveType.Int32, m.Slice(PrimitiveType.SByte, Reg(1), 0)));
+            m.Assign(Reg(0), m.Convert(m.Slice(PrimitiveType.SByte, Reg(1), 0), PrimitiveType.SByte, PrimitiveType.Int32));
         }
 
         private void RewriteMovzb()
         {
-            m.Assign(Reg(0), m.Cast(PrimitiveType.Word32, m.Slice(PrimitiveType.Byte, Reg(1), 0)));
+            m.Assign(Reg(0), m.Convert(m.Slice(PrimitiveType.Byte, Reg(1), 0), PrimitiveType.Byte, PrimitiveType.Word32));
         }
 
         private void RewriteMul()

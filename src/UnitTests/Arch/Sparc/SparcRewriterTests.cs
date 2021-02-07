@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ using Reko.Arch.Sparc;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Types;
 using System;
@@ -37,7 +38,7 @@ namespace Reko.UnitTests.Arch.Sparc
     [TestFixture]
     public class SparcRewriterTests : RewriterTestBase
     {
-        private SparcArchitecture arch = new SparcArchitecture(CreateServiceContainer(), "sparc", PrimitiveType.Word32);
+        private SparcArchitecture arch = new SparcArchitecture32(CreateServiceContainer(), "sparc", new Dictionary<string, object>());
         private Address baseAddr = Address.Ptr32(0x00100000);
         private SparcProcessorState state;
         private Mock<IRewriterHost> host;
@@ -57,7 +58,7 @@ namespace Reko.UnitTests.Arch.Sparc
             if (e != null)
                 return e;
             else
-                return new SparcRewriter(arch, new LeImageReader(mem, 0), state, new Frame(arch.WordWidth), host);
+                return arch.CreateRewriter(arch.CreateImageReader(mem, 0), state, new Frame(arch.WordWidth), host);
         }
 
         [SetUp]
@@ -87,6 +88,7 @@ namespace Reko.UnitTests.Arch.Sparc
             var instr = new SparcInstruction
             {
                 Mnemonic = mnemonic,
+                InstructionClass = InstrClass.Linear,
                 Operands = ops.Select(Op).ToArray()
             };
             return instr;
@@ -94,13 +96,12 @@ namespace Reko.UnitTests.Arch.Sparc
 
         private MachineOperand Op(object o)
         {
-            var reg = o as RegisterStorage;
-            if (reg != null)
-                return new RegisterOperand(reg);
-            var c = o as Constant;
-            if (c != null)
-                return new ImmediateOperand(c);
-            throw new NotImplementedException(string.Format("Unsupported: {0} ({1})", o, o.GetType().Name));
+            switch (o)
+            {
+            case RegisterStorage reg: return new RegisterOperand(reg);
+            case Constant c: return new ImmediateOperand(c);
+            default: throw new NotImplementedException(string.Format("Unsupported: {0} ({1})", o, o.GetType().Name));
+            }
         }
 
         [Test]
@@ -108,7 +109,7 @@ namespace Reko.UnitTests.Arch.Sparc
         {
             Given_UInt32s(0x7FFFFFFF);  // "call\t000FFFFC"
             AssertCode(
-                "0|T--|00100000(4): 1 instructions",
+                "0|TD-|00100000(4): 1 instructions",
                 "1|TD-|call 000FFFFC (0)");
         }
 
@@ -170,14 +171,15 @@ namespace Reko.UnitTests.Arch.Sparc
         [Ignore("")]
         public void SparcRw_mulscc()
         {
-            host.Setup(h => h.PseudoProcedure(
+            host.Setup(h => h.Intrinsic(
                 "__mulscc",
+                true,
                 VoidType.Instance,
                 It.IsNotNull<Expression[]>()))
                 .Returns(new Application(
                      new ProcedureConstant(
                         PrimitiveType.Ptr32,
-                        new PseudoProcedure("__mulscc", PrimitiveType.Int32, 2)),
+                        new IntrinsicProcedure("__mulscc", true, PrimitiveType.Int32, 2)),
                 VoidType.Instance,
                 Constant.Word32(0x19)));
 
@@ -317,14 +319,15 @@ namespace Reko.UnitTests.Arch.Sparc
         [Test]
         public void SparcRw_ta()
         {
-            host.Setup(h => h.PseudoProcedure(
-                PseudoProcedure.Syscall,
+            host.Setup(h => h.Intrinsic(
+                IntrinsicProcedure.Syscall,
+                false,
                 VoidType.Instance,
                 It.IsNotNull<Expression[] >()))
                 .Returns(new Application(
                     new ProcedureConstant(
                         PrimitiveType.Ptr32,
-                        new PseudoProcedure(PseudoProcedure.Syscall, VoidType.Instance, 1)),
+                        new IntrinsicProcedure(IntrinsicProcedure.Syscall, false, VoidType.Instance, 1)),
                     VoidType.Instance,
                     Constant.Word32(0x19)));
             Given_UInt32s(0x91D02999);  // ta\t%g1,0x00000019<32>"
@@ -340,7 +343,7 @@ namespace Reko.UnitTests.Arch.Sparc
             Given_UInt32s(0x8BA0188A);  // fitos   %f10,%f5
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|f5 = (real32) f10");
+                "1|L--|f5 = CONVERT(f10, int32, real32)");
         }
 
         [Test]
@@ -349,7 +352,7 @@ namespace Reko.UnitTests.Arch.Sparc
             Given_UInt32s(0xC248A044); //ldsb\t[%g2+68],%g1");
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|g1 = (int32) Mem0[g2 + 68<i32>:int8]");
+                "1|L--|g1 = CONVERT(Mem0[g2 + 68<i32>:int8], int8, int32)");
         }
 
         [Test]
@@ -358,7 +361,7 @@ namespace Reko.UnitTests.Arch.Sparc
             Given_UInt32s(0xC230BFF0);// sth\t%g1,[%g2+68]
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|Mem0[g2 + -16<i32>:word16] = (word16) g1");
+                "1|L--|Mem0[g2 + -16<i32>:word16] = SLICE(g1, word16, 0)");
         }
 
         [Test]
@@ -367,7 +370,7 @@ namespace Reko.UnitTests.Arch.Sparc
             Given_UInt32s(0xC230800C);//sth\t%g1,[%g2+%i4]");
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|Mem0[g2 + o4:word16] = (word16) g1");
+                "1|L--|Mem0[g2 + o4:word16] = SLICE(g1, word16, 0)");
         }
 
         [Test]
@@ -376,14 +379,14 @@ namespace Reko.UnitTests.Arch.Sparc
             Given_UInt32s(0xC2308000);//sth\t%g1,[%g2+%g0]");
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
-                "1|L--|Mem0[g2:word16] = (word16) g1");
+                "1|L--|Mem0[g2:word16] = SLICE(g1, word16, 0)");
         }
 
         [Test]
         public void SparcRw_or_imm_g0()
         {
             Rewrite_UInt32s(
-                Instr(Mnemonic.or, Registers.g0, Constant.Word32(3), Registers.IntegerRegisters[1]));
+                Instr(Mnemonic.or, arch.Registers.g0, Constant.Word32(3), arch.Registers.IntegerRegisters[1]));
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
                 "1|L--|g1 = 0<32> | 3<32>");      // Simplification happens later in the decompiler.
@@ -487,6 +490,70 @@ namespace Reko.UnitTests.Arch.Sparc
             AssertCode(
                 "0|L--|00100000(4): 1 instructions",
                 "1|L--|ELGU = cond(f36_f37_f38_f39 - f4_f5_f6_f7)");
+        }
+
+        [Test]
+        public void SparcRw_orn()
+        {
+            Given_HexString("A0340011");
+            AssertCode(     // orn	%l0,%l1,%l0
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|l0 = l0 | ~l1");
+        }
+
+        [Test]
+        public void SparcRw_fcmped()
+        {
+            Given_HexString("81A88AC4");
+            AssertCode(     // fcmped	%f2,%f4
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|ELGU = cond(f2_f3 - f4_f5)");
+        }
+
+        [Test]
+        public void SparcRw_fbe()
+        {
+            Given_HexString("13800007");
+            AssertCode(     // fbe	0010001C
+                "0|TD-|00100000(4): 1 instructions",
+                "1|TD-|if (Test(EQ,E)) branch 0010001C");
+        }
+
+        [Test]
+        public void SparcRw_fble()
+        {
+            Given_HexString("1B800016");
+            AssertCode(     // fble	000107F4
+                "0|TD-|00100000(4): 1 instructions",
+                "1|TD-|if (Test(LE,EL)) branch 00100058");
+        }
+
+        [Test]
+        public void SparcRw_fmuld()
+        {
+            Given_HexString("85A08944");
+            AssertCode(     // fmuld	%f2,%f4,%f2
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|f2_f3 = f2_f3 * f4_f5");
+        }
+
+        [Test(Description = "Idiom used to retrieve the PC at the time of execution")]
+        public void SparcRw_call_self()
+        {
+            //00010EA0 40000002 call fn00010EA8
+            //00010EA4 2F000042 sethi 00000042,%l7
+            //00010EA8 AE15E154 or %l7,00000154,%l7
+            //00010EAC AE05C00F add %l7,%o7,%l7
+            Given_HexString("40000002 2F000042 AE15E154 AE05C00F");
+            AssertCode(
+                "0|L--|00100000(4): 1 instructions",
+                "1|L--|o7 = 00100008",
+                "2|L--|00100004(4): 1 instructions",
+                "3|L--|l7 = 0x10800<32>",
+                "4|L--|00100008(4): 1 instructions",
+                "5|L--|l7 = l7 | 0x154<32>",
+                "6|L--|0010000C(4): 1 instructions",
+                "7|L--|l7 = l7 + o7");
         }
     }
 }

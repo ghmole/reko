@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -129,7 +130,7 @@ Architecture */
         protected void EmitUnitTest(MipsInstruction instr)
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Mips16eRw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Mips16eRw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
 
         private Expression Rewrite(MachineOperand op)
@@ -231,7 +232,7 @@ Architecture */
             {
                 // If the source is smaller than the destination register,
                 // perform a sign/zero extension/conversion.
-                src = m.Cast(arch.WordWidth, src);
+                src = m.Convert(src, src.DataType, arch.WordWidth);
             }
             m.Assign(dst, src);
         }
@@ -285,7 +286,7 @@ Architecture */
             var src = Rewrite(instr.Operands[0]);
             var dst = Rewrite(instr.Operands[1]);
             if (dst.DataType.Size < src.DataType.Size)
-                src = m.Cast(dst.DataType, src);
+                src = m.Slice(dst.DataType, src, 0);
             m.Assign(dst, src);
         }
 

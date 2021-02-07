@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,8 @@ namespace Reko.Core
             this.Segments = new List<UserSegment>();
             this.ProcedureSourceFiles = new Dictionary<Address, string>();
             this.Patches = new Dictionary<Address, CodePatch>();
+            this.DebugTraceProcedures = new HashSet<string>();
+            this.BlockLabels = new Dictionary<string, string>();
         }
 
         // 'Oracular' information provided by the user.
@@ -60,7 +62,8 @@ namespace Reko.Core
         public SortedList<Address, ImageMapVectorTable> JumpTables { get; set; }
         public AnnotationList Annotations { get; set; }
         public List<UserSegment> Segments { get; set; }
-
+        public Dictionary<string, string> BlockLabels { get; set; }
+        
         /// <summary>
         /// A script to run after the image is loaded.
         /// </summary>
@@ -116,6 +119,16 @@ namespace Reko.Core
         /// Selects the policy to use when generating output files.
         /// </summary>
         public string? OutputFilePolicy { get; set; }
+
+        /// <summary>
+        /// Makes Reko more aggressive in removing unused branches (like if (false) ...)
+        /// </summary>
+        public bool AggressiveBranchRemoval { get; set; }
+        
+        /// <summary>
+        /// For Reko debugging: procedures with these names will be traced.
+        /// </summary>
+        public HashSet<string> DebugTraceProcedures { get; set; }
     }
 
     public class Annotation

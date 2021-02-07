@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -82,8 +82,6 @@ namespace Reko.Core.Types
 		/// <returns></returns>
 		public static EquivalenceClass Merge(EquivalenceClass class1, EquivalenceClass class2)
 		{
-            if (class1.Name == "Eq_32" || class2.Name == "Eq_32")
-                class1.ToString();  //$DEBUG
 			if (class1 == class2)
 				return class1;
 			TypeVariable newRep = class1.Representative.Number <= class2.Representative.Number

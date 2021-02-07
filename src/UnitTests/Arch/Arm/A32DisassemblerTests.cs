@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ using System.Linq;
 using System.Text;
 using Reko.Arch.Arm.AArch32;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.Arm
 {
@@ -39,8 +40,8 @@ namespace Reko.UnitTests.Arch.Arm
 
         protected static MachineInstruction Disassemble(byte[] bytes)
         {
-            var image = new MemoryArea(Address.Ptr32(0x00100000), bytes);
-            var dasm = new Arm32Architecture(new ServiceContainer(), "arm32").CreateDisassembler(image.CreateLeReader(0));
+            var image = new ByteMemoryArea(Address.Ptr32(0x00100000), bytes);
+            var dasm = new Arm32Architecture(new ServiceContainer(), "arm32", new Dictionary<string, object>()).CreateDisassembler(image.CreateLeReader(0));
             return dasm.First();
         }
 
@@ -51,7 +52,7 @@ namespace Reko.UnitTests.Arch.Arm
 
         protected MachineInstruction Disassemble32(uint instr)
         {
-            var image = new MemoryArea(Address.Ptr32(0x00100000), new byte[4]);
+            var image = new ByteMemoryArea(Address.Ptr32(0x00100000), new byte[4]);
             LeImageWriter w = new LeImageWriter(image.Bytes);
             w.WriteLeUInt32(0, instr);
             var arch = CreateArchitecture();
@@ -64,7 +65,7 @@ namespace Reko.UnitTests.Arch.Arm
 
         protected MachineInstruction DisassembleBits(string bitPattern)
         {
-            var image = new MemoryArea(Address.Ptr32(0x00100000), new byte[4]);
+            var image = new ByteMemoryArea(Address.Ptr32(0x00100000), new byte[4]);
             LeImageWriter w = new LeImageWriter(image.Bytes);
             uint instr = ParseBitPattern(bitPattern);
             w.WriteLeUInt32(0, instr);
@@ -73,6 +74,16 @@ namespace Reko.UnitTests.Arch.Arm
             var arch = CreateArchitecture();
             var dasm = arch.CreateDisassembler(image.CreateLeReader(0));
             return dasm.First();
+        }
+
+        protected void AssertCode(string sExp, string hexBytes)
+        {
+            var bytes = BytePattern.FromHexBytes(hexBytes).ToArray();
+            var mem = new ByteMemoryArea(Address.Ptr32(0x0010_0000), bytes);
+            var arch = CreateArchitecture();
+            var dasm = arch.CreateDisassembler(mem.CreateLeReader(0));
+            var instr = dasm.First();
+            Assert.AreEqual(sExp, instr.ToString());
         }
 
         protected abstract IProcessorArchitecture CreateArchitecture();
@@ -101,13 +112,12 @@ namespace Reko.UnitTests.Arch.Arm
     }
 
     [TestFixture]
-    [Category(Categories.Capstone)]
     public class A32DisassemblerTests : ArmTestBase
     {
         private const string ArmObsolete = "Obsolete instrction? can't find it in ARM Architecture Reference Manual - ARMv8, for ARMv8";
         protected override IProcessorArchitecture CreateArchitecture()
         {
-            return new Arm32Architecture(new ServiceContainer(), "arm32");
+            return new Arm32Architecture(new ServiceContainer(), "arm32", new Dictionary<string, object>());
         }
 
         private void Expect_Code(string sExp)
@@ -650,6 +660,18 @@ namespace Reko.UnitTests.Arch.Arm
         }
 
         [Test]
+        public void ArmDasm_vmul_f32()
+        {
+            AssertCode("vmul.f32\tq12,q15,q15", "FE8D4EF3");
+        }
+
+        [Test]
+        public void ArmDasm_vmul_index()
+        {
+            AssertCode("vmul.f32\tq9,q1,d6[0]", "4629E2F3");
+        }
+
+        [Test]
         public void ArmDasm_mvn_reg()
         {
             Disassemble32(0xE1E0C003);
@@ -1169,6 +1191,12 @@ namespace Reko.UnitTests.Arch.Arm
         }
 
         [Test]
+        public void ArmDasm_vmla_f32()
+        {
+            AssertCode("vmla.f32\tq6,q7,q8", "70CD0EF2");
+        }
+
+        [Test]
         public void ArmDasm_EE017BE0()
         {
             Disassemble32(0xEE017BE0);
@@ -1394,6 +1422,12 @@ namespace Reko.UnitTests.Arch.Arm
         {
             Disassemble32(0xF2C14E3E);
             Expect_Code("vmov.i64\td20,#&FFFFFFFF00");
+        }
+
+        [Test]
+        public void ArmDasm_vzip_32()
+        {
+            AssertCode("vzip.i32\tq2,q9", "E241BAF3");
         }
 
         [Test]
@@ -2079,6 +2113,12 @@ namespace Reko.UnitTests.Arch.Arm
         }
 
         [Test]
+        public void ArmDasm_vmin_f32()
+        {
+            AssertCode("vmin.f32\td1,d0,d1", "011F20F2");
+        }
+
+        [Test]
         public void ArmDasm_vmla_i8()
         {
             Disassemble32(0xF2002901);
@@ -2097,6 +2137,12 @@ namespace Reko.UnitTests.Arch.Arm
         {
             Disassemble32(0xF2002913);
             Expect_Code("vmul.i8\td2,d0,d3");
+        }
+
+        [Test]
+        public void ArmDasm_vdup_scalar()
+        {
+            AssertCode("vdup.i32\td12,d0[1]", "00CCBCF3");
         }
 
         [Test]
@@ -2179,11 +2225,7 @@ namespace Reko.UnitTests.Arch.Arm
             Expect_Code("tsteq\tlr, lr, lsr #0");
         }
 
-        // O:cmplt r6, r3, ror #0                     63 2D 46 B1
-
-
-
-            //////////////////////////
+       //////////////////////////
 
 #if BORED
 /// If you're bored and want something to do, why not implement a 
@@ -2215,6 +2257,6 @@ public void ArmDasm_F4E7F370()
 
 #endif
 
-        }
     }
+}
  

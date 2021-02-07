@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ using Reko.Core.Code;
 using Reko.Core.Expressions;
 using Reko.Core.Lib;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Services;
 using Reko.Core.Types;
 using System;
@@ -89,8 +90,7 @@ namespace Reko.Scanning
                 {
                     return PostError(err.ErrorMessage, addrFrom, bw.VectorAddress!);
                 }
-                var deref = op as BackwalkDereference;
-                if (deref != null)
+                if (op is BackwalkDereference deref)
                 {
                     permutation = BuildMapping(deref, limit);
                 }
@@ -166,7 +166,7 @@ namespace Reko.Scanning
                 for (int i = 0; i < cItems; ++i)
                 {
                     var entryAddr = program.Architecture.ReadCodeAddress(stride, rdr, state);
-                    if (entryAddr == null || !segmentMap.IsValidAddress(entryAddr))
+                    if (entryAddr is null || !segmentMap.IsValidAddress(entryAddr))
                     {
                         if (services != null)
                         {

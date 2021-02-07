@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -176,7 +176,7 @@ namespace Reko.Typing
             if (dt is MemberPointer mp)
             {
                 changed = true;
-                return factory.CreateMemberPointer(mp.BasePointer, eq, mp.Size);
+                return factory.CreateMemberPointer(mp.BasePointer, eq, mp.BitSize);
             }
             if (dt is ArrayType array)
             {
@@ -197,7 +197,7 @@ namespace Reko.Typing
             DataType dt;
             if (recursionGuard > 100)
             {
-                eventListener.Warn(new NullCodeLocation(""), "Recursion too deep in PtrPrimitiveReplacer");
+                eventListener.Warn("Recursion too deep in PtrPrimitiveReplacer");
                 dt = str;
             }
             else

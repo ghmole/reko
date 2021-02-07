@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Reko.Core.Lib;
 using Reko.Core.Output;
+using Reko.Core.Memory;
 
 namespace Reko.Core
 {
@@ -66,7 +67,7 @@ namespace Reko.Core
             this.EnvironmentMetadata = new TypeLibrary();
             this.ImportReferences = new Dictionary<Address, ImportReference>(new Address.Comparer());		// uint (offset) -> string
             this.InterceptedCalls = new Dictionary<Address, ExternalProcedure>(new Address.Comparer());
-            this.PseudoProcedures = new Dictionary<string, Dictionary<FunctionType, PseudoProcedure>>();
+            this.Intrinsics = new Dictionary<string, Dictionary<FunctionType, IntrinsicProcedure>>();
             this.InductionVariables = new Dictionary<Identifier, LinearInductionVariable>();
             this.TypeFactory = new TypeFactory();
             this.TypeStore = new TypeStore();
@@ -99,14 +100,22 @@ namespace Reko.Core
         public string Name { get; set; }
 
         /// <summary>
-        /// The processor architecture to use for decompilation.
+        /// The default processor architecture to use for decompilation.
         /// </summary>
+        /// <remarks>
+        /// Individual procedures may have different procedure architectures
+        /// than the default architecture.
+        /// </remarks>
 		public IProcessorArchitecture Architecture
         {
             get { return archDefault; }
             set { SetDefaultArchitecture(value); }
         }
 
+        /// <summary>
+        /// The <see cref="IPlatform"/> describing the operating environment
+        /// of the binary being decompiled.
+        /// </summary>
         public IPlatform Platform { get; set; }
 
         /// <summary>
@@ -263,6 +272,16 @@ namespace Reko.Core
             return new TypeLibraryDeserializer(Platform, true, EnvironmentMetadata.Clone());
         }
 
+        public virtual ProcedureCharacteristics? LookupCharacteristicsByName(string procName)
+        {
+            if (EnvironmentMetadata.Characteristics.TryGetValue(
+                procName,
+                out var chr)
+            )
+                return chr;
+            return Platform.LookupCharacteristicsByName(procName);
+        }
+
         /// <summary>
         /// The processor architectures that exist in the Program. 
         /// </summary>
@@ -276,7 +295,7 @@ namespace Reko.Core
         /// <summary>
         /// The entry points to the program.
         /// </summary>
-        public SortedList<Address, ImageSymbol> EntryPoints { get; private set; }
+        public SortedList<Address, ImageSymbol> EntryPoints { get; set; }
 
         /// <summary>
         /// Absolute path of the file from which this Program was loaded.
@@ -321,9 +340,9 @@ namespace Reko.Core
         public BTreeDictionary<Address, Procedure> Procedures { get; private set; }
 
         /// <summary>
-        /// The program's pseudo procedures, indexed by name and by signature.
+        /// The program's intrinsic procedures, indexed by name and by signature.
         /// </summary>
-        public Dictionary<string, Dictionary<FunctionType, PseudoProcedure>> PseudoProcedures { get; private set; }
+        public Dictionary<string, Dictionary<FunctionType, IntrinsicProcedure>> Intrinsics { get; private set; }
 
         /// <summary>
         /// List of resources stored in the binary. Some executable file formats support the
@@ -380,6 +399,14 @@ namespace Reko.Core
         /// Policy to use when giving names to things.
         /// </summary>
         public NamingPolicy NamingPolicy { get; set; }
+
+        /// <summary>
+        /// Range of procedures to use for typing.
+        /// </summary>
+        /// <remarks>
+        /// Used for debugging regressions in type inference.
+        /// </remarks>
+        public (int, int) DebugProcedureRange { get; set; }
 
         // Convenience functions.
         public EndianImageReader CreateImageReader(IProcessorArchitecture arch, Address addr)
@@ -527,10 +554,10 @@ namespace Reko.Core
             }
         }
 
-        public PseudoProcedure EnsurePseudoProcedure(string name, DataType returnType, params Expression[] args)
+        public IntrinsicProcedure EnsureIntrinsicProcedure(string name, bool isIdempotent, DataType returnType, params Expression[] args)
         {
             var sig = MakeSignatureFromApplication(returnType, args);
-            return EnsurePseudoProcedure(name, sig);
+            return EnsureIntrinsicProcedure(name, isIdempotent, sig);
         }
 
         private static FunctionType MakeSignatureFromApplication(DataType returnType, Expression[] args)
@@ -553,7 +580,7 @@ namespace Reko.Core
         /// <param name="addr">The address at which there must be a procedure after 
         /// this method returns.
         /// </param>
-        /// <param name="procedureName">The name of the procedure. If null,
+        /// <param name="procedureName">The name of the procedure. If null or empty,
         /// this method will synthesize a new name.</param>
         /// <returns>
         /// The procedure, located at address <paramref name="addr"/>.
@@ -563,11 +590,13 @@ namespace Reko.Core
             if (this.Procedures.TryGetValue(addr, out Procedure proc))
                 return proc;
 
-            bool deduceSignatureFromName = procedureName != null;
+            bool deduceSignatureFromName = !string.IsNullOrEmpty(procedureName);
             if (this.ImageSymbols.TryGetValue(addr, out ImageSymbol sym))
             {
-                deduceSignatureFromName |= sym.Name != null;
+                deduceSignatureFromName |= !string.IsNullOrEmpty(procedureName);
                 var generatedName = procedureName ?? sym.Name ?? this.NamingPolicy.ProcedureName(addr);
+                if (generatedName.Length == 0)
+                    generatedName = this.NamingPolicy.ProcedureName(addr);
                 proc = Procedure.Create(arch, generatedName, addr, arch.CreateFrame());
                 if (sym.Signature != null)
                 {
@@ -603,16 +632,16 @@ namespace Reko.Core
         }
 
 
-        public PseudoProcedure EnsurePseudoProcedure(string name, FunctionType sig)
+        public IntrinsicProcedure EnsureIntrinsicProcedure(string name, bool isIdempotent, FunctionType sig)
         {
-            if (!PseudoProcedures.TryGetValue(name, out var de))
+            if (!Intrinsics.TryGetValue(name, out var de))
             {
-                de = new Dictionary<FunctionType, PseudoProcedure>(new DataTypeComparer());
-                PseudoProcedures[name] = de;
+                de = new Dictionary<FunctionType, IntrinsicProcedure>(new DataTypeComparer());
+                Intrinsics[name] = de;
             }
             if (!de.TryGetValue(sig, out var intrinsic))
             {
-                intrinsic = new PseudoProcedure(name, sig);
+                intrinsic = new IntrinsicProcedure(name, isIdempotent, sig);
                 de.Add(sig, intrinsic);
             }
             return intrinsic;

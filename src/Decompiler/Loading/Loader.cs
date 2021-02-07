@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,8 @@
 using Reko.Core;
 using Reko.Core.Assemblers;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
+using Reko.Core.Serialization;
 using Reko.Core.Services;
 using System;
 using System.Collections.Generic;
@@ -269,7 +271,7 @@ namespace Reko.Loading
             return imgLoader;
         }
 
-        public static Address GetRawBinaryEntryAddress(
+        public static Address? GetRawBinaryEntryAddress(
             RawFileDefinition rawFile,
             byte[] image, 
             IProcessorArchitecture arch, 
@@ -281,7 +283,7 @@ namespace Reko.Loading
                 {
                     if (rawFile.EntryPoint.Follow)
                     {
-                        var rdr = arch.CreateImageReader(new MemoryArea(baseAddr, image), entryAddr);
+                        var rdr = arch.CreateImageReader(new ByteMemoryArea(baseAddr, image), entryAddr);
                         var addr = arch.ReadCodeAddress(0, rdr, arch.CreateProcessorState());
                         return addr;
                     }

@@ -9,6 +9,7 @@ using Reko.Core.Rtl;
 using Reko.Core.Types;
 using Reko.Core.NativeInterface.Interfaces;
 using System.Runtime.InteropServices;
+using Reko.Core.Memory;
 
 namespace Reko.Core.NativeInterface
 {
@@ -20,7 +21,8 @@ namespace Reko.Core.NativeInterface
 
 		private const string SYM_NAME = "gCPUProvider";
 
-		public NativeProcessorArchitecture(IServiceProvider services, string archID, string libPath, ILibraryLoader ldr) : base(services, archID)
+		public NativeProcessorArchitecture(IServiceProvider services, string archID, string libPath, ILibraryLoader ldr, Dictionary<string, object> options)
+            : base(services, archID, options)
 		{
 			loader = ldr;
 			handle = ldr.LoadLibrary(libPath);
@@ -74,7 +76,7 @@ namespace Reko.Core.NativeInterface
 			throw new NotImplementedException();
 		}
 
-		public override FlagGroupStorage GetFlagGroup(string name)
+        public override FlagGroupStorage GetFlagGroup(string name)
 		{
 			throw new NotImplementedException();
 		}

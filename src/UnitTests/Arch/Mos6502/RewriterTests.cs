@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,13 +28,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.ComponentModel.Design;
+using Reko.Core.Memory;
 
 namespace Reko.UnitTests.Arch.Mos6502
 {
     [TestFixture]
     public class RewriterTests : RewriterTestBase
     {
-        private readonly Mos6502Architecture arch = new Mos6502Architecture(CreateServiceContainer(), "mos6502");
+        private readonly Mos6502Architecture arch = new Mos6502Architecture(CreateServiceContainer(), "mos6502", new Dictionary<string, object>());
         private readonly Address addrBase = Address.Ptr16(0x0200);
 
         public override IProcessorArchitecture Architecture => arch;
@@ -62,7 +63,7 @@ namespace Reko.UnitTests.Arch.Mos6502
             Given_Bytes(0xF1, 0xE0);
             AssertCode(
                 "0|L--|0200(2): 2 instructions",
-                "1|L--|a = a - Mem0[Mem0[0x00E0<p16>:ptr16] + (uint16) y:byte] - !C",   //$LIT
+                "1|L--|a = a - Mem0[Mem0[0x00E0<p16>:ptr16] + CONVERT(y, byte, uint16):byte] - !C",   //$LIT
                 "2|L--|NVZC = cond(a)");
         }
 
@@ -132,7 +133,7 @@ namespace Reko.UnitTests.Arch.Mos6502
             Given_Bytes(0xC1, 0x38);
             AssertCode(
                 "0|L--|0200(2): 1 instructions",
-                "1|L--|NZC = cond(a - Mem0[Mem0[0x0038<p16> + (uint16) x:ptr16]:byte])");
+                "1|L--|NZC = cond(a - Mem0[Mem0[0x0038<p16> + CONVERT(x, byte, uint16):ptr16]:byte])");
         }
 
         [Test]

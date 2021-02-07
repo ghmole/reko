@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ using Reko.Core.Expressions;
 using Reko.Core.Machine;
 using Reko.Core.Types;
 using Reko.Core.Services;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.Tlcs.Tlcs90
 {
@@ -115,10 +116,10 @@ namespace Reko.Arch.Tlcs.Tlcs90
                 case Mnemonic.res: RewriteSetRes(false); break;
                 case Mnemonic.ret: RewriteRet(); break;
                 case Mnemonic.reti: RewriteReti(); break;
-                case Mnemonic.rl: RewriteRotation(PseudoProcedure.RolC, true); break;
-                case Mnemonic.rlc: RewriteRotation(PseudoProcedure.Rol, false); break;
-                case Mnemonic.rr: RewriteRotation(PseudoProcedure.RorC, true); break;
-                case Mnemonic.rrc: RewriteRotation(PseudoProcedure.Ror, false); break;
+                case Mnemonic.rl: RewriteRotation(IntrinsicProcedure.RolC, true); break;
+                case Mnemonic.rlc: RewriteRotation(IntrinsicProcedure.Rol, false); break;
+                case Mnemonic.rr: RewriteRotation(IntrinsicProcedure.RorC, true); break;
+                case Mnemonic.rrc: RewriteRotation(IntrinsicProcedure.Ror, false); break;
                 case Mnemonic.sbc: RewriteAdcSbc(m.ISub, "**-**V1*"); break;
                 case Mnemonic.scf: RewriteScf(); break;
                 case Mnemonic.set: RewriteSetRes(true); break;
@@ -212,7 +213,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
                         var idx = binder.EnsureRegister(mem.Index);
                         ea = m.IAdd(
                             ea,
-                            m.Cast(PrimitiveType.Int16, idx));
+                            m.Convert(idx, idx.DataType, PrimitiveType.Int16));
                     }
                     else if (mem.Offset != null)
                     {
@@ -258,7 +259,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
                         var idx = binder.EnsureRegister(mem.Index);
                         ea = m.IAdd(
                             ea,
-                            m.Cast(PrimitiveType.Int16, idx));
+                            m.Convert(idx, idx.DataType, PrimitiveType.Int16));
                     }
                     else if (mem.Offset != null)
                     {
@@ -316,7 +317,7 @@ namespace Reko.Arch.Tlcs.Tlcs90
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Tlcs90_rw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Tlcs90_rw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
     }
 }

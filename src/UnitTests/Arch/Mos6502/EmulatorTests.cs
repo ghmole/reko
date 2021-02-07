@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.Mos6502;
 using Reko.Core;
+using Reko.Core.Memory;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -40,7 +41,7 @@ namespace Reko.UnitTests.Arch.Mos6502
         public EmulatorTests()
         {
             this.sc = new ServiceContainer();
-            this.arch = new Mos6502Architecture(sc, "mos6502");
+            this.arch = new Mos6502Architecture(sc, "mos6502", new Dictionary<string, object>());
         }
 
         private void Given_Code(Action<Assembler> p)
@@ -49,7 +50,7 @@ namespace Reko.UnitTests.Arch.Mos6502
             p(asm);
             var program = asm.GetImage();
             program.SegmentMap.AddSegment(
-                new MemoryArea(Address.Ptr16(0), new byte[256]),
+                new ByteMemoryArea(Address.Ptr16(0), new byte[256]),
                 "ZeroPage",
                 AccessMode.ReadWriteExecute);
 

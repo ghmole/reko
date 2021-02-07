@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ using Reko.Arch.X86;
 using Reko.Arch.X86.Assembler;
 using Reko.Core;
 using Reko.Core.Expressions;
+using Reko.Core.Memory;
 using Reko.Core.Serialization;
 using Reko.Core.Types;
 using Reko.Scanning;
@@ -67,17 +68,17 @@ namespace Reko.UnitTests.Scanning
 
         private void Given_x86_Image(params byte[] bytes)
         {
-            var image = new MemoryArea(
+            var image = new ByteMemoryArea(
                 Address.Ptr32(0x10000),
                 bytes);
             this.rd = image.Relocations;
-            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             CreateProgram(image, arch);
         }
 
         private void Given_Image(IProcessorArchitecture arch, params byte[] bytes)
         {
-            var image = new MemoryArea(
+            var image = new ByteMemoryArea(
                 Address.Ptr32(0x10000),
                 bytes);
             this.rd = image.Relocations;
@@ -87,7 +88,7 @@ namespace Reko.UnitTests.Scanning
         private void Given_x86_Image(Action<X86Assembler> asm)
         {
             var addrBase = Address.Ptr32(0x100000);
-            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32");
+            var arch = new X86ArchitectureFlat32(sc, "x86-protected-32", new Dictionary<string, object>());
             var entry = ImageSymbol.Procedure(arch, addrBase);
             var m = new X86Assembler(arch, addrBase, new List<ImageSymbol> { entry });
             asm(m);
@@ -95,15 +96,15 @@ namespace Reko.UnitTests.Scanning
             this.program.Platform = new DefaultPlatform(null, arch);
         }
 
-        private void CreateProgram(MemoryArea mem, IProcessorArchitecture arch)
+        private void CreateProgram(ByteMemoryArea bmem, IProcessorArchitecture arch)
         {
-            var segmentMap = new SegmentMap(mem.BaseAddress);
+            var segmentMap = new SegmentMap(bmem.BaseAddress);
             var seg = segmentMap.AddSegment(new ImageSegment(
                 ".text",
-                mem,
+                bmem,
                 AccessMode.ReadExecute)
             {
-                Size = (uint)mem.Bytes.Length
+                Size = (uint)bmem.Bytes.Length
             });
             seg.Access = AccessMode.ReadExecute;
             var platform = new DefaultPlatform(null, arch);
@@ -395,15 +396,16 @@ namespace Reko.UnitTests.Scanning
                 m.Ret();
             });
             CreateScanner();
-            host.Setup(h => h.PseudoProcedure(
+            host.Setup(h => h.Intrinsic(
                 "__hlt",
+                false,
                 It.IsNotNull<ProcedureCharacteristics>(),
                 It.IsNotNull<DataType>(),
                 It.IsAny<Expression>())).
                 Returns(new Application(
                     new ProcedureConstant(
                         new UnknownType(),
-                        new PseudoProcedure("__hlt", VoidType.Instance, 0)),
+                        new IntrinsicProcedure("__hlt", false, VoidType.Instance, 0)),
                     VoidType.Instance));
 
             siq.ScanInstructions(sr);

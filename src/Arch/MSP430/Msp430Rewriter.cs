@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ using Reko.Core.Machine;
 using Reko.Core.Expressions;
 using Reko.Core.Types;
 using Reko.Core.Services;
+using Reko.Core.Memory;
 
 namespace Reko.Arch.Msp430
 {
@@ -122,7 +123,7 @@ namespace Reko.Arch.Msp430
 
         private Expression Dadd(Expression a, Expression b)
         {
-            return host.PseudoProcedure("__dadd", a.DataType, a, b);
+            return host.Intrinsic("__dadd", false, a.DataType, a, b);
         }
 
         private Expression RewriteOp(MachineOperand op)
@@ -187,7 +188,7 @@ namespace Reko.Arch.Msp430
                 var ev = fn(dst, src);
                 if (dst.Storage == Registers.sp && ev is Constant)
                 {
-                    m.SideEffect(host.PseudoProcedure("__set_stackpointer", VoidType.Instance, src));
+                    m.SideEffect(host.Intrinsic("__set_stackpointer", false, VoidType.Instance, src));
                 }
                 else
                 {
@@ -414,8 +415,9 @@ namespace Reko.Arch.Msp430
             var dst = RewriteDst(
                 instr.Operands[0],
                 src, 
-                (a, b) => host.PseudoProcedure(
-                    PseudoProcedure.RorC, 
+                (a, b) => host.Intrinsic(
+                    IntrinsicProcedure.RorC, 
+                    true,
                     a.DataType, 
                     a, 
                     m.Byte(1),
@@ -447,8 +449,9 @@ namespace Reko.Arch.Msp430
             var src = RewriteOp(instr.Operands[0]);
             var dst = RewriteDst(instr.Operands[0],
                 src,
-                (a, b) => host.PseudoProcedure(
+                (a, b) => host.Intrinsic(
                     "__swpb",
+                    true,
                     PrimitiveType.Word16,
                     b));
         }
@@ -458,7 +461,7 @@ namespace Reko.Arch.Msp430
             var src = RewriteOp(instr.Operands[0]);
             var tmp = binder.CreateTemporary(PrimitiveType.Byte);
             m.Assign(tmp, m.Slice(PrimitiveType.Byte, src, 0));
-            var dst = RewriteDst(instr.Operands[0], tmp, (a, b) => m.Cast(PrimitiveType.Int16, b));
+            var dst = RewriteDst(instr.Operands[0], tmp, (a, b) => m.Convert(b, b.DataType, PrimitiveType.Int16));
             EmitCc(dst, flags);
         }
 
@@ -472,7 +475,7 @@ namespace Reko.Arch.Msp430
         private void EmitUnitTest()
         {
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("Msp430Rw", instr, rdr, "");
+            testGenSvc?.ReportMissingRewriter("Msp430Rw", instr, instr.Mnemonic.ToString(), rdr, "");
         }
     }
 }

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,8 +35,18 @@ namespace hunktool
     {
         public IProcessorArchitecture GetArchitecture(string archLabel)
         {
+            return GetArchitecture(archLabel, new Dictionary<string, object>());
+        }
+
+        public IProcessorArchitecture GetArchitecture(string archLabel, string modelName)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IProcessorArchitecture GetArchitecture(string archLabel, Dictionary<string, object> options)
+        {
             if (archLabel == "m68k")
-                return new M68kArchitecture(new ServiceContainer(), "m68k");
+                return new M68kArchitecture(new ServiceContainer(), "m68k", options);
             throw new NotImplementedException();
         }
 

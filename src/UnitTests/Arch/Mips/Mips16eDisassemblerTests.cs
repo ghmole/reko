@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using NUnit.Framework;
 using Reko.Arch.Mips;
 using Reko.Core;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
@@ -34,12 +35,14 @@ namespace Reko.UnitTests.Arch.Mips
     [TestFixture]
     public class Mips16eDisassemblerTests : DisassemblerTestBase<MipsInstruction>
     {
-        private MipsProcessorArchitecture arch;
+        private readonly MipsProcessorArchitecture arch;
 
         public Mips16eDisassemblerTests()
         {
-            this.arch = new MipsBe32Architecture(new ServiceContainer(), "mips-be-32");
-            arch.LoadUserOptions(new Dictionary<string, object> { { "decoder", "mips16e" } });
+            this.arch = new MipsBe32Architecture(
+                CreateServiceContainer(),
+                "mips-be-32",
+                new Dictionary<string, object> { { "decoder", "mips16e" } });
             this.LoadAddress = Address.Ptr32(0x00100000);
         }
 
@@ -58,13 +61,12 @@ namespace Reko.UnitTests.Arch.Mips
             Assert.AreEqual(sExp, instr.ToString());
         }
 
-        [Test]
         public void Mips16eDis_generate()
         {
             var rnd = new Random(4711);
             var buf = new byte[1_000_000];
             rnd.NextBytes(buf);
-            var mem = new MemoryArea(LoadAddress, buf);
+            var mem = new ByteMemoryArea(LoadAddress, buf);
             var rdr = new BeImageReader(mem, 0);
             var dasm = new Mips16eDisassembler(arch, rdr);
             dasm.Take(400).ToArray();

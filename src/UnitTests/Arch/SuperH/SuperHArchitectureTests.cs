@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ namespace Reko.UnitTests.Arch.SuperH
     [TestFixture]
     public class SuperHArchitectureTests
     {
-        private SuperHArchitecture arch = new SuperHBeArchitecture(new ServiceContainer(), "sh4");
+        private SuperHArchitecture arch = new SuperHBeArchitecture(new ServiceContainer(), "sh4", new Dictionary<string, object>());
         
         [Test]
         public void ShArch_GetRegister_Real32()

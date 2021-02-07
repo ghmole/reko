@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ namespace Reko.UnitTests.Arch.Avr
 
         public Avr32DisassemblerTests()
         {
-            this.arch = new Avr32Architecture(CreateServiceContainer(), "avr32");
+            this.arch = new Avr32Architecture(CreateServiceContainer(), "avr32", new Dictionary<string, object>());
             this.LoadAddress = Address.Ptr32(0x00100000);
         }
 
@@ -479,6 +479,5 @@ namespace Reko.UnitTests.Arch.Avr
         {
             AssertCode("rsub\tr9,r9,00000001", "F2091101");
         }
-
     }
 }

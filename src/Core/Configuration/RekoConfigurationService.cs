@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #endregion
 
 using Reko.Core.Assemblers;
+using Reko.Core.Services;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -38,31 +39,35 @@ namespace Reko.Core.Configuration
     /// </summary>
     public interface IConfigurationService
     {
-         ICollection<LoaderDefinition> GetImageLoaders();
-         ICollection<ArchitectureDefinition> GetArchitectures();
-         ICollection<PlatformDefinition> GetEnvironments();
-         ICollection<SignatureFileDefinition> GetSignatureFiles();
-         ICollection<RawFileDefinition> GetRawFiles();
+        ICollection<LoaderDefinition> GetImageLoaders();
+        ICollection<ArchitectureDefinition> GetArchitectures();
+        ICollection<PlatformDefinition> GetEnvironments();
+        ICollection<SignatureFileDefinition> GetSignatureFiles();
+        ICollection<RawFileDefinition> GetRawFiles();
 
-         PlatformDefinition GetEnvironment(string envName);
-         IProcessorArchitecture? GetArchitecture(string archLabel);
-         ICollection<SymbolSourceDefinition> GetSymbolSources();
-         RawFileDefinition? GetRawFile(string rawFileFormat);
+        PlatformDefinition GetEnvironment(string envName);
+        IProcessorArchitecture? GetArchitecture(string archLabel);
+        IProcessorArchitecture? GetArchitecture(string archLabel, string? modelName);
+        IProcessorArchitecture? GetArchitecture(string archLabel, Dictionary<string, object>? options);
 
-         IEnumerable<UiStyleDefinition> GetDefaultPreferences ();
+        ICollection<SymbolSourceDefinition> GetSymbolSources();
+        RawFileDefinition? GetRawFile(string rawFileFormat);
 
-         /// <summary>
-         /// Given a relative path with respect to the installation directory, 
-         /// returns the absolute path.
-         /// </summary>
-         /// <param name="path"></param>
-         /// <returns></returns>
-         string GetInstallationRelativePath(params string [] pathComponents);
-         LoaderDefinition? GetImageLoader(string loader);
+        IEnumerable<UiStyleDefinition> GetDefaultPreferences();
+
+        /// <summary>
+        /// Given a relative path with respect to the installation directory, 
+        /// returns the absolute path.
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        string GetInstallationRelativePath(params string[] pathComponents);
+        LoaderDefinition? GetImageLoader(string loader);
     }
 
     public class RekoConfigurationService : IConfigurationService
     {
+        private readonly string configFileRoot;
         private readonly IServiceProvider services;
         private readonly List<LoaderDefinition> loaders;
         private readonly List<SignatureFileDefinition> sigFiles;
@@ -72,8 +77,9 @@ namespace Reko.Core.Configuration
         private readonly List<RawFileDefinition> rawFiles;
         private readonly UiPreferencesConfiguration uiPreferences;
 
-        public RekoConfigurationService(IServiceProvider services, RekoConfiguration_v1 config)
+        public RekoConfigurationService(IServiceProvider services, string rekoConfigPath, RekoConfiguration_v1 config)
         {
+            this.configFileRoot = Path.GetDirectoryName(rekoConfigPath);
             this.services = services;
             this.loaders = LoadCollection(config.Loaders, LoadLoaderConfiguration);
             this.sigFiles = LoadCollection(config.SignatureFiles, LoadSignatureFile);
@@ -120,6 +126,7 @@ namespace Reko.Core.Configuration
                 Name = sArch.Name,
                 TypeName = sArch.Type,
                 Options = LoadCollection(sArch.Options, LoadPropertyOption),
+                Models = LoadDictionary(sArch.Models, m => m.Name!, LoadModelDefinition)
             };
         }
 
@@ -133,6 +140,17 @@ namespace Reko.Core.Configuration
                 Required = sOption.Required,
                 TypeName = sOption.TypeName,
                 Choices = sOption.Choices ?? new ListOption_v1[0]
+            };
+        }
+
+        private ModelDefinition LoadModelDefinition(ModelDefinition_v1 sModel)
+        {
+            return new ModelDefinition
+            {
+                Name = sModel.Name,
+                Options = sModel.Options != null
+                    ? sModel.Options.ToList()
+                    : new List<ListOption_v1>()
             };
         }
 
@@ -258,6 +276,17 @@ namespace Reko.Core.Configuration
                 return sItems.Select(fn).ToList();
         }
 
+        private Dictionary<string, TValue> LoadDictionary<TSrc, TValue>(
+            TSrc[]? sItems, 
+            Func<TSrc, string> fnKey, 
+            Func<TSrc, TValue> fnValue)
+        {
+            if (sItems == null)
+                return new Dictionary<string, TValue>();
+            else
+                return sItems.ToDictionary(fnKey, fnValue);
+        }
+
         /// <summary>
         /// Load the reko.config file.
         /// </summary>
@@ -275,7 +304,7 @@ namespace Reko.Core.Configuration
             using var stm = File.Open(configFileName, FileMode.Open, FileAccess.Read, FileShare.Read);
             var ser = new XmlSerializer(typeof(RekoConfiguration_v1));
             var sConfig = (RekoConfiguration_v1) ser.Deserialize(stm);
-            return new RekoConfigurationService(services, sConfig);
+            return new RekoConfigurationService(services, configFileName, sConfig);
         }
 
         private long ConvertNumber(string? sNumber)
@@ -337,18 +366,66 @@ namespace Reko.Core.Configuration
 
         public IProcessorArchitecture? GetArchitecture(string archLabel)
         {
+            return GetArchitecture(archLabel, new Dictionary<string, object>());
+        }
+
+        public IProcessorArchitecture? GetArchitecture(string archLabel, string? modelName)
+        {
+            if (modelName is null)
+                return GetArchitecture(archLabel, new Dictionary<string, object>());
             var elem = GetArchitectures()
                 .Where(e => e.Name == archLabel).SingleOrDefault();
             if (elem == null)
                 return null;
+            ModelDefinition? model;
+            if (elem.Models is null)
+            {
+                model = null;
+            }
+            else
+            {
+                elem.Models.TryGetValue(modelName, out model);
+            }
+            var options = new Dictionary<string, object>();
+            if (model is null)
+            {
+                var listener = services.GetService<DecompilerEventListener>() ??
+                    new NullDecompilerEventListener();
+                listener.Warn($"Model '{modelName}' is not defined for architecture '{archLabel}'.");
+            }
+            else if (model.Options != null)
+            {
+                foreach (var opt in model.Options)
+                {
+                    if (opt.Text != null && opt.Value != null)
+                    {
+                        options[opt.Text] = opt.Value;
+                    }
+                }
+            }
+            options[ProcessorOption.Model] = modelName;
+            return GetArchitecture(archLabel, options);
+        }
 
-            Type t = Type.GetType(elem.TypeName, true);
+        public IProcessorArchitecture? GetArchitecture(string archLabel, Dictionary<string, object>? options)
+        {
+            var elem = GetArchitectures()
+                .Where(e => e.Name == archLabel).SingleOrDefault();
+            if (elem == null)
+                return null;
+            options ??= new Dictionary<string, object>();
+            Type t = Type.GetType(elem.TypeName, false);
             if (t == null)
                 return null;
-            var arch = (IProcessorArchitecture)Activator.CreateInstance(t, this.services, elem.Name);
+            var arch = (IProcessorArchitecture)Activator.CreateInstance(
+                t, 
+                this.services, 
+                elem.Name, 
+                options ?? new Dictionary<string, object>());
             arch.Description = elem.Description;
             return arch;
         }
+
 
         public PlatformDefinition GetEnvironment(string envName)
         {
@@ -382,7 +459,9 @@ namespace Reko.Core.Configuration
 
         public string GetInstallationRelativePath(string[] pathComponents)
         {
-            return MakeInstallationRelativePath(pathComponents);
+            var installationRelvativePath = new List<string> { configFileRoot };
+            installationRelvativePath.AddRange(pathComponents);
+            return MakeInstallationRelativePath(installationRelvativePath.ToArray());
         }
 
         public static string MakeInstallationRelativePath(string[] pathComponents)

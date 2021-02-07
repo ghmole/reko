@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 using NUnit.Framework;
 using Reko.Arch.M68k;
 using Reko.Core;
+using Reko.Core.Memory;
 using Reko.Environments.MacOS.Classic;
 using System;
 using System.Collections.Generic;
@@ -35,27 +36,28 @@ namespace Reko.UnitTests.Environments.MacOS.Classic
     public class A5RelocatorTests
     {
         private A5Relocator relocator;
-        private MemoryArea mem;
+        private ByteMemoryArea mem;
         private ImageSegment a5world;
 
         [SetUp]
         public void Setup()
         {
             this.relocator = null;
-            this.mem = new MemoryArea(Address.Ptr32(0x00100000), new byte[4096]);
+            this.mem = new ByteMemoryArea(Address.Ptr32(0x00100000), new byte[4096]);
             this.a5world = new ImageSegment("A5World", mem, AccessMode.ReadWriteExecute);
         }
 
         private void Given_Relocator()
         {
             var sc = new ServiceContainer();
-            var arch = new M68kArchitecture(sc, "m68k");
+            var arch = new M68kArchitecture(sc, "m68k", new Dictionary<string, object>());
             var platform = new MacOSClassic(sc, arch)
             {
                 A5World = a5world,
                 A5Offset = 2048,
             };
-            var rdr = new BeImageReader(platform.A5World.MemoryArea, 0);
+            var mem = (ByteMemoryArea) platform.A5World.MemoryArea;
+            var rdr = new BeImageReader(mem, 0);
             this.relocator = new A5Relocator(platform, rdr, 1024);
         }
 

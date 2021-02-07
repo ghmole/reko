@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@ using System.Diagnostics;
 using Reko.Core;
 using Reko.Core.Expressions;
 using Reko.Core.Machine;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using Reko.Core.Services;
 using Reko.Core.Types;
@@ -147,7 +148,7 @@ namespace Reko.Arch.MicroBlaze
                 "MicroBlaze instruction '{0}' is not supported yet.",
                 instrCur.Mnemonic);
             var testGenSvc = arch.Services.GetService<ITestGenerationService>();
-            testGenSvc?.ReportMissingRewriter("MicroBlazeRw", instrCur, rdr, "");
+            testGenSvc?.ReportMissingRewriter("MicroBlazeRw", instrCur, instrCur.Mnemonic.ToString(), rdr, "");
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -188,7 +189,7 @@ namespace Reko.Arch.MicroBlaze
             {
                 var tmp = binder.CreateTemporary(src.DataType);
                 m.Assign(tmp, src);
-                m.Assign(dst, m.Cast(dst.DataType, tmp));
+                m.Assign(dst, m.Convert(tmp, tmp.DataType, dst.DataType));
             }
             else
             {
@@ -241,7 +242,7 @@ namespace Reko.Arch.MicroBlaze
         private Expression RorC(Expression a, Expression shift)
         {
             var cy = binder.EnsureFlagGroup(Registers.C);
-            var rorc = host.PseudoProcedure(PseudoProcedure.RorC, a.DataType, a, shift, cy);
+            var rorc = host.Intrinsic(IntrinsicProcedure.RorC, true, a.DataType, a, shift, cy);
             return rorc;
         }
 
@@ -296,12 +297,12 @@ namespace Reko.Arch.MicroBlaze
                 if (regB == Registers.GpRegs[0])
                 {
                     setCy = false;
-                    src = m.Cast(dst.DataType, cy);
+                    src = m.Convert(cy, PrimitiveType.Bool, dst.DataType);
                 }
                 else
                 {
                     src = binder.EnsureRegister(regB);
-                    src = m.IAdd(src, m.Cast(dst.DataType, cy));
+                    src = m.IAdd(src, m.Convert(cy, PrimitiveType.Bool, dst.DataType));
                 }
             }
             else
@@ -309,7 +310,7 @@ namespace Reko.Arch.MicroBlaze
                 if (regB == Registers.GpRegs[0])
                 {
                     src = binder.EnsureRegister(regA);
-                    src = m.IAdd(src, m.Cast(dst.DataType, cy));
+                    src = m.IAdd(src, m.Convert(cy, PrimitiveType.Bool, dst.DataType));
                 }
                 else
                 {
@@ -632,7 +633,7 @@ namespace Reko.Arch.MicroBlaze
         {
             var tmp = binder.CreateTemporary(dt);
             m.Assign(tmp, m.Slice(dt, Reg0(1), 0));
-            m.Assign(Reg(0), m.Cast(PrimitiveType.Int32, tmp));
+            m.Assign(Reg(0), m.Convert(tmp, tmp.DataType, PrimitiveType.Int32));
         }
 
         private void RewriteShift1(Func<Expression, Expression, Expression> fn)

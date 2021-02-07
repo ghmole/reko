@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ namespace Reko.Scanning
             {
                 return blockNew;
             }
-            blockNew = new Block(procCalling, blockOrig.Address, blockOrig.Name + "_in_" + procCalling.Name);
+            blockNew = new Block(procCalling, blockOrig.Address, blockOrig.Id + "_in_" + procCalling.Name);
             mpBlocks.Add(blockOrig, blockNew);
             var succ = blockOrig.Succ.Count > 0 ? CloneBlock(blockOrig.Succ[0]) : null;
             foreach (var stm in blockOrig.Statements)
@@ -223,6 +223,14 @@ namespace Reko.Scanning
         public Expression VisitConstant(Constant c)
         {
             return c.CloneExpression();
+        }
+
+        public Expression VisitConversion(Conversion conversion)
+        {
+            return new Conversion(
+                conversion.Expression.Accept(this),
+                conversion.SourceDataType,
+                conversion.DataType);
         }
 
         public Expression VisitDereference(Dereference deref)

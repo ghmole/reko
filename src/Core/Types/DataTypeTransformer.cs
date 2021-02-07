@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -93,7 +93,7 @@ namespace Reko.Core.Types
 		{
 			var pointee = memptr.Pointee.Accept(this);
 			var basePointer = memptr.BasePointer.Accept(this);
-            return new MemberPointer(basePointer, pointee, memptr.Size);
+            return new MemberPointer(basePointer, pointee, memptr.BitSize);
 		}
 
         public virtual DataType VisitPointer(Pointer ptr)

@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,12 @@ namespace Reko.Core
         {
             this.BaseAddress = addrBase ?? throw new ArgumentNullException(nameof(addrBase));
             this.Items = new ConcurrentBTreeDictionary<Address, ImageMapItem>(new ItemComparer());
+        }
+
+        public ImageMap(ImageMap that)
+        {
+            this.BaseAddress = that.BaseAddress;
+            this.Items = new ConcurrentBTreeDictionary<Address, ImageMapItem>(that.Items);
         }
 
         public Address BaseAddress { get; }
@@ -157,7 +163,7 @@ namespace Reko.Core
                     }
                 }
                 Items.Remove(item.Address);
-                if (item.Size > 0)
+                if (item.Size > 0 && itemNew.Size < item.Size)
                 {
                     item.Address += itemNew.Size;
                     item.Size -= itemNew.Size;
@@ -174,6 +180,11 @@ namespace Reko.Core
                 }
             }
             FireMapChanged();
+        }
+
+        public ImageMap Clone()
+        {
+            return new ImageMap(this);
         }
 
         private DataType ChopAfter(DataType type, int offset)

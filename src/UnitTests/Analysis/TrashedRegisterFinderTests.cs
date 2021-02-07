@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -230,7 +230,7 @@ namespace Reko.UnitTests.Analysis
         [Test(Description = "Tests that constants are discovered")]
         public void TrfConstants()
         {
-            Given_Architecture(new Reko.Arch.X86.X86ArchitectureReal(new ServiceContainer(), "x86-real-16"));
+            Given_Architecture(new Reko.Arch.X86.X86ArchitectureReal(new ServiceContainer(), "x86-real-16", new Dictionary<string, object>()));
             Expect("TrfConstants", "Preserved: sp", "Trashed: ds", "Constants: ds:0xC00<16>");
             builder.Add("TrfConstants", m =>
             {
@@ -249,7 +249,7 @@ namespace Reko.UnitTests.Analysis
         [Test(Description = "Constant in one branch, not constant in the other")]
         public void TrfConstNonConst()
         {
-            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32"));
+            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>()));
             Expect("TrfConstNonConst", "Preserved: esp", "Trashed: cx", "");
             builder.Add("TrfConstNonConst", m =>
             {
@@ -577,7 +577,7 @@ Constants: cl:0x00
         [Test]
         public void TrfRecursive_duplicate_tails()
         {
-            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32"));
+            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>()));
             Given_PlatformTrashedRegisters();
             Expect(
                 "recursive",
@@ -615,7 +615,7 @@ Constants: cl:0x00
         [Test]
         public void TrfFibonacci()
         {
-            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32"));
+            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>()));
             Given_PlatformTrashedRegisters();
             Expect(
                 "recursive",
@@ -725,7 +725,7 @@ Constants: cl:0x00
         [Category(Categories.UnitTests)]
         public void TrfSaveRegistersOnStack_TwoExits()
         {
-            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32"));
+            Given_Architecture(new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>()));
             Expect("main", "Preserved: ebp,esp", "Trashed: eax", "");
             builder.Add("main", m =>
             {
@@ -787,10 +787,12 @@ Constants: cl:0x00
             var state = new Dictionary<Identifier, Tuple<Expression, BitRange>>();
             var stateOther = new Dictionary<Identifier, Tuple<Expression, BitRange>>();
             var procFlow = new ProcedureFlow(null);
+            var proc = Procedure.Create(arch, Address.Ptr32(0x00123400), arch.CreateFrame());
+            var ssa = new SsaState(proc);
             var ctx = new TrashedRegisterFinder.Context(
-                null, null, state, procFlow);
+                ssa, null, state, procFlow);
             var ctxOther = new TrashedRegisterFinder.Context(
-                null, null, state, procFlow);
+                ssa, null, state, procFlow);
             var ebp = new Identifier("ebp", PrimitiveType.Word32, new RegisterStorage("ebp", 5, 0, PrimitiveType.Word32));
             var esi = new Identifier("esi", PrimitiveType.Word32, new RegisterStorage("esi", 6, 0, PrimitiveType.Word32));
             var edi = new Identifier("edi", PrimitiveType.Word32, new RegisterStorage("edi", 7, 0, PrimitiveType.Word32));
@@ -843,7 +845,7 @@ Constants: cl:0x00
         [Test(Description = "Part of handling x86 and Z80 sub-registers.")]
         public void TrfDpb()
         {
-            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
             Given_Architecture(arch);
             Expect("main", "Preserved: esp", "Trashed: ecx", "");
             builder.Add("main", m =>
@@ -863,7 +865,7 @@ Constants: cl:0x00
         [Category(Categories.UnitTests)]
         public void TrfWideThenNarrow()
         {
-            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32");
+            var arch = new Reko.Arch.X86.X86ArchitectureFlat32(new ServiceContainer(), "x86-protected-32", new Dictionary<string, object>());
             Given_Architecture(arch);
             Expect("main", "Preserved: esp", "Trashed: ecx", "");
             builder.Add("main", m =>

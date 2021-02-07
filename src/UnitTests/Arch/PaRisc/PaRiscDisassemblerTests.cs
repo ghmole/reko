@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,15 +42,17 @@ namespace Reko.UnitTests.Arch.PaRisc
 
         private void AssertCode(string sExp, string hexBytes)
         {
-            this.arch = new PaRiscArchitecture(new ServiceContainer(), "paRisc");
+            this.arch = new PaRiscArchitecture(new ServiceContainer(), "paRisc", new Dictionary<string, object>());
             var i = DisassembleHexBytes(hexBytes);
             Assert.AreEqual(sExp, i.ToString());
         }
 
         private void AssertCode64(string sExp, string hexBytes)
         {
-            this.arch = new PaRiscArchitecture(new ServiceContainer(), "paRisc");
-            arch.Options["WordSize"] = "64";
+            this.arch = new PaRiscArchitecture(new ServiceContainer(), "paRisc", new Dictionary<string, object>
+            {
+                { ProcessorOption.WordSize, "64" }
+            });
             var i = DisassembleHexBytes(hexBytes);
             Assert.AreEqual(sExp, i.ToString());
         }

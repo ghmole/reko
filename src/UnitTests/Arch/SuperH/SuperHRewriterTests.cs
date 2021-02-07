@@ -1,6 +1,6 @@
 #region License
 /* 
- * Copyright (C) 1999-2020 John Källén.
+ * Copyright (C) 1999-2021 John Källén.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@ using NUnit.Framework;
 using Reko.Arch.SuperH;
 using Reko.Core;
 using Reko.Core.Configuration;
+using Reko.Core.Memory;
 using Reko.Core.Rtl;
 using System;
 using System.Collections.Generic;
@@ -34,7 +35,7 @@ namespace Reko.UnitTests.Arch.Tlcs
     [TestFixture]
     public class SuperHRewriterTests : RewriterTestBase
     {
-        private readonly SuperHArchitecture arch = new SuperHLeArchitecture(CreateServiceContainer(), "superH");
+        private readonly SuperHArchitecture arch = new SuperHLeArchitecture(CreateServiceContainer(), "superH", new Dictionary<string, object>());
         private Address baseAddr = Address.Ptr32(0x00100000);
 
         public override IProcessorArchitecture Architecture => arch;
@@ -42,8 +43,8 @@ namespace Reko.UnitTests.Arch.Tlcs
 
         protected override IEnumerable<RtlInstructionCluster> GetRtlStream(MemoryArea mem, IStorageBinder binder, IRewriterHost host)
         {
-            var state = (SuperHState) arch.CreateProcessorState();
-            return new SuperHRewriter(arch, new LeImageReader(mem, 0), state, binder, host);
+            var state = arch.CreateProcessorState();
+            return arch.CreateRewriter(arch.CreateImageReader(mem, 0), state, binder, host);
         }
 
         [SetUp]
@@ -287,7 +288,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("FE6E"); // exts.b\tr15,r14
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r14 = (int8) r15");
+                "1|L--|r14 = CONVERT(SLICE(r15, int8, 0), int8, int32)");
         }
 
         [Test]
@@ -296,7 +297,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("FF6E"); // exts.w\tr15,r14
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r14 = (int16) r15");
+                "1|L--|r14 = CONVERT(SLICE(r15, int16, 0), int16, int32)");
         }
 
         [Test]
@@ -305,7 +306,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("FC6E"); // extu.b\tr15,r14
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r14 = (byte) r15");
+                "1|L--|r14 = CONVERT(SLICE(r15, byte, 0), byte, uint32)");
         }
 
         [Test]
@@ -314,7 +315,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("FD6E"); // extu.w\tr15,r14
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r14 = (uint16) r15");
+                "1|L--|r14 = CONVERT(SLICE(r15, uint16, 0), uint16, uint32)");
 
         }
 
@@ -396,7 +397,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("BDFE"); // fcnvds\tdr14,fpul
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|fpul = (real32) dr14");
+                "1|L--|fpul = CONVERT(dr14, real64, real32)");
         }
 
         [Test]
@@ -405,7 +406,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("ADFE"); // fcnvsd\tfpul,dr14
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|dr14 = (real64) fpul");
+                "1|L--|dr14 = CONVERT(fpul, real32, real64)");
         }
 
         [Test]
@@ -594,7 +595,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("29 00"); // movt\tr0
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|r0 = (int32) T");
+                "1|L--|r0 = CONVERT(T, bool, int32)");
         }
 
         [Test]
@@ -820,7 +821,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("BE20");	// mulu.w
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|macl = (uint16) r0 *u (uint16) r11");
+                "1|L--|macl = CONVERT(r0, word32, uint16) *u CONVERT(r11, word32, uint16)");
         }
 
         [Test]
@@ -856,7 +857,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("1F22");	// invalid
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|macl = (int16) r2 *s (int16) r1");
+                "1|L--|macl = CONVERT(r2, word32, int16) *s CONVERT(r1, word32, int16)");
         }
 
         [Test]
@@ -882,7 +883,7 @@ namespace Reko.UnitTests.Arch.Tlcs
                 "2|L--|r15 = r15 + 4<i32>",
                 "3|L--|v4 = Mem0[r0:word32]",
                 "4|L--|r0 = r0 + 4<i32>",
-                "5|L--|mac = v2 *s v4 + mac");
+                "5|L--|mac = v2 *s64 v4 + mac");
         }
 
         [Test]
@@ -981,7 +982,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("2DF4");    // float	fpul,dr4
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|dr4 = (real64) fpul");
+                "1|L--|dr4 = CONVERT(fpul, int32, real64)");
         }
 
         [Test]
@@ -990,7 +991,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("2DF5");    // float	fpul,fr5
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|fr5 = (real32) fpul");
+                "1|L--|fr5 = CONVERT(fpul, int32, real32)");
         }
 
         [Test]
@@ -999,7 +1000,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("3DF2");    // ftrc	dr2,fpul
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|fpul = (int32) trunc(dr2)");
+                "1|L--|fpul = CONVERT(trunc(dr2), real64, int32)");
         }
 
         [Test]
@@ -1008,7 +1009,7 @@ namespace Reko.UnitTests.Arch.Tlcs
             Given_HexString("3DF1");    // ftrc	fr1,fpul
             AssertCode(
                 "0|L--|00100000(2): 1 instructions",
-                "1|L--|fpul = (int32) truncf(fr1)");
+                "1|L--|fpul = CONVERT(truncf(fr1), real32, int32)");
         }
 
         [Test]
