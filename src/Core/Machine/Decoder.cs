@@ -67,7 +67,7 @@ namespace Reko.Core.Machine
 
     public class Decoder
     {
-        private static readonly TraceSwitch trace = new TraceSwitch(nameof(Decoder), "Trace the progress of machine code decoders")
+        public static readonly TraceSwitch trace = new TraceSwitch(nameof(Decoder), "Trace the progress of machine code decoders")
         {
             Level = TraceLevel.Warning
         };
@@ -82,7 +82,7 @@ namespace Reko.Core.Machine
         [Conditional("DEBUG")]
         public static void DumpMaskedInstruction(int instrBitSize, ulong wInstr, ulong shMask, string tag)
         {
-            if (trace.Level != TraceLevel.Verbose)
+            if (!trace.TraceVerbose)
                 return;
             var hibit = 1ul << (instrBitSize - 1);
             var sb = new StringBuilder("// ");

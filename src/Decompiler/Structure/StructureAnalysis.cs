@@ -381,7 +381,7 @@ namespace Reko.Structure
             if (regionGraph.Predecessors(s).Count == 1)
             {
                 // Sequence!
-                Debug.Print("Concatenated {0} and {1}", n.Block.DisplayName, s.Block.DisplayName);
+                trace.Verbose("Concatenated {0} and {1}", n.Block.DisplayName, s.Block.DisplayName);
                 n.Type = s.Type;
                 n.Expression = s.Expression;
                 n.Statements.AddRange(s.Statements);
@@ -767,7 +767,7 @@ all other cases, together they constitute a Switch[].
         /// </returns>
         private bool RefinePredecessor(Region n, Region s)
         {
-            ISet<Region> unstructuredPreds = regionGraph.Predecessors(s).Where(p => p != n).ToHashSet();
+            ISet<Region> unstructuredPreds = new HashSet<Region>(regionGraph.Predecessors(s).Where(p => p != n));
             if (unstructuredPreds.Count == 0)
                 return false;
             return true;

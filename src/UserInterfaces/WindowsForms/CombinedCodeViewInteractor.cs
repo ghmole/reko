@@ -254,7 +254,6 @@ namespace Reko.UserInterfaces.WindowsForms
             var iViewer = (IViewer)gViewer;
             iViewer.MouseUp += IViewer_MouseUp;
             iViewer.MouseDown += IViewer_MouseDown;
-
             this.navInteractor = new NavigationInteractor<Address>();
             this.navInteractor.Attach(this.combinedCodeView);
 

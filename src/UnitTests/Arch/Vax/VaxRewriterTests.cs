@@ -1409,7 +1409,7 @@ namespace Reko.UnitTests.Arch.Vax
             Given_Bytes(0x50, 0x8F, 0x43, 0x00, 0x00, 0x00, 0x57);	// movf	#4.76441477870438E-44,r7
             AssertCode(
                 "0|L--|00010000(7): 4 instructions",
-                "1|L--|r7 = 4.764415e-44F",
+                "1|L--|r7 = 4.8e-44F",
                 "2|L--|ZN = cond(r7)",
                 "3|L--|C = false",
                 "4|L--|V = false");
@@ -2273,13 +2273,14 @@ namespace Reko.UnitTests.Arch.Vax
         [Test]
         public void VaxRw_extzv()
         {
-            Given_Bytes(0xEF, 0x05, 0x1B, 0x52, 0x50);    // extzv #00000005,#1B,r2,r0
+            Given_Bytes(0xEF, 0x05, 0x10, 0x52, 0x50);    // extzv #00000005,#1B,r2,r0
             AssertCode(
                 "0|L--|00010000(5): 3 instructions",
-                "1|L--|r0 = CONVERT(SLICE(r2, ui27, 5), ui27, uint32)",
+                "1|L--|r0 = CONVERT(SLICE(r2, ui16, 5), ui16, uint32)",
                 "2|L--|ZN = cond(r0)",
                 "3|L--|V = false");
         }
+
 #if LATER
         [Test]
         public void VaxRw_cmpv()
